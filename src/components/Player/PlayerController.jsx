@@ -200,78 +200,63 @@ export default function PlayerController() {
     cameraOffset.applyAxisAngle(new THREE.Vector3(1, 0, 0), smoothRotX.current);
     cameraOffset.applyAxisAngle(new THREE.Vector3(0, 1, 0), smoothRotY.current);
     rayDirection.copy(cameraOffset).normalize();
+    
+    // 3. Define the Ray Origin (Target Point) with smoothing
+    // We smooth the anchor point to give a "cinematic" follow feel to the camera's orbit center.
+    if (!camera.userData.smoothedTarget) camera.userData.smoothedTarget = new THREE.Vector3().copy(playerPos);
+    const targetYOffset = 2;
+    const currentTarget = new THREE.Vector3(playerPos.x, playerPos.y + targetYOffset, playerPos.z);
+    camera.userData.smoothedTarget.lerp(currentTarget, 0.2);
+    const rayOrigin = camera.userData.smoothedTarget;
 
-    // 3. Define the Ray Origin (Target Point)
-    // Using the exact physical center of the player to ensure the ray doesn't start inside walls
-    const rayOrigin = new THREE.Vector3(playerPos.x, playerPos.y + 2, playerPos.z);
+    // 4. RayCast — simple, stable, zero-allocation physics check.
+    // By casting a ray and mathematically subtracting a "radius", we recreate volumetric 
+    // physics padding identical to the snippet provided (space - radius).
+    const ray = new rapier.Ray(rayOrigin, rayDirection);
+    
+    // castRay(ray, maxToi, solid, collisionGroups, filterFlags, filterCollider, filterRigidBody)
+    const hit = world.castRay(
+      ray, 
+      smoothZoom.current, 
+      false, 
+      0x00010001, 
+      undefined, 
+      undefined, 
+      rigidBodyRef.current // Ignore player capsule!
+    );
 
-    // 4. ShapeCast — sweep a Ball(0.5) from player head outward to find safe camera distance
-    // Unlike castRay (infinitely thin), castShape gives the camera physical volume so it
-    // stops ABOVE the floor instead of placing its center exactly on the surface.
-    let maxSafeDist = smoothZoom.current;
-
-    try {
-      // Lazily create and cache the Ball shape to avoid per-frame WASM allocation
-      if (!camera.userData._cameraShape) {
-        camera.userData._cameraShape = new rapier.Ball(0.5);
-      }
-
-      // castShape signature: (pos, rot, dir, shape, maxToi, solid, collisionGroups, filterFlags, filterCollider, filterRigidBody, filterPredicate)
-      const hit = world.castShape(
-        rayOrigin,
-        { w: 1.0, x: 0.0, y: 0.0, z: 0.0 }, // no rotation needed for sphere
-        rayDirection,
-        camera.userData._cameraShape,
-        smoothZoom.current, // maxToi
-        true,               // solid (hit if starting inside something)
-        0x00010001,         // collisionGroups
-        undefined,          // filterFlags
-        undefined,          // filterExcludeCollider
-        rigidBodyRef.current// filterExcludeRigidBody
-      );
-
-      if (hit && hit.toi !== undefined && isFinite(hit.toi)) {
-        maxSafeDist = hit.toi;
-      }
-      
-      // Throttled Debug Logging (Once every ~60 frames)
-      if (Math.random() < 0.015) {
-        if (hit) {
-           console.log(`[Camera Physics] HIT. toi: ${hit.toi.toFixed(2)}, maxSafeDist: ${maxSafeDist.toFixed(2)}`);
-        } else {
-           console.log(`[Camera Physics] CLEAR. maxSafeDist: ${maxSafeDist.toFixed(2)}`);
-        }
-      }
-    } catch (e) {
-      console.warn('castShape failed. Falling back to simple raycast.', e.message);
-      // Fallback
-      const ray = new rapier.Ray(rayOrigin, rayDirection);
-      const backupHit = world.castRay(ray, smoothZoom.current, false, 0x00010001, undefined, undefined, rigidBodyRef.current);
-      if (backupHit) maxSafeDist = Math.max(1.5, backupHit.toi - 0.5);
+    let hitDistance = undefined;
+    if (hit) {
+      if (typeof hit.toi === 'number') hitDistance = hit.toi;
+      else if (typeof hit.time_of_impact === 'number') hitDistance = hit.time_of_impact;
+      else if (typeof hit === 'number') hitDistance = hit;
     }
 
-    // Hard clamp to prevent the camera from clipping inside the character mesh
-    maxSafeDist = Math.max(1.5, maxSafeDist);
+    let maxSafeDist = smoothZoom.current;
+    if (hitDistance !== undefined && isFinite(hitDistance)) {
+      const cameraCollisionRadius = 0.6; // Padding to clear the near-plane
+      maxSafeDist = hitDistance - cameraCollisionRadius;
+    }
 
     // 5. Rubber-band interpolation of the ACTUAL zoom distance
-    // We attach a dynamic property directly to the camera object to carry state across frames cleanly
     if (camera.userData.currentZoom === undefined || isNaN(camera.userData.currentZoom)) {
       camera.userData.currentZoom = 12;
     }
     
+    // Hard clamp to ensure the camera doesn't flip through the target
+    maxSafeDist = Math.max(0.1, maxSafeDist);
+
     if (camera.userData.currentZoom > maxSafeDist) {
-      // Snap/fast-lerp inwards to immediately resolve collisions and prevent wall clipping
-      camera.userData.currentZoom = THREE.MathUtils.lerp(camera.userData.currentZoom, maxSafeDist, 0.5);
+      // Snap/fast-lerp inwards to immediately resolve collisions
+      camera.userData.currentZoom = THREE.MathUtils.lerp(camera.userData.currentZoom, maxSafeDist, 0.4);
     } else {
-      // Slow-lerp outwards when the path clears to create the "rubber band" freeing effect
+      // Slow-lerp outwards when the path clears
       camera.userData.currentZoom = THREE.MathUtils.lerp(camera.userData.currentZoom, maxSafeDist, 0.05);
     }
 
-    // Prevent floating point overshoot AND NaN corruption
+    // Prevent NaN corruption
     if (isNaN(camera.userData.currentZoom) || !isFinite(camera.userData.currentZoom)) {
       camera.userData.currentZoom = 12;
-    } else if (Math.abs(camera.userData.currentZoom - maxSafeDist) < 0.01) {
-      camera.userData.currentZoom = maxSafeDist;
     }
 
     // 6. Calculate absolute camera coordinates
@@ -284,12 +269,8 @@ export default function PlayerController() {
       camera.position.copy(camPos);
     }
 
-    // Passive recovery from NaN (Safety)
-    if (isNaN(camera.position.x)) {
-      camera.position.set(playerPos.x, playerPos.y + 10, playerPos.z + 10);
-    }
-
-    camera.lookAt(playerPos.x, playerPos.y + 2, playerPos.z);
+    // Look at the smoothed target
+    camera.lookAt(rayOrigin);
   });
 
   return (
