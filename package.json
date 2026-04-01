@@ -1,0 +1,39 @@
+{
+  "name": "three.js",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build && git add . && git commit -m \"build\"",
+    "preview": "vite preview",
+    "test": "vitest",
+    "test:e2e": "playwright test",
+    "deploy": "npm run build && node deploy.cjs && git add . && git commit -m \"deploy\""
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.58.2",
+    "dotenv": "^17.3.1",
+    "ftp-deploy": "^2.4.7",
+    "happy-dom": "^20.8.9",
+    "vite": "^8.0.1",
+    "vitest": "^4.1.2"
+  },
+  "dependencies": {
+    "@react-three/drei": "^10.7.7",
+    "@react-three/fiber": "^9.5.0",
+    "@react-three/postprocessing": "^3.0.4",
+    "@react-three/rapier": "^2.2.0",
+    "@types/react": "^19.2.14",
+    "@types/react-dom": "^19.2.3",
+    "@types/three": "^0.183.1",
+    "@vitejs/plugin-react": "^6.0.1",
+    "gltf-pipeline": "^4.3.0",
+    "lil-gui": "^0.21.0",
+    "react": "^19.2.4",
+    "react-dom": "^19.2.4",
+    "stats.js": "^0.17.0",
+    "three": "^0.183.2",
+    "zustand": "^5.0.12"
+  }
+}

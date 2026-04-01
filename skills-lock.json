@@ -1,0 +1,15 @@
+{
+  "version": 1,
+  "skills": {
+    "threejs-builder": {
+      "source": "chongdashu/cc-skills-nanobananapro",
+      "sourceType": "github",
+      "computedHash": "a9df0ad7680ff0a018f55daebabeb1cee9f0a5ea98306c9bc1fd65d0211c51c1"
+    },
+    "threejs-pro": {
+      "source": "404kidwiz/claude-supercode-skills",
+      "sourceType": "github",
+      "computedHash": "d301a9fda758128cea3259a7578c0a0b5f0cf871d8f684476dd231f301ae4f7d"
+    }
+  }
+}
