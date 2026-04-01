@@ -27,6 +27,12 @@ export default function PlayerController() {
   const rotationY = useRef(0);
   const rotationX = useRef(0);
   const zoomDistance = useRef(12); // Default zoom
+  
+  // Smoothed camera state to prevent clipping via lerp corners
+  const smoothRotY = useRef(0);
+  const smoothRotX = useRef(0);
+  const smoothZoom = useRef(12);
+
   const lastTouch = useRef({ x: 0, y: 0 });
   const lastPinchDist = useRef(0);
 
@@ -174,44 +180,67 @@ export default function PlayerController() {
 
     // Camera follow (3rd Person Rig with Elastic Zoom & Collision)
     const rayOrigin = new THREE.Vector3(playerPos.x, playerPos.y + 2, playerPos.z);
-    
-    // Sanitizing rotations and zoom
-    const rotY = isNaN(rotationY.current) ? 0 : rotationY.current;
-    const rotX = isNaN(rotationX.current) ? 0 : rotationX.current;
-    const targetZoom = isNaN(zoomDistance.current) ? 12 : zoomDistance.current;
 
-    // Base offset from character head
-    const cameraOffset = new THREE.Vector3(0, 0, targetZoom); 
-    cameraOffset.applyAxisAngle(new THREE.Vector3(1, 0, 0), rotX); // Vertical tilt
-    cameraOffset.applyAxisAngle(new THREE.Vector3(0, 1, 0), rotY); // Horizontal rotation
-    
+    // Sanitize and smooth the raw inputs
+    const rawRotY = isNaN(rotationY.current) ? 0 : rotationY.current;
+    const rawRotX = isNaN(rotationX.current) ? 0 : rotationX.current;
+    const rawZoom = isNaN(zoomDistance.current) ? 12 : zoomDistance.current;
+
+    smoothRotY.current = THREE.MathUtils.lerp(smoothRotY.current, rawRotY, 0.3);
+    smoothRotX.current = THREE.MathUtils.lerp(smoothRotX.current, rawRotX, 0.3);
+    smoothZoom.current = THREE.MathUtils.lerp(smoothZoom.current, rawZoom, 0.2);
+
+    // Base offset from character head using smoothed values
+    const cameraOffset = new THREE.Vector3(0, 0, smoothZoom.current);
+    cameraOffset.applyAxisAngle(new THREE.Vector3(1, 0, 0), smoothRotX.current); // Vertical tilt
+    cameraOffset.applyAxisAngle(new THREE.Vector3(0, 1, 0), smoothRotY.current); // Horizontal rotation
+
     // Collision Raycast
     rayDirection.copy(cameraOffset).normalize();
     const maxDist = cameraOffset.length();
-    
+
     // IMPORTANT: Ignore the player's own body to prevent "head-hits" which cause freezing
     // Camera uses collision group 0x00010001 to ignore invisible walls (0x0002)
-    const ray = new rapier.Ray(rayOrigin, rayDirection);
-    const hit = world.castRay(ray, maxDist, false, 0x00010001, undefined, undefined, rigidBodyRef.current);
+    const cameraShape = new rapier.Ball(0.5); // Matches character radius
+    const shapePos = rayOrigin;
+    const shapeRot = { w: 1.0, x: 0.0, y: 0.0, z: 0.0 };
+
+    // castShape(pos, rot, dir, shape, maxToi, solid, groups, filterFlags, filterCollider, filterRb)
+    const hit = world.castShape(
+      shapePos,
+      shapeRot,
+      rayDirection,
+      cameraShape,
+      maxDist,
+      false,
+      0x00010001,
+      undefined,
+      undefined,
+      rigidBodyRef.current
+    );
 
     let finalDist = maxDist;
     if (hit) {
-      finalDist = Math.max(1.5, hit.toi - 0.3);
+      // Subtract a small buffer (0.2) from the shape intersection distance 
+      // so the camera near-plane doesn't clip through the immediate surface.
+      finalDist = Math.max(1.5, hit.toi - 0.2);
     }
 
     camPos.copy(rayOrigin).add(rayDirection.multiplyScalar(finalDist));
 
     // Final Validation & Fluid Application
     if (!isNaN(camPos.x) && !isNaN(camPos.y) && !isNaN(camPos.z)) {
-      // Faster lerp for more responsive following
-      camera.position.lerp(camPos, 0.4);
+      // Direct assignment instead of lerp! 
+      // Lerping position cuts corners into geometry, causing the camera to clip through walls and floors.
+      // Since we smoothed the input rotation and zoom, the direct coordinates are already silky smooth.
+      camera.position.copy(camPos);
     }
 
     // Passive recovery from NaN (Safety)
     if (isNaN(camera.position.x)) {
       camera.position.set(playerPos.x, playerPos.y + 10, playerPos.z + 10);
     }
-    
+
     camera.lookAt(playerPos.x, playerPos.y + 2, playerPos.z);
   });
 

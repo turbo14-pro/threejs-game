@@ -9,10 +9,10 @@ export default function Effects() {
     <EffectComposer disableNormalPass multisampling={0}>
       {settings.bloom && (
         <Bloom
-          intensity={10.0}
-          luminanceThreshold={0.9}
-          luminanceSmoothing={0.025}
-          height={300}
+          intensity={1.0}
+          luminanceThreshold={0.5}
+          luminanceSmoothing={1}
+          mipmapBlur={true}
         />
       )}
       {settings.grain && (
@@ -23,7 +23,7 @@ export default function Effects() {
       {settings.vignette && (
         <Vignette
           eskil={false}
-          offset={0.1}
+          offset={1}
           darkness={1.5}
         />
       )}

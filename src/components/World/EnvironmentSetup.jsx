@@ -36,7 +36,7 @@ export default function EnvironmentSetup() {
       */}
       <Environment background resolution={512}>
         <mesh position={[0, 150, 0]} scale={[1, 0.5, 1]}>
-          <sphereGeometry args={[100, 64, 32]} />
+          <sphereGeometry args={[900, 64, 32]} />
           <meshBasicMaterial 
             map={texture} 
             side={THREE.BackSide} 
