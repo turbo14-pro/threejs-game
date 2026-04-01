@@ -156,7 +156,11 @@ export default function PlayerController() {
     // Movement calculation
     frontVector.set(0, 0, moveZ);
     sideVector.set(-moveX, 0, 0);
-    direction.subVectors(frontVector, sideVector).normalize().multiplyScalar(speed).applyAxisAngle(new THREE.Vector3(0, 1, 0), rotationY.current);
+    direction.subVectors(frontVector, sideVector);
+    // CRITICAL: normalize() on a zero-vector produces NaN, which corrupts Rapier and freezes the game
+    if (direction.lengthSq() > 0) {
+      direction.normalize().multiplyScalar(speed).applyAxisAngle(new THREE.Vector3(0, 1, 0), rotationY.current);
+    }
 
     const currentVelocity = rigidBodyRef.current.linvel();
 
@@ -178,61 +182,105 @@ export default function PlayerController() {
       playerGroupRef.current.rotation.y = THREE.MathUtils.lerp(playerGroupRef.current.rotation.y, targetRotation, 0.2);
     }
 
-    // Camera follow (3rd Person Rig with Elastic Zoom & Collision)
-    const rayOrigin = new THREE.Vector3(playerPos.x, playerPos.y + 2, playerPos.z);
+    // ----------------------------------------------------
+    // OPTIMIZED 3RD PERSON CAMERA LOGIC (Rubber-banding & Raycast)
+    // ----------------------------------------------------
 
-    // Sanitize and smooth the raw inputs
+    // 1. Smooth the raw inputs
     const rawRotY = isNaN(rotationY.current) ? 0 : rotationY.current;
     const rawRotX = isNaN(rotationX.current) ? 0 : rotationX.current;
     const rawZoom = isNaN(zoomDistance.current) ? 12 : zoomDistance.current;
 
     smoothRotY.current = THREE.MathUtils.lerp(smoothRotY.current, rawRotY, 0.3);
     smoothRotX.current = THREE.MathUtils.lerp(smoothRotX.current, rawRotX, 0.3);
-    smoothZoom.current = THREE.MathUtils.lerp(smoothZoom.current, rawZoom, 0.2);
+    smoothZoom.current = THREE.MathUtils.lerp(smoothZoom.current, rawZoom, 0.2); // Expected zoom
 
-    // Base offset from character head using smoothed values
-    const cameraOffset = new THREE.Vector3(0, 0, smoothZoom.current);
-    cameraOffset.applyAxisAngle(new THREE.Vector3(1, 0, 0), smoothRotX.current); // Vertical tilt
-    cameraOffset.applyAxisAngle(new THREE.Vector3(0, 1, 0), smoothRotY.current); // Horizontal rotation
-
-    // Collision Raycast
+    // 2. Determine camera direction vector
+    const cameraOffset = new THREE.Vector3(0, 0, 1);
+    cameraOffset.applyAxisAngle(new THREE.Vector3(1, 0, 0), smoothRotX.current);
+    cameraOffset.applyAxisAngle(new THREE.Vector3(0, 1, 0), smoothRotY.current);
     rayDirection.copy(cameraOffset).normalize();
-    const maxDist = cameraOffset.length();
 
-    // IMPORTANT: Ignore the player's own body to prevent "head-hits" which cause freezing
-    // Camera uses collision group 0x00010001 to ignore invisible walls (0x0002)
-    const cameraShape = new rapier.Ball(0.5); // Matches character radius
-    const shapePos = rayOrigin;
-    const shapeRot = { w: 1.0, x: 0.0, y: 0.0, z: 0.0 };
+    // 3. Define the Ray Origin (Target Point)
+    // Using the exact physical center of the player to ensure the ray doesn't start inside walls
+    const rayOrigin = new THREE.Vector3(playerPos.x, playerPos.y + 2, playerPos.z);
 
-    // castShape(pos, rot, dir, shape, maxToi, solid, groups, filterFlags, filterCollider, filterRb)
-    const hit = world.castShape(
-      shapePos,
-      shapeRot,
-      rayDirection,
-      cameraShape,
-      maxDist,
-      false,
-      0x00010001,
-      undefined,
-      undefined,
-      rigidBodyRef.current
-    );
+    // 4. ShapeCast — sweep a Ball(0.5) from player head outward to find safe camera distance
+    // Unlike castRay (infinitely thin), castShape gives the camera physical volume so it
+    // stops ABOVE the floor instead of placing its center exactly on the surface.
+    let maxSafeDist = smoothZoom.current;
 
-    let finalDist = maxDist;
-    if (hit) {
-      // Subtract a small buffer (0.2) from the shape intersection distance 
-      // so the camera near-plane doesn't clip through the immediate surface.
-      finalDist = Math.max(1.5, hit.toi - 0.2);
+    try {
+      // Lazily create and cache the Ball shape to avoid per-frame WASM allocation
+      if (!camera.userData._cameraShape) {
+        camera.userData._cameraShape = new rapier.Ball(0.5);
+      }
+
+      // castShape signature: (pos, rot, dir, shape, maxToi, solid, collisionGroups, filterFlags, filterCollider, filterRigidBody, filterPredicate)
+      const hit = world.castShape(
+        rayOrigin,
+        { w: 1.0, x: 0.0, y: 0.0, z: 0.0 }, // no rotation needed for sphere
+        rayDirection,
+        camera.userData._cameraShape,
+        smoothZoom.current, // maxToi
+        true,               // solid (hit if starting inside something)
+        0x00010001,         // collisionGroups
+        undefined,          // filterFlags
+        undefined,          // filterExcludeCollider
+        rigidBodyRef.current// filterExcludeRigidBody
+      );
+
+      if (hit && hit.toi !== undefined && isFinite(hit.toi)) {
+        maxSafeDist = hit.toi;
+      }
+      
+      // Throttled Debug Logging (Once every ~60 frames)
+      if (Math.random() < 0.015) {
+        if (hit) {
+           console.log(`[Camera Physics] HIT. toi: ${hit.toi.toFixed(2)}, maxSafeDist: ${maxSafeDist.toFixed(2)}`);
+        } else {
+           console.log(`[Camera Physics] CLEAR. maxSafeDist: ${maxSafeDist.toFixed(2)}`);
+        }
+      }
+    } catch (e) {
+      console.warn('castShape failed. Falling back to simple raycast.', e.message);
+      // Fallback
+      const ray = new rapier.Ray(rayOrigin, rayDirection);
+      const backupHit = world.castRay(ray, smoothZoom.current, false, 0x00010001, undefined, undefined, rigidBodyRef.current);
+      if (backupHit) maxSafeDist = Math.max(1.5, backupHit.toi - 0.5);
     }
 
-    camPos.copy(rayOrigin).add(rayDirection.multiplyScalar(finalDist));
+    // Hard clamp to prevent the camera from clipping inside the character mesh
+    maxSafeDist = Math.max(1.5, maxSafeDist);
+
+    // 5. Rubber-band interpolation of the ACTUAL zoom distance
+    // We attach a dynamic property directly to the camera object to carry state across frames cleanly
+    if (camera.userData.currentZoom === undefined || isNaN(camera.userData.currentZoom)) {
+      camera.userData.currentZoom = 12;
+    }
+    
+    if (camera.userData.currentZoom > maxSafeDist) {
+      // Snap/fast-lerp inwards to immediately resolve collisions and prevent wall clipping
+      camera.userData.currentZoom = THREE.MathUtils.lerp(camera.userData.currentZoom, maxSafeDist, 0.5);
+    } else {
+      // Slow-lerp outwards when the path clears to create the "rubber band" freeing effect
+      camera.userData.currentZoom = THREE.MathUtils.lerp(camera.userData.currentZoom, maxSafeDist, 0.05);
+    }
+
+    // Prevent floating point overshoot AND NaN corruption
+    if (isNaN(camera.userData.currentZoom) || !isFinite(camera.userData.currentZoom)) {
+      camera.userData.currentZoom = 12;
+    } else if (Math.abs(camera.userData.currentZoom - maxSafeDist) < 0.01) {
+      camera.userData.currentZoom = maxSafeDist;
+    }
+
+    // 6. Calculate absolute camera coordinates
+    camPos.copy(rayOrigin).addScaledVector(rayDirection, camera.userData.currentZoom);
 
     // Final Validation & Fluid Application
     if (!isNaN(camPos.x) && !isNaN(camPos.y) && !isNaN(camPos.z)) {
       // Direct assignment instead of lerp! 
       // Lerping position cuts corners into geometry, causing the camera to clip through walls and floors.
-      // Since we smoothed the input rotation and zoom, the direct coordinates are already silky smooth.
       camera.position.copy(camPos);
     }
 

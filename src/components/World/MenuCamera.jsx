@@ -1,10 +1,12 @@
-import React from 'react';
+import React, { useRef } from 'react';
 import { useFrame } from '@react-three/fiber';
-import * as THREE from 'three';
 
 export default function MenuCamera() {
-  useFrame(({ camera, clock }) => {
-    const time = clock.elapsedTime * 0.2;
+  const timeRef = useRef(0);
+
+  useFrame(({ camera }, delta) => {
+    timeRef.current += delta;
+    const time = timeRef.current * 0.2;
     camera.position.x = Math.sin(time) * 40;
     camera.position.z = Math.cos(time) * 40;
     camera.position.y = 15;
