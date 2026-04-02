@@ -1,7 +1,7 @@
 import React, { useMemo, useRef } from 'react';
 import * as THREE from 'three';
 import { RigidBody, CuboidCollider } from '@react-three/rapier';
-import { useGLTF, Text as TextDrei, Center, Instances, Instance } from '@react-three/drei';
+import { useGLTF, Text as TextDrei, Center, Merged } from '@react-three/drei';
 import * as SkeletonUtils from 'three/addons/utils/SkeletonUtils.js';
 import { useGameStore } from '../../store/useGameStore';
 
@@ -13,7 +13,10 @@ function SelectionModel({ path, position }) {
   const cloned = useMemo(() => {
     const clone = SkeletonUtils.clone(scene);
     clone.traverse(node => {
-      if (node.isMesh) {
+      if (node.isMesh && node.material) {
+        node.material = node.material.clone();
+        node.material.roughness = 1.0; // Matte
+        node.material.metalness = 0.0; // Non-reflective
         node.castShadow = true;
         node.receiveShadow = true;
       }
@@ -34,6 +37,15 @@ function CerealBoxPhysics({ position, rotation, boxSize }) {
   const thickness = 0.5; // Thickness of the "cardboard" walls
   const doorHeight = 10; // Height of the player entrance
 
+  // Calculate solid part of the front wall relative to the center of the box (0,0,0)
+  // Box center is at h/2.
+  // Solid part goes from doorHeight to h.
+  // Solid part height = h - doorHeight.
+  // Center of solid part in world = doorHeight + (h - doorHeight) / 2.
+  // Center of solid part relative to box center = (doorHeight + (h - doorHeight) / 2) - h/2.
+  const solidPartHeight = Math.max(0, h - doorHeight);
+  const relativeHeaderCenter = solidPartHeight > 0 ? (doorHeight + solidPartHeight / 2) - h / 2 : 0;
+
   return (
     <RigidBody
       type="fixed"
@@ -41,27 +53,27 @@ function CerealBoxPhysics({ position, rotation, boxSize }) {
       rotation={rotation}
       collisionGroups={0x0001FFFF}
     >
-      <group position={[0, h / 2, 0]}>
-        {/* Floor */}
-        <CuboidCollider args={[w / 2, thickness / 2, d / 2]} position={[0, -h / 2, 0]} />
-        
-        {/* Back Wall */}
-        <CuboidCollider args={[w / 2, h / 2, thickness / 2]} position={[0, 0, -d / 2]} />
-        
-        {/* Left Wall */}
-        <CuboidCollider args={[thickness / 2, h / 2, d / 2]} position={[-w / 2, 0, 0]} />
-        
-        {/* Right Wall */}
-        <CuboidCollider args={[thickness / 2, h / 2, d / 2]} position={[w / 2, 0, 0]} />
-        
-        {/* Front Wall (The one with the Door)
-            We use a shorter wall raised up to create an opening at the bottom.
-         */}
+      {/* All colliders below are relative to the center of the box (0,0,0) */}
+      
+      {/* Floor - centered at the very bottom (-h/2) */}
+      <CuboidCollider args={[w / 2, thickness / 2, d / 2]} position={[0, -h / 2 + thickness / 2, 0]} />
+      
+      {/* Back Wall (X-Z plane). Height is h. Center is 0 relative to box center. */}
+      <CuboidCollider args={[w / 2, h / 2, thickness / 2]} position={[0, 0, -d / 2]} />
+      
+      {/* Left Wall (Y-Z plane) */}
+      <CuboidCollider args={[thickness / 2, h / 2, d / 2]} position={[-w / 2, 0, 0]} />
+      
+      {/* Right Wall (Y-Z plane) */}
+      <CuboidCollider args={[thickness / 2, h / 2, d / 2]} position={[w / 2, 0, 0]} />
+      
+      {/* Front Wall Header above the Door */}
+      {solidPartHeight > 0 && (
         <CuboidCollider 
-          args={[w / 2, (h - doorHeight) / 2, thickness / 2]} 
-          position={[0, doorHeight / 2, d / 2]} 
+          args={[w / 2, solidPartHeight / 2, thickness / 2]} 
+          position={[0, relativeHeaderCenter, d / 2]} 
         />
-      </group>
+      )}
     </RigidBody>
   );
 }
@@ -78,25 +90,30 @@ export default function Arena() {
   // Load Cereal Box Model for Instancing
   const cerealBoxModel = useGLTF('/materials/cerealbox.glb');
   
-  // Extract main mesh, geometry and material for instancing
-  const { geometry, material, boxSize } = useMemo(() => {
+  // Extract main mesh, geometry, material and scale for instancing
+  const { geometry, material, boxSize, modelScale } = useMemo(() => {
     let g = null;
     let m = null;
     let size = new THREE.Vector3(14, 20, 5); // Fallback defaults
+    let mScale = new THREE.Vector3(1, 1, 1);
     
-    cerealBoxModel.scene.traverse(child => {
-      if (child.isMesh && child.visible !== false) {
-        if (!g) g = child.geometry;
-        if (!m) m = child.material;
-      }
-    });
-
     if (cerealBoxModel.scene) {
+      cerealBoxModel.scene.traverse(child => {
+        if (child.isMesh && child.visible !== false) {
+          if (!g) {
+            g = child.geometry;
+            // Capture the world scale of the main mesh within the group
+            child.getWorldScale(mScale);
+          }
+          if (!m) m = child.material;
+        }
+      });
+
       const box = new THREE.Box3().setFromObject(cerealBoxModel.scene);
       box.getSize(size);
     }
 
-    return { geometry: g, material: m, boxSize: size };
+    return { geometry: g, material: m, boxSize: size, modelScale: mScale };
   }, [cerealBoxModel]);
 
   // Helper: generate procedural wood canvas with a given base color
@@ -273,8 +290,8 @@ export default function Arena() {
           <meshStandardMaterial color="#555555" />
         </mesh>
         <SelectionModel path="/models/EGG.glb" position={[0, 0.3, 0]} />
-        <pointLight position={[0, 4, 2]} intensity={20} color="#00ff88" distance={10} decay={2} />
-        <pointLight position={[0, 1, -2]} intensity={10} color="#ffffff" distance={5} decay={2} />
+        <pointLight position={[0, 4, 1]} intensity={5} color="#00ff88" distance={15} decay={2} />
+        <pointLight position={[0, 1, -2]} intensity={2} color="#ffffff" distance={10} decay={2} />
 
         {/* Button Sensor */}
         <RigidBody
@@ -329,8 +346,8 @@ export default function Arena() {
           <meshStandardMaterial color="#555555" />
         </mesh>
         <SelectionModel path="/models/Avo.glb" position={[0, 0.3, 0]} />
-        <pointLight position={[0, 4, 2]} intensity={20} color="#00ff88" distance={10} decay={2} />
-        <pointLight position={[0, 1, -2]} intensity={10} color="#ffffff" distance={5} decay={2} />
+        <pointLight position={[0, 4, 1]} intensity={5} color="#00ff88" distance={15} decay={2} />
+        <pointLight position={[0, 1, -2]} intensity={2} color="#ffffff" distance={10} decay={2} />
 
         {/* Button Sensor */}
         <RigidBody
@@ -419,24 +436,38 @@ export default function Arena() {
         </mesh>
       </group>
 
-      {/* 5. Cereal Box Obstacles (Instanced Rendering) */}
-      {geometry && material && (
-        <Instances geometry={geometry} material={material} castShadow receiveShadow>
-          {cerealBoxes.map((box) => (
-            <Instance 
-              key={box.id} 
-              position={box.position} 
-              rotation={box.rotation} 
-            />
-          ))}
-        </Instances>
-      )}
+      {/* 5. Cereal Box Obstacles (Instanced Rendering with Multi-Material Support) */}
+      <Merged 
+        meshes={Object.fromEntries(
+          Object.entries(cerealBoxModel.nodes).filter(([_, node]) => node.isMesh && node.visible !== false)
+        )} 
+        castShadow 
+        receiveShadow
+      >
+        {(instances) => (
+          <>
+            {cerealBoxes.map((box) => (
+              <group 
+                key={box.id} 
+                position={[box.position[0], boxSize.y / 2, box.position[2]]} 
+                rotation={box.rotation}
+                scale={modelScale}
+              >
+                {Object.keys(instances).map((name) => {
+                  const Inst = instances[name];
+                  return <Inst key={name} />;
+                })}
+              </group>
+            ))}
+          </>
+        )}
+      </Merged>
 
       {/* 6. Cereal Box Physics (Composite Cuboid Colliders) */}
       {cerealBoxes.map((box) => (
         <CerealBoxPhysics 
           key={box.id} 
-          position={box.position} 
+          position={[box.position[0], boxSize.y / 2, box.position[2]]} 
           rotation={box.rotation} 
           boxSize={boxSize} 
         />

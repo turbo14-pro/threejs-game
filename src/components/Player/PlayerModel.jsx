@@ -6,26 +6,29 @@ import { useGameStore } from '../../store/useGameStore';
 
 /**
  * Performant "Smooth" Shader - Adds soft rim lighting and shadow filling 
- * without the overhead of Physical materials.
+ * while preserving original colors.
  */
 const applySmoothShader = (material) => {
-  material.roughness = 0.4;
-  material.metalness = 0.1;
+  material.roughness = 1.0;
+  material.metalness = 0.0;
   
   material.onBeforeCompile = (shader) => {
-    shader.uniforms.rimColor = { value: new THREE.Color('#ffffff') };
+    shader.uniforms.rimIntensity = { value: 0.4 };
     shader.fragmentShader = `
-      uniform vec3 rimColor;
+      uniform float rimIntensity;
       ${shader.fragmentShader}
     `.replace(
       '#include <dithering_fragment>',
       `
-      // Soft Rim
-      float rim = 1.0 - max(dot(normalize(vNormal), normalize(-vViewPosition)), 0.0);
-      gl_FragColor.rgb += rimColor * pow(rim, 4.0) * 0.3;
+      // Smooth Rim (multiplied by luminosity to avoid washing out)
+      float vDotN = 1.0 - max(dot(normalize(vNormal), normalize(-vViewPosition)), 0.0);
+      float rim = pow(vDotN, 5.0) * rimIntensity;
+      gl_FragColor.rgb += diffuseColor.rgb * rim; // Use character's own color for the rim glow
       
       // Shadow Softener (Fake GI)
-      gl_FragColor.rgb = mix(gl_FragColor.rgb, gl_FragColor.rgb + vec3(0.05, 0.05, 0.075), 1.0 - max(dot(normalize(vNormal), vec3(0.0, 1.0, 0.0)), 0.0) * 0.15);
+      // Adds a tiny bit of upward-facing bounce light into dark areas
+      float bounce = max(0.0, dot(vNormal, vec3(0.0, 1.0, 0.0)));
+      gl_FragColor.rgb = mix(gl_FragColor.rgb, gl_FragColor.rgb + (diffuseColor.rgb * 0.1), (1.0 - bounce) * 0.1);
       
       #include <dithering_fragment>
       `
@@ -49,7 +52,10 @@ export default function PlayerModel({ isMoving, isSprinting }) {
       if (node.isMesh) {
         node.castShadow = true;
         node.receiveShadow = true;
+        
+        // Clone materials as well to avoid compounding shader issues
         if (node.material) {
+          node.material = node.material.clone();
           applySmoothShader(node.material);
         }
       }
