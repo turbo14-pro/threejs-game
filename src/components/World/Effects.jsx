@@ -1,18 +1,20 @@
 import React from 'react';
-import { Bloom, Noise, Vignette, EffectComposer, FXAA } from '@react-three/postprocessing';
+import { Bloom, Noise, Vignette, EffectComposer, FXAA, ToneMapping } from '@react-three/postprocessing';
+import { HalfFloatType } from 'three';
 import { useGameStore } from '../../store/useGameStore';
 
 export default function Effects() {
   const settings = useGameStore(state => state.settings);
 
   return (
-    <EffectComposer disableNormalPass multisampling={0}>
+    <EffectComposer enableNormalPass={false} multisampling={0} frameBufferType={HalfFloatType}>
       {settings.bloom && (
         <Bloom
-          intensity={1.0}
-          luminanceThreshold={0.5}
-          luminanceSmoothing={1}
-          mipmapBlur={true}
+          intensity={0.5}
+          luminanceThreshold={0}
+          luminanceSmoothing={0}
+          mipmapBlur={false}
+          height={300}
         />
       )}
       {settings.grain && (
@@ -23,13 +25,14 @@ export default function Effects() {
       {settings.vignette && (
         <Vignette
           eskil={false}
-          offset={1}
-          darkness={1.5}
+          offset={0.3}
+          darkness={0.4}
         />
       )}
       {settings.fxaa && (
         <FXAA />
       )}
+      <ToneMapping />
     </EffectComposer>
   );
 }

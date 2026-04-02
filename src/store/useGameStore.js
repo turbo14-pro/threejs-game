@@ -6,6 +6,7 @@ export const useGameStore = create(subscribeWithSelector((set, get) => ({
   selectedCharacter: 'Avo',
   playerHealth: 100,
   teleportCount: 0,
+  respawnCount: 0,
   mobileInput: { x: 0, y: 0, jump: false, sprint: false },
   
   // Settings
@@ -39,6 +40,6 @@ export const useGameStore = create(subscribeWithSelector((set, get) => ({
     set({ playerHealth: newHealth });
   },
 
-  respawn: () => set({ playerHealth: 100, gameState: 'PLAYING' })
+  respawn: () => set({ playerHealth: 100, gameState: 'PLAYING', respawnCount: get().respawnCount + 1 })
 })));
 

@@ -24,12 +24,12 @@ export default function PlayerController() {
   const [isMoving, setIsMoving] = useState(false);
 
   // Camera & Zoom State
-  const rotationY = useRef(0);
+  const rotationY = useRef(Math.PI);
   const rotationX = useRef(0);
   const zoomDistance = useRef(12); // Default zoom
   
   // Smoothed camera state to prevent clipping via lerp corners
-  const smoothRotY = useRef(0);
+  const smoothRotY = useRef(Math.PI);
   const smoothRotX = useRef(0);
   const smoothZoom = useRef(12);
 
@@ -127,6 +127,34 @@ export default function PlayerController() {
     return unsubscribe;
   }, [gl]);
 
+  // Respawn handler (teleport back to platform 1)
+  useEffect(() => {
+    const unsubscribe = useGameStore.subscribe(
+      state => state.respawnCount,
+      (count) => {
+        if (count > 0 && rigidBodyRef.current) {
+          console.log("🔄 Respawning Player to Platform 1", count);
+
+          rigidBodyRef.current.wakeUp();
+          rigidBodyRef.current.setTranslation({ x: 0, y: 103, z: 0 }, true);
+          rigidBodyRef.current.setLinvel({ x: 0, y: 0, z: 0 }, true);
+          rotationY.current = Math.PI;
+          smoothRotY.current = Math.PI;
+          if (playerGroupRef.current) {
+            playerGroupRef.current.rotation.y = Math.PI;
+          }
+
+          try {
+            gl.domElement.requestPointerLock();
+          } catch (e) {
+            console.warn("Pointer lock request failed");
+          }
+        }
+      }
+    );
+    return unsubscribe;
+  }, [gl]);
+
   useFrame((state, delta) => {
     if (gameState !== 'PLAYING' || !rigidBodyRef.current || !playerGroupRef.current) return;
 
@@ -142,6 +170,11 @@ export default function PlayerController() {
     if (playerPos.y < -250) {
       rigidBodyRef.current.setTranslation({ x: 0, y: 103, z: 0 }, true);
       rigidBodyRef.current.setLinvel({ x: 0, y: 0, z: 0 }, true);
+      rotationY.current = Math.PI;
+      smoothRotY.current = Math.PI;
+      if (playerGroupRef.current) {
+        playerGroupRef.current.rotation.y = Math.PI;
+      }
       return;
     }
 
@@ -209,43 +242,60 @@ export default function PlayerController() {
     camera.userData.smoothedTarget.lerp(currentTarget, 0.2);
     const rayOrigin = camera.userData.smoothedTarget;
 
-    // 4. RayCast — simple, stable, zero-allocation physics check.
-    // By casting a ray and mathematically subtracting a "radius", we recreate volumetric 
-    // physics padding identical to the snippet provided (space - radius).
-    const ray = new rapier.Ray(rayOrigin, rayDirection);
-    
-    // castRay(ray, maxToi, solid, collisionGroups, filterFlags, filterCollider, filterRigidBody)
-    const hit = world.castRay(
-      ray, 
-      smoothZoom.current, 
-      false, 
-      0x00010001, 
-      undefined, 
-      undefined, 
-      rigidBodyRef.current // Ignore player capsule!
-    );
-
-    let hitDistance = undefined;
-    if (hit) {
-      if (typeof hit.toi === 'number') hitDistance = hit.toi;
-      else if (typeof hit.time_of_impact === 'number') hitDistance = hit.time_of_impact;
-      else if (typeof hit === 'number') hitDistance = hit;
-    }
-
+    // 4. RayCast with proper Rapier API parameter ordering.
+    // CRITICAL FIX: 0x00010001 was previously passed as filterFlags (param 4),
+    // which set EXCLUDE_FIXED — silently ignoring ALL arena geometry (floor, walls, platforms).
+    // It must be filterGroups (param 5) to act as collision group filtering.
+    // 4. ShapeCast — sweep a Ball(0.5) from player head outward to find safe camera distance
+    // This gives the camera physical volume, preventing clipping through corners and floors.
     let maxSafeDist = smoothZoom.current;
-    if (hitDistance !== undefined && isFinite(hitDistance)) {
-      const cameraCollisionRadius = 0.6; // Padding to clear the near-plane
-      maxSafeDist = hitDistance - cameraCollisionRadius;
+
+    try {
+      // Lazily create and cache the Ball shape and orientation
+      if (!camera.userData._cameraShape) {
+        camera.userData._cameraShape = new rapier.Ball(0.5);
+      }
+      
+      const shapeOrigin = { x: rayOrigin.x, y: rayOrigin.y, z: rayOrigin.z };
+      const shapeRotation = { w: 1.0, x: 0.0, y: 0.0, z: 0.0 };
+      const shapeVelocity = { x: rayDirection.x, y: rayDirection.y, z: rayDirection.z };
+
+      // castShape signature: (pos, rot, vel, shape, targetDist, maxToi, stopAtPenetration, flags, groups, excCollider, excRigidBody)
+      const hit = world.castShape(
+        shapeOrigin,
+        shapeRotation,
+        shapeVelocity,
+        camera.userData._cameraShape,
+        0.0,                 // targetDistance (0 = traditional sweep)
+        smoothZoom.current,  // maxToi (Distance)
+        true,                // stopAtPenetration
+        null,                // filterFlags
+        0x00010001,          // filterGroups
+        null,                // filterExcludeCollider
+        rigidBodyRef.current // filterExcludeRigidBody (Ignore player)
+      );
+
+      if (hit) {
+        const toi = hit.toi ?? hit.time_of_impact;
+        if (typeof toi === 'number' && isFinite(toi)) {
+          maxSafeDist = toi;
+        }
+      }
+    } catch (e) {
+      // Fallback
+      console.warn('[Camera] castShape error:', e.message);
+      const ray = new rapier.Ray(rayOrigin, rayDirection);
+      const backupHit = world.castRay(ray, smoothZoom.current, false, null, 0x00010001, null, rigidBodyRef.current);
+      if (backupHit) maxSafeDist = Math.max(0.5, backupHit.toi - 0.5);
     }
+    // Hard clamp to ensure the camera doesn't flip through the target
+    maxSafeDist = Math.max(0.1, maxSafeDist);
 
     // 5. Rubber-band interpolation of the ACTUAL zoom distance
     if (camera.userData.currentZoom === undefined || isNaN(camera.userData.currentZoom)) {
       camera.userData.currentZoom = 12;
     }
     
-    // Hard clamp to ensure the camera doesn't flip through the target
-    maxSafeDist = Math.max(0.1, maxSafeDist);
-
     if (camera.userData.currentZoom > maxSafeDist) {
       // Snap/fast-lerp inwards to immediately resolve collisions
       camera.userData.currentZoom = THREE.MathUtils.lerp(camera.userData.currentZoom, maxSafeDist, 0.4);

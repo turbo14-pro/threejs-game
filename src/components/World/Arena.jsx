@@ -23,12 +23,12 @@ export default function Arena() {
   const setSelectedCharacter = useGameStore(state => state.setSelectedCharacter);
   const triggerSpawn = useGameStore(state => state.triggerSpawn);
 
-  // Procedural Wood Texture (Fast loading, 0KB)
-  const woodTexture = useMemo(() => {
+  // Helper: generate procedural wood canvas with a given base color
+  const makeWoodCanvas = (baseColor) => {
     const canvas = document.createElement('canvas');
     canvas.width = canvas.height = 512;
     const ctx = canvas.getContext('2d');
-    ctx.fillStyle = '#3d2b1f'; 
+    ctx.fillStyle = baseColor; 
     ctx.fillRect(0, 0, 512, 512);
 
     for (let i = 0; i < 2000; i++) {
@@ -48,9 +48,15 @@ export default function Arena() {
     tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
     tex.repeat.set(5, 5); 
     return tex;
-  }, []);
+  };
 
-  // Shared Material for wood objects
+  // Procedural Wood Texture (Fast loading, 0KB)
+  const woodTexture = useMemo(() => makeWoodCanvas('#3d2b1f'), []);
+
+  // Darker wood texture for spawn platform tops
+  const darkWoodTexture = useMemo(() => makeWoodCanvas('#2a1c13'), []);
+
+  // Shared Material for wood objects (arena floor)
   const woodMaterial = (
     <meshPhysicalMaterial 
       map={woodTexture} 
@@ -99,9 +105,42 @@ export default function Arena() {
       <RigidBody type="fixed" position={[0, 100, 0]} colliders="cuboid">
         <mesh receiveShadow>
           <boxGeometry args={[70, 2, 30]} />
-          {woodMaterial}
+          <meshPhysicalMaterial transparent opacity={0} />
         </mesh>
       </RigidBody>
+      {/* Platform 1 - Dark Top */}
+      <mesh position={[0, 101.01, 0]} receiveShadow rotation={[-Math.PI / 2, 0, 0]}>
+        <planeGeometry args={[70, 30]} />
+        <meshPhysicalMaterial map={darkWoodTexture} roughness={0.4} clearcoat={1.0} clearcoatRoughness={0.05} reflectivity={0.5} />
+      </mesh>
+      {/* Platform 1 - Light Bottom */}
+      <mesh position={[0, 98.99, 0]} receiveShadow rotation={[Math.PI / 2, 0, 0]}>
+        <planeGeometry args={[70, 30]} />
+        <meshPhysicalMaterial color="#eeeeee" roughness={0.05} clearcoat={1.0} />
+      </mesh>
+      {/* Platform 1 - Sides */}
+      <group position={[0, 100, 0]}>
+        {/* Front (Z+) */}
+        <mesh position={[0, 0, 15]} receiveShadow>
+          <planeGeometry args={[70, 2]} />
+          <meshPhysicalMaterial map={darkWoodTexture} roughness={0.4} clearcoat={1.0} clearcoatRoughness={0.05} />
+        </mesh>
+        {/* Back (Z-) */}
+        <mesh position={[0, 0, -15]} receiveShadow rotation={[0, Math.PI, 0]}>
+          <planeGeometry args={[70, 2]} />
+          <meshPhysicalMaterial map={darkWoodTexture} roughness={0.4} clearcoat={1.0} clearcoatRoughness={0.05} />
+        </mesh>
+        {/* Left (X-) */}
+        <mesh position={[-35, 0, 0]} receiveShadow rotation={[0, Math.PI / 2, 0]}>
+          <planeGeometry args={[30, 2]} />
+          <meshPhysicalMaterial map={darkWoodTexture} roughness={0.4} clearcoat={1.0} clearcoatRoughness={0.05} />
+        </mesh>
+        {/* Right (X+) */}
+        <mesh position={[35, 0, 0]} receiveShadow rotation={[0, -Math.PI / 2, 0]}>
+          <planeGeometry args={[30, 2]} />
+          <meshPhysicalMaterial map={darkWoodTexture} roughness={0.4} clearcoat={1.0} clearcoatRoughness={0.05} />
+        </mesh>
+      </group>
 
       {/* Platform 1 Carpet Runner */}
       <mesh position={[0, 101.06, 0]} receiveShadow>
@@ -214,9 +253,38 @@ export default function Arena() {
       <RigidBody type="fixed" position={[0, 100, -45]} colliders="cuboid">
         <mesh receiveShadow>
           <boxGeometry args={[70, 2, 30]} />
-          {woodMaterial}
+          <meshPhysicalMaterial transparent opacity={0} />
         </mesh>
       </RigidBody>
+      {/* Platform 2 - Dark Top */}
+      <mesh position={[0, 101.01, -45]} receiveShadow rotation={[-Math.PI / 2, 0, 0]}>
+        <planeGeometry args={[70, 30]} />
+        <meshPhysicalMaterial map={darkWoodTexture} roughness={0.4} clearcoat={1.0} clearcoatRoughness={0.05} reflectivity={0.5} />
+      </mesh>
+      {/* Platform 2 - Light Bottom */}
+      <mesh position={[0, 98.99, -45]} receiveShadow rotation={[Math.PI / 2, 0, 0]}>
+        <planeGeometry args={[70, 30]} />
+        <meshPhysicalMaterial color="#eeeeee" roughness={0.05} clearcoat={1.0} />
+      </mesh>
+      {/* Platform 2 - Sides */}
+      <group position={[0, 100, -45]}>
+        <mesh position={[0, 0, 15]} receiveShadow>
+          <planeGeometry args={[70, 2]} />
+          <meshPhysicalMaterial map={darkWoodTexture} roughness={0.4} clearcoat={1.0} clearcoatRoughness={0.05} />
+        </mesh>
+        <mesh position={[0, 0, -15]} receiveShadow rotation={[0, Math.PI, 0]}>
+          <planeGeometry args={[70, 2]} />
+          <meshPhysicalMaterial map={darkWoodTexture} roughness={0.4} clearcoat={1.0} clearcoatRoughness={0.05} />
+        </mesh>
+        <mesh position={[-35, 0, 0]} receiveShadow rotation={[0, Math.PI / 2, 0]}>
+          <planeGeometry args={[30, 2]} />
+          <meshPhysicalMaterial map={darkWoodTexture} roughness={0.4} clearcoat={1.0} clearcoatRoughness={0.05} />
+        </mesh>
+        <mesh position={[35, 0, 0]} receiveShadow rotation={[0, -Math.PI / 2, 0]}>
+          <planeGeometry args={[30, 2]} />
+          <meshPhysicalMaterial map={darkWoodTexture} roughness={0.4} clearcoat={1.0} clearcoatRoughness={0.05} />
+        </mesh>
+      </group>
 
       {/* Platform 2 Carpet Runner */}
       <mesh position={[0, 101.06, -45]} receiveShadow>
@@ -228,9 +296,30 @@ export default function Arena() {
       <RigidBody type="fixed" position={[0, 100, -22.5]} colliders="cuboid">
         <mesh receiveShadow>
           <boxGeometry args={[15, 2.0, 20]} />
-          {woodMaterial}
+          <meshPhysicalMaterial transparent opacity={0} />
         </mesh>
       </RigidBody>
+      {/* Bridge - Dark Top */}
+      <mesh position={[0, 101.01, -22.5]} receiveShadow rotation={[-Math.PI / 2, 0, 0]}>
+        <planeGeometry args={[15, 20]} />
+        <meshPhysicalMaterial map={darkWoodTexture} roughness={0.4} clearcoat={1.0} clearcoatRoughness={0.05} reflectivity={0.5} />
+      </mesh>
+      {/* Bridge - Light Bottom */}
+      <mesh position={[0, 98.99, -22.5]} receiveShadow rotation={[Math.PI / 2, 0, 0]}>
+        <planeGeometry args={[15, 20]} />
+        <meshPhysicalMaterial color="#eeeeee" roughness={0.05} clearcoat={1.0} />
+      </mesh>
+      {/* Bridge - Sides */}
+      <group position={[0, 100, -22.5]}>
+        <mesh position={[7.5, 0, 0]} receiveShadow rotation={[0, -Math.PI / 2, 0]}>
+          <planeGeometry args={[20, 2]} />
+          <meshPhysicalMaterial map={darkWoodTexture} roughness={0.4} clearcoat={1.0} clearcoatRoughness={0.05} />
+        </mesh>
+        <mesh position={[-7.5, 0, 0]} receiveShadow rotation={[0, Math.PI / 2, 0]}>
+          <planeGeometry args={[20, 2]} />
+          <meshPhysicalMaterial map={darkWoodTexture} roughness={0.4} clearcoat={1.0} clearcoatRoughness={0.05} />
+        </mesh>
+      </group>
     </>
   );
 }

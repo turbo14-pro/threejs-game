@@ -47,8 +47,10 @@ export default function HUD() {
     setGameState('MENU');
   };
 
+  const respawn = useGameStore(state => state.respawn);
+
   const handleRespawn = () => {
-    location.reload(); 
+    respawn();
   };
 
   return (
