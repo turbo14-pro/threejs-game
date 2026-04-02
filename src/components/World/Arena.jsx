@@ -135,7 +135,7 @@ export default function Arena() {
       }
       boxes.push({
         id: i,
-        position: [x, 0.3, z],
+        position: [x, 0, z],
         rotation: [0, Math.random() * Math.PI * 2, 0]
       });
     }
