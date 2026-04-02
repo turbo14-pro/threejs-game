@@ -15,7 +15,8 @@ export const useGameStore = create(subscribeWithSelector((set, get) => ({
     fxaa: true,
     vignette: true,
     grain: false,
-    pixelRatio: window.devicePixelRatio || 1
+    pixelRatio: window.devicePixelRatio || 1,
+    shadowQuality: 'Medium'
   },
 
   setGameState: (state) => set({ gameState: state }),

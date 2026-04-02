@@ -1,7 +1,7 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useRef } from 'react';
 import * as THREE from 'three';
 import { RigidBody, CuboidCollider } from '@react-three/rapier';
-import { useGLTF, Text as TextDrei, Center } from '@react-three/drei';
+import { useGLTF, Text as TextDrei, Center, Instances, Instance } from '@react-three/drei';
 import * as SkeletonUtils from 'three/addons/utils/SkeletonUtils.js';
 import { useGameStore } from '../../store/useGameStore';
 
@@ -10,55 +10,57 @@ import { useGameStore } from '../../store/useGameStore';
  */
 function SelectionModel({ path, position }) {
   const { scene } = useGLTF(path);
-  const cloned = useMemo(() => SkeletonUtils.clone(scene), [scene]);
-  return <primitive object={cloned} position={position} scale={2.5} rotation={[0, Math.PI, 0]} />;
-}
-
-/**
- * CerealBox Obstacle Component
- */
-function CerealBox({ position, rotation }) {
-  const { scene } = useGLTF('/materials/cerealbox.glb');
   const cloned = useMemo(() => {
     const clone = SkeletonUtils.clone(scene);
-    const hiddenMeshes = [];
-    clone.traverse((child) => {
-      if (child.isMesh) {
-        if (child.visible === false) {
-          hiddenMeshes.push(child);
-        } else {
-          child.castShadow = true;
-          child.receiveShadow = true;
-        }
+    clone.traverse(node => {
+      if (node.isMesh) {
+        node.castShadow = true;
+        node.receiveShadow = true;
       }
-    });
-    // Remove hidden meshes so Rapier doesn't create colliders for them
-    hiddenMeshes.forEach(m => {
-      if (m.parent) m.parent.remove(m);
     });
     return clone;
   }, [scene]);
 
-  const height = useMemo(() => {
-    const box = new THREE.Box3().setFromObject(cloned);
-    const size = new THREE.Vector3();
-    box.getSize(size);
-    return size.y;
-  }, [cloned]);
+  return <primitive object={cloned} position={position} scale={2.5} rotation={[0, Math.PI, 0]} />;
+}
+
+/**
+ * CerealBoxPhysics Component
+ * Handles the composite cuboid colliders for a single cereal box obstacle.
+ * Includes an entrance "doorway" on the front face.
+ */
+function CerealBoxPhysics({ position, rotation, boxSize }) {
+  const { x: w, y: h, z: d } = boxSize;
+  const thickness = 0.5; // Thickness of the "cardboard" walls
+  const doorHeight = 10; // Height of the player entrance
 
   return (
     <RigidBody
       type="fixed"
       position={position}
       rotation={rotation}
-      colliders="trimesh"
-      scale={1}
       collisionGroups={0x0001FFFF}
     >
-      <group position={[0, height / 2, 0]}>
-        <Center>
-          <primitive object={cloned} />
-        </Center>
+      <group position={[0, h / 2, 0]}>
+        {/* Floor */}
+        <CuboidCollider args={[w / 2, thickness / 2, d / 2]} position={[0, -h / 2, 0]} />
+        
+        {/* Back Wall */}
+        <CuboidCollider args={[w / 2, h / 2, thickness / 2]} position={[0, 0, -d / 2]} />
+        
+        {/* Left Wall */}
+        <CuboidCollider args={[thickness / 2, h / 2, d / 2]} position={[-w / 2, 0, 0]} />
+        
+        {/* Right Wall */}
+        <CuboidCollider args={[thickness / 2, h / 2, d / 2]} position={[w / 2, 0, 0]} />
+        
+        {/* Front Wall (The one with the Door)
+            We use a shorter wall raised up to create an opening at the bottom.
+         */}
+        <CuboidCollider 
+          args={[w / 2, (h - doorHeight) / 2, thickness / 2]} 
+          position={[0, doorHeight / 2, d / 2]} 
+        />
       </group>
     </RigidBody>
   );
@@ -67,11 +69,35 @@ function CerealBox({ position, rotation }) {
 /**
  * Arena Component
  * Restores the original 3D level layout from the vanilla JS version
- * while applying the new procedural wood texture and reflective clear coat.
+ * while applying the new procedural wood texture.
  */
 export default function Arena() {
   const setSelectedCharacter = useGameStore(state => state.setSelectedCharacter);
   const triggerSpawn = useGameStore(state => state.triggerSpawn);
+
+  // Load Cereal Box Model for Instancing
+  const cerealBoxModel = useGLTF('/materials/cerealbox.glb');
+  
+  // Extract main mesh, geometry and material for instancing
+  const { geometry, material, boxSize } = useMemo(() => {
+    let g = null;
+    let m = null;
+    let size = new THREE.Vector3(14, 20, 5); // Fallback defaults
+    
+    cerealBoxModel.scene.traverse(child => {
+      if (child.isMesh && child.visible !== false) {
+        if (!g) g = child.geometry;
+        if (!m) m = child.material;
+      }
+    });
+
+    if (cerealBoxModel.scene) {
+      const box = new THREE.Box3().setFromObject(cerealBoxModel.scene);
+      box.getSize(size);
+    }
+
+    return { geometry: g, material: m, boxSize: size };
+  }, [cerealBoxModel]);
 
   // Helper: generate procedural wood canvas with a given base color
   const makeWoodCanvas = (baseColor) => {
@@ -108,12 +134,9 @@ export default function Arena() {
 
   // Shared Material for wood objects (arena floor)
   const woodMaterial = (
-    <meshPhysicalMaterial
+    <meshStandardMaterial
       map={woodTexture}
       roughness={0.6}
-      clearcoat={0}
-      clearcoatRoughness={1}
-      reflectivity={0.1}
     />
   );
 
@@ -125,10 +148,6 @@ export default function Arena() {
       const x = (Math.random() - 0.5) * 500;
       const z = (Math.random() - 0.5) * 500;
       // Exclude platform and bridge footprints on the main table
-      // Platform 1: [-35, 35], Z [-15, 15]
-      // Bridge: [-7.5, 7.5], Z [-32.5, -12.5]
-      // Platform 2: [-35, 35], Z [-60, -30]
-      // Overall exclusion zone (safety margin of 40x70)
       if (Math.abs(x) < 40 && z > -70 && z < 25) {
         i--;
         continue;
@@ -152,27 +171,27 @@ export default function Arena() {
         </mesh>
       </RigidBody>
 
-      {/* Main Kitchen Table - Inset Glossy Sides (Island Bench effect) */}
+      {/* Main Kitchen Table - Inset Sides (Island Bench effect) */}
       <group position={[0, -502, 0]}>
         {/* Front */}
         <mesh position={[0, 0, 296]} receiveShadow>
           <boxGeometry args={[596, 1000, 4]} />
-          <meshPhysicalMaterial color="#eeeeee" roughness={0.05} clearcoat={1.0} />
+          <meshStandardMaterial color="#eeeeee" roughness={0.05} />
         </mesh>
         {/* Back */}
         <mesh position={[0, 0, -296]} receiveShadow>
           <boxGeometry args={[596, 1000, 4]} />
-          <meshPhysicalMaterial color="#eeeeee" roughness={0.05} clearcoat={1.0} />
+          <meshStandardMaterial color="#eeeeee" roughness={0.05} />
         </mesh>
         {/* Left */}
         <mesh position={[-296, 0, 0]} receiveShadow>
           <boxGeometry args={[4, 1000, 596]} />
-          <meshPhysicalMaterial color="#eeeeee" roughness={0.05} clearcoat={1.0} />
+          <meshStandardMaterial color="#eeeeee" roughness={0.05} />
         </mesh>
         {/* Right */}
         <mesh position={[296, 0, 0]} receiveShadow>
           <boxGeometry args={[4, 1000, 596]} />
-          <meshPhysicalMaterial color="#eeeeee" roughness={0.05} clearcoat={1.0} />
+          <meshStandardMaterial color="#eeeeee" roughness={0.05} />
         </mesh>
       </group>
 
@@ -180,40 +199,40 @@ export default function Arena() {
       <RigidBody type="fixed" position={[0, 100, 0]} colliders="cuboid">
         <mesh receiveShadow>
           <boxGeometry args={[70, 2, 30]} />
-          <meshPhysicalMaterial transparent opacity={0} />
+          <meshStandardMaterial transparent opacity={0} />
         </mesh>
       </RigidBody>
       {/* Platform 1 - Dark Top */}
       <mesh position={[0, 101.01, 0]} receiveShadow rotation={[-Math.PI / 2, 0, 0]}>
         <planeGeometry args={[70, 30]} />
-        <meshPhysicalMaterial map={darkWoodTexture} roughness={0.4} clearcoat={1.0} clearcoatRoughness={0.05} reflectivity={0.5} />
+        <meshStandardMaterial map={darkWoodTexture} roughness={0.4} />
       </mesh>
       {/* Platform 1 - Light Bottom */}
       <mesh position={[0, 98.99, 0]} receiveShadow rotation={[Math.PI / 2, 0, 0]}>
         <planeGeometry args={[70, 30]} />
-        <meshPhysicalMaterial color="#eeeeee" roughness={0.05} clearcoat={1.0} />
+        <meshStandardMaterial color="#eeeeee" roughness={0.05} />
       </mesh>
       {/* Platform 1 - Sides */}
       <group position={[0, 100, 0]}>
         {/* Front (Z+) */}
         <mesh position={[0, 0, 15]} receiveShadow>
           <planeGeometry args={[70, 2]} />
-          <meshPhysicalMaterial map={darkWoodTexture} roughness={0.4} clearcoat={1.0} clearcoatRoughness={0.05} />
+          <meshStandardMaterial map={darkWoodTexture} roughness={0.4} />
         </mesh>
         {/* Back (Z-) */}
         <mesh position={[0, 0, -15]} receiveShadow rotation={[0, Math.PI, 0]}>
           <planeGeometry args={[70, 2]} />
-          <meshPhysicalMaterial map={darkWoodTexture} roughness={0.4} clearcoat={1.0} clearcoatRoughness={0.05} />
+          <meshStandardMaterial map={darkWoodTexture} roughness={0.4} />
         </mesh>
         {/* Left (X-) */}
         <mesh position={[-35, 0, 0]} receiveShadow rotation={[0, Math.PI / 2, 0]}>
           <planeGeometry args={[30, 2]} />
-          <meshPhysicalMaterial map={darkWoodTexture} roughness={0.4} clearcoat={1.0} clearcoatRoughness={0.05} />
+          <meshStandardMaterial map={darkWoodTexture} roughness={0.4} />
         </mesh>
         {/* Right (X+) */}
         <mesh position={[35, 0, 0]} receiveShadow rotation={[0, -Math.PI / 2, 0]}>
           <planeGeometry args={[30, 2]} />
-          <meshPhysicalMaterial map={darkWoodTexture} roughness={0.4} clearcoat={1.0} clearcoatRoughness={0.05} />
+          <meshStandardMaterial map={darkWoodTexture} roughness={0.4} />
         </mesh>
       </group>
 
@@ -254,6 +273,8 @@ export default function Arena() {
           <meshStandardMaterial color="#555555" />
         </mesh>
         <SelectionModel path="/models/EGG.glb" position={[0, 0.3, 0]} />
+        <pointLight position={[0, 4, 2]} intensity={20} color="#00ff88" distance={10} decay={2} />
+        <pointLight position={[0, 1, -2]} intensity={10} color="#ffffff" distance={5} decay={2} />
 
         {/* Button Sensor */}
         <RigidBody
@@ -308,6 +329,8 @@ export default function Arena() {
           <meshStandardMaterial color="#555555" />
         </mesh>
         <SelectionModel path="/models/Avo.glb" position={[0, 0.3, 0]} />
+        <pointLight position={[0, 4, 2]} intensity={20} color="#00ff88" distance={10} decay={2} />
+        <pointLight position={[0, 1, -2]} intensity={10} color="#ffffff" distance={5} decay={2} />
 
         {/* Button Sensor */}
         <RigidBody
@@ -328,36 +351,36 @@ export default function Arena() {
       <RigidBody type="fixed" position={[0, 100, -45]} colliders="cuboid">
         <mesh receiveShadow>
           <boxGeometry args={[70, 2, 30]} />
-          <meshPhysicalMaterial transparent opacity={0} />
+          <meshStandardMaterial transparent opacity={0} />
         </mesh>
       </RigidBody>
       {/* Platform 2 - Dark Top */}
       <mesh position={[0, 101.01, -45]} receiveShadow rotation={[-Math.PI / 2, 0, 0]}>
         <planeGeometry args={[70, 30]} />
-        <meshPhysicalMaterial map={darkWoodTexture} roughness={0.4} clearcoat={1.0} clearcoatRoughness={0.05} reflectivity={0.5} />
+        <meshStandardMaterial map={darkWoodTexture} roughness={0.4} />
       </mesh>
       {/* Platform 2 - Light Bottom */}
       <mesh position={[0, 98.99, -45]} receiveShadow rotation={[Math.PI / 2, 0, 0]}>
         <planeGeometry args={[70, 30]} />
-        <meshPhysicalMaterial color="#eeeeee" roughness={0.05} clearcoat={1.0} />
+        <meshStandardMaterial color="#eeeeee" roughness={0.05} />
       </mesh>
       {/* Platform 2 - Sides */}
       <group position={[0, 100, -45]}>
         <mesh position={[0, 0, 15]} receiveShadow>
           <planeGeometry args={[70, 2]} />
-          <meshPhysicalMaterial map={darkWoodTexture} roughness={0.4} clearcoat={1.0} clearcoatRoughness={0.05} />
+          <meshStandardMaterial map={darkWoodTexture} roughness={0.4} />
         </mesh>
         <mesh position={[0, 0, -15]} receiveShadow rotation={[0, Math.PI, 0]}>
           <planeGeometry args={[70, 2]} />
-          <meshPhysicalMaterial map={darkWoodTexture} roughness={0.4} clearcoat={1.0} clearcoatRoughness={0.05} />
+          <meshStandardMaterial map={darkWoodTexture} roughness={0.4} />
         </mesh>
         <mesh position={[-35, 0, 0]} receiveShadow rotation={[0, Math.PI / 2, 0]}>
           <planeGeometry args={[30, 2]} />
-          <meshPhysicalMaterial map={darkWoodTexture} roughness={0.4} clearcoat={1.0} clearcoatRoughness={0.05} />
+          <meshStandardMaterial map={darkWoodTexture} roughness={0.4} />
         </mesh>
         <mesh position={[35, 0, 0]} receiveShadow rotation={[0, -Math.PI / 2, 0]}>
           <planeGeometry args={[30, 2]} />
-          <meshPhysicalMaterial map={darkWoodTexture} roughness={0.4} clearcoat={1.0} clearcoatRoughness={0.05} />
+          <meshStandardMaterial map={darkWoodTexture} roughness={0.4} />
         </mesh>
       </group>
 
@@ -371,34 +394,52 @@ export default function Arena() {
       <RigidBody type="fixed" position={[0, 100, -22.5]} colliders="cuboid">
         <mesh receiveShadow>
           <boxGeometry args={[15, 2.0, 20]} />
-          <meshPhysicalMaterial transparent opacity={0} />
+          <meshStandardMaterial transparent opacity={0} />
         </mesh>
       </RigidBody>
       {/* Bridge - Dark Top */}
       <mesh position={[0, 101.01, -22.5]} receiveShadow rotation={[-Math.PI / 2, 0, 0]}>
         <planeGeometry args={[15, 20]} />
-        <meshPhysicalMaterial map={darkWoodTexture} roughness={0.4} clearcoat={1.0} clearcoatRoughness={0.05} reflectivity={0.5} />
+        <meshStandardMaterial map={darkWoodTexture} roughness={0.4} />
       </mesh>
       {/* Bridge - Light Bottom */}
       <mesh position={[0, 98.99, -22.5]} receiveShadow rotation={[Math.PI / 2, 0, 0]}>
         <planeGeometry args={[15, 20]} />
-        <meshPhysicalMaterial color="#eeeeee" roughness={0.05} clearcoat={1.0} />
+        <meshStandardMaterial color="#eeeeee" roughness={0.05} />
       </mesh>
       {/* Bridge - Sides */}
       <group position={[0, 100, -22.5]}>
         <mesh position={[7.5, 0, 0]} receiveShadow rotation={[0, -Math.PI / 2, 0]}>
           <planeGeometry args={[20, 2]} />
-          <meshPhysicalMaterial map={darkWoodTexture} roughness={0.4} clearcoat={1.0} clearcoatRoughness={0.05} />
+          <meshStandardMaterial map={darkWoodTexture} roughness={0.4} />
         </mesh>
         <mesh position={[-7.5, 0, 0]} receiveShadow rotation={[0, Math.PI / 2, 0]}>
           <planeGeometry args={[20, 2]} />
-          <meshPhysicalMaterial map={darkWoodTexture} roughness={0.4} clearcoat={1.0} clearcoatRoughness={0.05} />
+          <meshStandardMaterial map={darkWoodTexture} roughness={0.4} />
         </mesh>
       </group>
 
-      {/* 5. Cereal Box Obstacles */}
+      {/* 5. Cereal Box Obstacles (Instanced Rendering) */}
+      {geometry && material && (
+        <Instances geometry={geometry} material={material} castShadow receiveShadow>
+          {cerealBoxes.map((box) => (
+            <Instance 
+              key={box.id} 
+              position={box.position} 
+              rotation={box.rotation} 
+            />
+          ))}
+        </Instances>
+      )}
+
+      {/* 6. Cereal Box Physics (Composite Cuboid Colliders) */}
       {cerealBoxes.map((box) => (
-        <CerealBox key={box.id} position={box.position} rotation={box.rotation} />
+        <CerealBoxPhysics 
+          key={box.id} 
+          position={box.position} 
+          rotation={box.rotation} 
+          boxSize={boxSize} 
+        />
       ))}
     </>
   );

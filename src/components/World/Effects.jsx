@@ -8,7 +8,7 @@ export default function Effects() {
   const settings = useGameStore(state => state.settings);
 
   return (
-    <EffectComposer enableNormalPass={false} multisampling={8} frameBufferType={HalfFloatType}>
+    <EffectComposer enableNormalPass={false} multisampling={4} frameBufferType={HalfFloatType}>
       {settings.bloom && (
         <Bloom
           intensity={1.0}

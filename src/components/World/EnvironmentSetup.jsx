@@ -1,9 +1,20 @@
 import React, { useLayoutEffect } from 'react';
 import * as THREE from 'three';
 import { useTexture, Environment } from '@react-three/drei';
+import { useGameStore } from '../../store/useGameStore';
 
 export default function EnvironmentSetup() {
   const texture = useTexture('/skybox/skybox-kitchen.webp');
+  const shadowQuality = useGameStore(state => state.settings.shadowQuality);
+
+  const shadowMapSize = React.useMemo(() => {
+    switch (shadowQuality) {
+      case 'Low': return 1024;
+      case 'Medium': return 2048;
+      case 'High': return 4096;
+      default: return 2048;
+    }
+  }, [shadowQuality]);
   
   // Use UV mapping properties for the visual mesh to ensure 'repeat' works
   useLayoutEffect(() => {
@@ -21,8 +32,8 @@ export default function EnvironmentSetup() {
         position={[100, 100, 100]} 
         intensity={1.5} 
         castShadow
-        shadow-mapSize-width={4096}
-        shadow-mapSize-height={4096}
+        shadow-mapSize-width={shadowMapSize}
+        shadow-mapSize-height={shadowMapSize}
         shadow-camera-left={-200}
         shadow-camera-right={200}
         shadow-camera-top={200}

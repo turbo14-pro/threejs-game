@@ -325,8 +325,8 @@ export default function PlayerController() {
 
   return (
     <RigidBody ref={rigidBodyRef} position={[0, 103, 0]} colliders={false} enabledRotations={[false, false, false]} mass={1} collisionGroups={0x0001FFFF}>
-      <CapsuleCollider args={[0.5, 0.5]} />
-      <group ref={playerGroupRef} position={[0, -1, 0]}>
+      <CapsuleCollider args={[0.5, 0.8]} />
+      <group ref={playerGroupRef} position={[0, -1.3, 0]}>
         <PlayerModel isMoving={isMoving} isSprinting={useKeyboardControls(s => s.sprint) || mobileInput.sprint} />
       </group>
     </RigidBody>

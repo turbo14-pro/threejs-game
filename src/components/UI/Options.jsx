@@ -13,6 +13,22 @@ export default function Options({ onBack }) {
     <div className="options-container">
       <h1>OPTIONS</h1>
       <div className="options-list">
+        <div className="option-item" style={{ cursor: 'default' }}>
+          <div className="option-info">
+            <span className="option-name">Shadow Quality</span>
+            <span className="option-desc">Balance performance and visual fidelity</span>
+          </div>
+          <select 
+            className="premium-select" 
+            value={settings.shadowQuality || 'Medium'} 
+            onChange={(e) => setSetting('shadowQuality', e.target.value)}
+          >
+            <option value="Low">Low - Fast</option>
+            <option value="Medium">Medium - Balanced</option>
+            <option value="High">High - Cinematic</option>
+          </select>
+        </div>
+
         <div className="option-item" onClick={() => toggleSetting('bloom')}>
           <div className="option-info">
             <span className="option-name">Bloom Effect</span>

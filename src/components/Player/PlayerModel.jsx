@@ -1,8 +1,38 @@
 import React, { useEffect, useMemo } from 'react';
 import { useGLTF, useAnimations } from '@react-three/drei';
-import { useGraph } from '@react-three/fiber';
+import * as THREE from 'three';
 import * as SkeletonUtils from 'three/addons/utils/SkeletonUtils.js';
 import { useGameStore } from '../../store/useGameStore';
+
+/**
+ * Performant "Smooth" Shader - Adds soft rim lighting and shadow filling 
+ * without the overhead of Physical materials.
+ */
+const applySmoothShader = (material) => {
+  material.roughness = 0.4;
+  material.metalness = 0.1;
+  
+  material.onBeforeCompile = (shader) => {
+    shader.uniforms.rimColor = { value: new THREE.Color('#ffffff') };
+    shader.fragmentShader = `
+      uniform vec3 rimColor;
+      ${shader.fragmentShader}
+    `.replace(
+      '#include <dithering_fragment>',
+      `
+      // Soft Rim
+      float rim = 1.0 - max(dot(normalize(vNormal), normalize(-vViewPosition)), 0.0);
+      gl_FragColor.rgb += rimColor * pow(rim, 4.0) * 0.3;
+      
+      // Shadow Softener (Fake GI)
+      gl_FragColor.rgb = mix(gl_FragColor.rgb, gl_FragColor.rgb + vec3(0.05, 0.05, 0.075), 1.0 - max(dot(normalize(vNormal), vec3(0.0, 1.0, 0.0)), 0.0) * 0.15);
+      
+      #include <dithering_fragment>
+      `
+    );
+  };
+  return material;
+};
 
 export default function PlayerModel({ isMoving, isSprinting }) {
   const selectedCharacter = useGameStore(state => state.selectedCharacter);
@@ -12,20 +42,22 @@ export default function PlayerModel({ isMoving, isSprinting }) {
 
   const { scene, animations } = useGLTF(modelPath);
   
-  // Clone the scene to avoid bone sharing/animation bleeding between models
-  const clone = useMemo(() => SkeletonUtils.clone(scene), [scene]);
-  const { nodes } = useGraph(clone);
-  const { actions } = useAnimations(animations, clone);
-
-  useEffect(() => {
-    // Traverse and enable shadows on the clone
-    clone.traverse(node => {
+  // Clone the scene and apply the performant smooth shader
+  const clone = useMemo(() => {
+    const clonedScene = SkeletonUtils.clone(scene);
+    clonedScene.traverse(node => {
       if (node.isMesh) {
         node.castShadow = true;
         node.receiveShadow = true;
+        if (node.material) {
+          applySmoothShader(node.material);
+        }
       }
     });
-  }, [clone]);
+    return clonedScene;
+  }, [scene]);
+
+  const { actions } = useAnimations(animations, clone);
 
   useEffect(() => {
     if (!actions) return;
