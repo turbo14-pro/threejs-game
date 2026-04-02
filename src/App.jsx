@@ -25,7 +25,7 @@ export default function App() {
         {gameState === 'MENU' && <MainMenu />}
         {gameState === 'PLAYING' && <HUD />}
         
-        <Canvas shadows={{ type: THREE.PCFShadowMap }} gl={{ antialias: false }} camera={{ position: [0, 50, 100], fov: 75, near: 0.5, far: 2000 }} style={{ position: 'absolute', top: 0, left: 0, zIndex: 0 }}>
+        <Canvas shadows={{ type: THREE.PCFShadowMap }} gl={{ antialias: false, toneMapping: THREE.NoToneMapping }} camera={{ position: [0, 50, 100], fov: 75, near: 0.5, far: 2000 }} style={{ position: 'absolute', top: 0, left: 0, zIndex: 0 }}>
           <Suspense fallback={null}>
             <color attach="background" args={['#101010']} />
             <GameCanvas />

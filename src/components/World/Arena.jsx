@@ -190,7 +190,7 @@ export default function Arena() {
           <CuboidCollider args={[2, 0.5, 2]} />
           <mesh>
             <boxGeometry args={[4, 0.2, 4]} />
-            <meshStandardMaterial color="#00ff88" emissive="#00ff88" emissiveIntensity={2} />
+            <meshStandardMaterial color="#00ff88" emissive="#00ff88" emissiveIntensity={2} toneMapped={false} />
           </mesh>
         </RigidBody>
       </group>
@@ -221,7 +221,7 @@ export default function Arena() {
           <CuboidCollider args={[2, 0.5, 2]} />
           <mesh>
             <boxGeometry args={[4, 0.2, 4]} />
-            <meshStandardMaterial color="#ffcc00" emissive="#ffcc00" emissiveIntensity={2} />
+            <meshStandardMaterial color="#ffcc00" emissive="#ffcc00" emissiveIntensity={2} toneMapped={false} />
           </mesh>
         </RigidBody>
       </group>
@@ -244,7 +244,7 @@ export default function Arena() {
           <CuboidCollider args={[2, 0.5, 2]} />
           <mesh>
             <boxGeometry args={[4, 0.2, 4]} />
-            <meshStandardMaterial color="#00ff88" emissive="#00ff88" emissiveIntensity={2} />
+            <meshStandardMaterial color="#00ff88" emissive="#00ff88" emissiveIntensity={2} toneMapped={false} />
           </mesh>
         </RigidBody>
       </group>
