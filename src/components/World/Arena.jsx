@@ -1,7 +1,7 @@
 import React, { useMemo } from 'react';
 import * as THREE from 'three';
 import { RigidBody, CuboidCollider } from '@react-three/rapier';
-import { useGLTF, Text as TextDrei } from '@react-three/drei';
+import { useGLTF, Text as TextDrei, Center } from '@react-three/drei';
 import * as SkeletonUtils from 'three/addons/utils/SkeletonUtils.js';
 import { useGameStore } from '../../store/useGameStore';
 
@@ -12,6 +12,56 @@ function SelectionModel({ path, position }) {
   const { scene } = useGLTF(path);
   const cloned = useMemo(() => SkeletonUtils.clone(scene), [scene]);
   return <primitive object={cloned} position={position} scale={2.5} rotation={[0, Math.PI, 0]} />;
+}
+
+/**
+ * CerealBox Obstacle Component
+ */
+function CerealBox({ position, rotation }) {
+  const { scene } = useGLTF('/materials/cerealbox.glb');
+  const cloned = useMemo(() => {
+    const clone = SkeletonUtils.clone(scene);
+    const hiddenMeshes = [];
+    clone.traverse((child) => {
+      if (child.isMesh) {
+        if (child.visible === false) {
+          hiddenMeshes.push(child);
+        } else {
+          child.castShadow = true;
+          child.receiveShadow = true;
+        }
+      }
+    });
+    // Remove hidden meshes so Rapier doesn't create colliders for them
+    hiddenMeshes.forEach(m => {
+      if (m.parent) m.parent.remove(m);
+    });
+    return clone;
+  }, [scene]);
+
+  const height = useMemo(() => {
+    const box = new THREE.Box3().setFromObject(cloned);
+    const size = new THREE.Vector3();
+    box.getSize(size);
+    return size.y;
+  }, [cloned]);
+
+  return (
+    <RigidBody
+      type="fixed"
+      position={position}
+      rotation={rotation}
+      colliders="trimesh"
+      scale={1}
+      collisionGroups={0x0001FFFF}
+    >
+      <group position={[0, height / 2, 0]}>
+        <Center>
+          <primitive object={cloned} />
+        </Center>
+      </group>
+    </RigidBody>
+  );
 }
 
 /**
@@ -61,11 +111,36 @@ export default function Arena() {
     <meshPhysicalMaterial
       map={woodTexture}
       roughness={0.6}
-      clearcoat={0.5}
-      clearcoatRoughness={0.1}
-      reflectivity={0.5}
+      clearcoat={0}
+      clearcoatRoughness={1}
+      reflectivity={0.1}
     />
   );
+
+  // Randomly place 20 cereal boxes
+  const cerealBoxes = useMemo(() => {
+    const boxes = [];
+    for (let i = 0; i < 20; i++) {
+      // Stay within table bounds [-300, 300], adding a bit of margin
+      const x = (Math.random() - 0.5) * 500;
+      const z = (Math.random() - 0.5) * 500;
+      // Exclude platform and bridge footprints on the main table
+      // Platform 1: [-35, 35], Z [-15, 15]
+      // Bridge: [-7.5, 7.5], Z [-32.5, -12.5]
+      // Platform 2: [-35, 35], Z [-60, -30]
+      // Overall exclusion zone (safety margin of 40x70)
+      if (Math.abs(x) < 40 && z > -70 && z < 25) {
+        i--;
+        continue;
+      }
+      boxes.push({
+        id: i,
+        position: [x, 0.3, z],
+        rotation: [0, Math.random() * Math.PI * 2, 0]
+      });
+    }
+    return boxes;
+  }, []);
 
   return (
     <>
@@ -320,6 +395,11 @@ export default function Arena() {
           <meshPhysicalMaterial map={darkWoodTexture} roughness={0.4} clearcoat={1.0} clearcoatRoughness={0.05} />
         </mesh>
       </group>
+
+      {/* 5. Cereal Box Obstacles */}
+      {cerealBoxes.map((box) => (
+        <CerealBox key={box.id} position={box.position} rotation={box.rotation} />
+      ))}
     </>
   );
 }

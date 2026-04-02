@@ -8,7 +8,7 @@ export default function Effects() {
   const settings = useGameStore(state => state.settings);
 
   return (
-    <EffectComposer enableNormalPass={false} multisampling={0} frameBufferType={HalfFloatType}>
+    <EffectComposer enableNormalPass={false} multisampling={8} frameBufferType={HalfFloatType}>
       {settings.bloom && (
         <Bloom
           intensity={1.0}
@@ -29,7 +29,7 @@ export default function Effects() {
         <Vignette
           eskil={false}
           offset={0.1}
-          darkness={1.1}
+          darkness={0.2}
         />
       )}
       {settings.fxaa && (

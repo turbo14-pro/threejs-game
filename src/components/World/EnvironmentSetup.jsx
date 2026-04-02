@@ -15,7 +15,7 @@ export default function EnvironmentSetup() {
 
   return (
     <>
-      <ambientLight intensity={0.02} />
+      <ambientLight intensity={0.01} />
       <hemisphereLight args={[0xffffff, 0x444444, 0.4]} />
       <directionalLight 
         position={[100, 100, 100]} 
