@@ -28,7 +28,7 @@ export default function Arena() {
     const canvas = document.createElement('canvas');
     canvas.width = canvas.height = 512;
     const ctx = canvas.getContext('2d');
-    ctx.fillStyle = baseColor; 
+    ctx.fillStyle = baseColor;
     ctx.fillRect(0, 0, 512, 512);
 
     for (let i = 0; i < 2000; i++) {
@@ -46,7 +46,7 @@ export default function Arena() {
 
     const tex = new THREE.CanvasTexture(canvas);
     tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
-    tex.repeat.set(5, 5); 
+    tex.repeat.set(5, 5);
     return tex;
   };
 
@@ -58,12 +58,12 @@ export default function Arena() {
 
   // Shared Material for wood objects (arena floor)
   const woodMaterial = (
-    <meshPhysicalMaterial 
-      map={woodTexture} 
-      roughness={0.4} 
-      clearcoat={1.0} 
-      clearcoatRoughness={0.05} 
-      reflectivity={0.5} 
+    <meshPhysicalMaterial
+      map={woodTexture}
+      roughness={0.6}
+      clearcoat={0.5}
+      clearcoatRoughness={0.1}
+      reflectivity={0.5}
     />
   );
 
@@ -179,11 +179,11 @@ export default function Arena() {
           <meshStandardMaterial color="#555555" />
         </mesh>
         <SelectionModel path="/models/EGG.glb" position={[0, 0.3, 0]} />
-        
+
         {/* Button Sensor */}
-        <RigidBody 
-          type="fixed" 
-          sensor 
+        <RigidBody
+          type="fixed"
+          sensor
           onIntersectionEnter={() => setSelectedCharacter('Egg')}
           position={[0, 0.5, 5]}
         >
@@ -209,9 +209,9 @@ export default function Arena() {
         >
           START
         </TextDrei>
-        <RigidBody 
-          type="fixed" 
-          sensor 
+        <RigidBody
+          type="fixed"
+          sensor
           onIntersectionEnter={() => {
             console.log("Start Button Triggered");
             triggerSpawn();
@@ -233,11 +233,11 @@ export default function Arena() {
           <meshStandardMaterial color="#555555" />
         </mesh>
         <SelectionModel path="/models/Avo.glb" position={[0, 0.3, 0]} />
-        
+
         {/* Button Sensor */}
-        <RigidBody 
-          type="fixed" 
-          sensor 
+        <RigidBody
+          type="fixed"
+          sensor
           onIntersectionEnter={() => setSelectedCharacter('Avo')}
           position={[0, 0.5, 5]}
         >

@@ -8,27 +8,28 @@ export default function Effects() {
   const settings = useGameStore(state => state.settings);
 
   return (
-    <EffectComposer enableNormalPass={false} multisampling={8} frameBufferType={HalfFloatType}>
+    <EffectComposer enableNormalPass={false} multisampling={0} frameBufferType={HalfFloatType}>
       {settings.bloom && (
         <Bloom
           intensity={1.0}
-          luminanceThreshold={0}
-          luminanceSmoothing={1}
+          luminanceThreshold={0.5}
+          luminanceSmoothing={0.9}
           blendFunction={BlendFunction.ADD}
           mipmapBlur={true}
-          radius={0.4}
+          radius={0.3}
+          height={300}
         />
       )}
       {settings.grain && (
         <Noise
-          opacity={0.05}
+          opacity={0.02}
         />
       )}
       {settings.vignette && (
         <Vignette
           eskil={false}
-          offset={0.4}
-          darkness={0.4}
+          offset={0.1}
+          darkness={1.1}
         />
       )}
       {settings.fxaa && (
