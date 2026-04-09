@@ -1,46 +1,56 @@
 import { create } from 'zustand';
-import { subscribeWithSelector } from 'zustand/middleware';
+import { subscribeWithSelector, persist } from 'zustand/middleware';
 
-export const useGameStore = create(subscribeWithSelector((set, get) => ({
-  gameState: 'MENU',
-  selectedCharacter: 'Avo',
-  playerHealth: 100,
-  teleportCount: 0,
-  respawnCount: 0,
-  mobileInput: { x: 0, y: 0, jump: false, sprint: false },
-  
-  // Settings
-  settings: {
-    bloom: true,
-    fxaa: true,
-    vignette: true,
-    grain: false,
-    pixelRatio: window.devicePixelRatio || 1,
-    shadowQuality: 'Medium'
-  },
+export const useGameStore = create(
+  subscribeWithSelector(
+    persist(
+      (set, get) => ({
+        gameState: 'MENU',
+        selectedCharacter: 'Avo',
+        playerHealth: 100,
+        teleportCount: 0,
+        respawnCount: 0,
+        mobileInput: { x: 0, y: 0, jump: false, sprint: false },
+        
+        // Settings
+        settings: {
+          bloom: true,
+          fxaa: true,
+          vignette: true,
+          grain: false,
+          pixelRatio: window.devicePixelRatio || 1,
+          shadowQuality: 'Medium'
+        },
 
-  setGameState: (state) => set({ gameState: state }),
-  setSelectedCharacter: (char) => set({ selectedCharacter: char }),
-  triggerSpawn: () => set({ teleportCount: get().teleportCount + 1 }),
-  setMobileInput: (input) => set({ mobileInput: { ...get().mobileInput, ...input } }),
-  
-  setSetting: (key, value) => set((state) => ({ 
-    settings: { ...state.settings, [key]: value } 
-  })),
+        setGameState: (state) => set({ gameState: state }),
+        setSelectedCharacter: (char) => set({ selectedCharacter: char }),
+        triggerSpawn: () => set({ teleportCount: get().teleportCount + 1 }),
+        setMobileInput: (input) => set({ mobileInput: { ...get().mobileInput, ...input } }),
+        
+        setSetting: (key, value) => set((state) => ({ 
+          settings: { ...state.settings, [key]: value } 
+        })),
 
-  damagePlayer: (amount) => {
-    const newHealth = Math.max(0, get().playerHealth - amount);
-    set({ playerHealth: newHealth });
-    if (newHealth === 0) {
-      set({ gameState: 'GAMEOVER' });
-    }
-  },
-  
-  healPlayer: (amount) => {
-    const newHealth = Math.min(100, get().playerHealth + amount);
-    set({ playerHealth: newHealth });
-  },
+        damagePlayer: (amount) => {
+          const newHealth = Math.max(0, get().playerHealth - amount);
+          set({ playerHealth: newHealth });
+          if (newHealth === 0) {
+            set({ gameState: 'GAMEOVER' });
+          }
+        },
+        
+        healPlayer: (amount) => {
+          const newHealth = Math.min(100, get().playerHealth + amount);
+          set({ playerHealth: newHealth });
+        },
 
-  respawn: () => set({ playerHealth: 100, gameState: 'PLAYING', respawnCount: get().respawnCount + 1 })
-})));
+        respawn: () => set({ playerHealth: 100, gameState: 'PLAYING', respawnCount: get().respawnCount + 1 })
+      }),
+      {
+        name: 'food-frenzy-storage', // name of the item in storage (must be unique)
+        partialize: (state) => ({ selectedCharacter: state.selectedCharacter, settings: state.settings }), // only persist character and settings
+      }
+    )
+  )
+);
 

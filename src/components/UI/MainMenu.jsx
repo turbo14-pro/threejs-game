@@ -4,20 +4,17 @@ import Options from './Options.jsx';
 
 export default function MainMenu() {
   const setGameState = useGameStore(state => state.setGameState);
-  const setSelectedCharacter = useGameStore(state => state.setSelectedCharacter);
   
-  const [page, setPage] = useState('START'); // 'START' | 'CHARACTER' | 'OPTIONS'
+  const [page, setPage] = useState('START'); // 'START' | 'OPTIONS'
 
-
-  const handleCharacterSelect = (char) => {
-    setSelectedCharacter(char);
+  const handleStartGame = () => {
     setGameState('PLAYING');
     
     // Capture the mouse to enter the game instantly
     setTimeout(() => {
       const canvas = document.querySelector('canvas');
       if (canvas) canvas.requestPointerLock();
-    }, 100); // Slight delay ensures Canvas is mounted by Suspense
+    }, 100);
   };
 
   return (
@@ -30,7 +27,7 @@ export default function MainMenu() {
             <div className="menu-stack">
               <button 
                 className="char-btn main-btn"
-                onClick={() => setPage('CHARACTER')}
+                onClick={handleStartGame}
               >
                 <span className="btn-name">START GAME</span>
               </button>
@@ -54,36 +51,6 @@ export default function MainMenu() {
 
         {page === 'OPTIONS' && (
           <Options onBack={() => setPage('START')} />
-        )}
-
-        {page === 'CHARACTER' && (
-
-          <>
-            <h1>PICK YOUR FIGHTER</h1>
-            <div className="character-grid">
-              <button 
-                className="char-btn"
-                onClick={() => handleCharacterSelect('Avo')}
-              >
-                <span className="btn-name">AVOCADO</span>
-                <span className="btn-desc">ADVENTUROUS BERRY</span>
-              </button>
-              <button 
-                className="char-btn"
-                onClick={() => handleCharacterSelect('EGG')}
-              >
-                <span className="btn-name">THE EGG</span>
-                <span className="btn-desc">FRAGILE HERO</span>
-              </button>
-            </div>
-            <button 
-              className="hint-btn"
-              onClick={() => setPage('START')}
-              style={{ marginTop: '1rem' }}
-            >
-              BACK
-            </button>
-          </>
         )}
 
       </div>

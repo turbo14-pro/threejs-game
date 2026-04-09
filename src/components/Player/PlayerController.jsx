@@ -22,12 +22,28 @@ export default function PlayerController() {
 
   const [, getKeys] = useKeyboardControls();
   const [isMoving, setIsMoving] = useState(false);
+  const [isSprinting, setIsSprinting] = useState(false);
+  const [moveDir, setMoveDir] = useState('for');
+  const [isGrounded, setIsGrounded] = useState(true);
+  const [jumpPhase, setJumpPhase] = useState('none');
+  const jumpTimer = useRef(0);
+  const physicsJumpTriggered = useRef(false);
+  const jumpLock = useRef({ sprint: false, dir: 'for' });
+  const [animConfig, setAnimConfig] = useState(null);
+
+  // Load animation configuration dynamically
+  useEffect(() => {
+    fetch('/skins/animations.json')
+      .then(res => res.json())
+      .then(data => setAnimConfig(data.Melee))
+      .catch(err => console.error("Failed to load animations.json", err));
+  }, []); // Lock animation states during jump phase
 
   // Camera & Zoom State
   const rotationY = useRef(Math.PI);
   const rotationX = useRef(0);
   const zoomDistance = useRef(12); // Default zoom
-  
+
   // Smoothed camera state to prevent clipping via lerp corners
   const smoothRotY = useRef(Math.PI);
   const smoothRotX = useRef(0);
@@ -181,10 +197,10 @@ export default function PlayerController() {
     // Input Aggregation (Keyboard + Mobile)
     const moveX = (keys.right ? 1 : 0) - (keys.left ? 1 : 0) + (mobileInput.x || 0);
     const moveZ = (keys.backward ? 1 : 0) - (keys.forward ? 1 : 0) - (mobileInput.y || 0);
-    const isSprinting = !!(keys.sprint || mobileInput.sprint);
-    const isJumping = !!(keys.jump || mobileInput.jump);
+    const sprintingInput = !!(keys.sprint || mobileInput.sprint);
+    const jumpingInput = !!(keys.jump || mobileInput.jump);
 
-    const speed = isSprinting ? 40 : 14;
+    const speed = sprintingInput ? 30 : 8;
 
     // Movement calculation
     frontVector.set(0, 0, moveZ);
@@ -197,23 +213,120 @@ export default function PlayerController() {
 
     const currentVelocity = rigidBodyRef.current.linvel();
 
-    // Jump Logic
-    if (isJumping && Math.abs(currentVelocity.y) < 0.1) {
-      rigidBodyRef.current.setLinvel({ x: currentVelocity.x, y: 30, z: currentVelocity.z }, true);
+    // Reliable ground detection via Raycast
+    // Ray starts near player's feet (y=-1.2)
+    // Antigravity: Triggering landing transition ~12 frames before impact
+    const rayOriginG = { x: playerPos.x, y: playerPos.y - 1.2, z: playerPos.z };
+    const rayDirG = { x: 0, y: -1, z: 0 };
+    const groundHit = world.castRay(new rapier.Ray(rayOriginG, rayDirG), 0.8, true, null, 0x0001FFFF, null, rigidBodyRef.current);
+    const currentlyGrounded = groundHit !== null;
+
+    // Jump State Machine
+    let currentPhase = jumpPhase;
+
+    if (currentlyGrounded) {
+       // Only allow landing if moving down or stationary
+       if (currentPhase === 'air' && currentVelocity.y <= 1.0) {
+           currentPhase = 'land';
+           jumpTimer.current = 10 / 30; // Wait 10 frames of land before allowing move/idle
+       }
+       
+       if (currentPhase === 'land' || currentPhase === 'none') {
+           if (jumpingInput && Math.abs(currentVelocity.y) < 2.0 && animConfig) {
+               const config = sprintingInput ? animConfig.run_jump : animConfig.jump;
+               currentPhase = 'launch';
+               jumpTimer.current = config.launchFrames / 30; // Use JSON values
+               physicsJumpTriggered.current = false;
+           } else if (currentPhase === 'land') {
+               jumpTimer.current -= delta;
+               if (jumpTimer.current <= 0 || (direction.lengthSq() > 0.01 && currentlyGrounded)) {
+                   currentPhase = 'none';
+               }
+           }
+       }
+
+       if (currentPhase === 'launch') {
+           jumpTimer.current -= delta;
+           const config = jumpLock.current.sprint ? animConfig.run_jump : animConfig.jump;
+           
+           // DYNAMIC LIFTOFF: Trigger physics jump at frame 6 (0.2s) regardless of total launch frames
+           // This provides snappy feedback while the launch animation continues visually.
+           const triggerTime = Math.max(0.05, (config.launchFrames - 6) / 30);
+           if (!physicsJumpTriggered.current && jumpTimer.current <= triggerTime) {
+               rigidBodyRef.current.setLinvel({ x: currentVelocity.x, y: 30, z: currentVelocity.z }, true);
+               physicsJumpTriggered.current = true;
+           }
+
+           if (jumpTimer.current <= 0) {
+               currentPhase = 'air'; 
+           }
+       }
+    } else {
+       // We are freely in the air
+       if (currentPhase === 'none' || currentPhase === 'land') {
+           currentPhase = 'air';
+       }
+       if (currentPhase === 'launch') {
+           jumpTimer.current -= delta;
+           const config = jumpLock.current.sprint ? animConfig.run_jump : animConfig.jump;
+           
+           // Dynamic liftoff even if we fell off a ledge mid-launch
+           const triggerTime = Math.max(0.05, (config.launchFrames - 6) / 30);
+           if (!physicsJumpTriggered.current && jumpTimer.current <= triggerTime) {
+               rigidBodyRef.current.setLinvel({ x: currentVelocity.x, y: 30, z: currentVelocity.z }, true);
+               physicsJumpTriggered.current = true;
+           }
+           
+           if (jumpTimer.current <= 0) {
+               currentPhase = 'air'; 
+           }
+       }
     }
 
-    // Apply Velocity
+    if (jumpPhase !== currentPhase) {
+        // When starting a jump, lock the current sprint/dir state for the animation
+        if (jumpPhase === 'none' && (currentPhase === 'launch' || currentPhase === 'air')) {
+          jumpLock.current = { sprint: sprintingInput, dir: moveDir };
+        }
+        setJumpPhase(currentPhase);
+    }
+
+    // Apply Horizontal Velocity ONLY (preserve vertical velocity)
     rigidBodyRef.current.setLinvel({ x: direction.x, y: rigidBodyRef.current.linvel().y, z: direction.z }, true);
 
-    // Sync animation state
-    const moving = direction.lengthSq() > 0.01;
+    // Sync movement direction for animations with hysteresis
+    const moving = direction.lengthSq() > 0.1; // Increased deadzone
     if (moving !== isMoving) setIsMoving(moving);
 
-    // Character rotation
+    if (sprintingInput !== isSprinting) setIsSprinting(sprintingInput);
+
+    // Contextual movement: Backwards logic
+    // Determine if we should walk backwards based on mesh forward vs camera forward
+    const meshForward = new THREE.Vector3(0, 0, 1).applyQuaternion(playerGroupRef.current.quaternion);
+    const camForward = new THREE.Vector3(0, 0, -1).applyAxisAngle(new THREE.Vector3(0, 1, 0), rotationY.current);
+    
+    // dot > 0.3 defines a VERY generous ~144-degree detection zone
+    // We use a significant hysteresis (0.0 vs 0.3) so that once you start backing up, 
+    // it's very "sticky" and won't flip until you face almost sideways to the camera.
+    const dotThreshold = moveDir === 'bac' ? -0.2 : 0.3;
+    const facingAwayFromCamera = meshForward.dot(camForward) > dotThreshold;
+    const isInputBack = moveZ > 0.05;
+    const shouldBackUp = isInputBack && facingAwayFromCamera;
+
+    let currentMoveDir = 'for';
     if (moving) {
-      const targetRotation = Math.atan2(direction.x, direction.z);
-      playerGroupRef.current.rotation.y = THREE.MathUtils.lerp(playerGroupRef.current.rotation.y, targetRotation, 0.2);
+      if (shouldBackUp) {
+        currentMoveDir = 'bac';
+        const targetRotation = rotationY.current + Math.PI;
+        playerGroupRef.current.rotation.y = THREE.MathUtils.lerp(playerGroupRef.current.rotation.y, targetRotation, 0.2);
+      } else {
+        currentMoveDir = 'for';
+        const targetRotation = Math.atan2(direction.x, direction.z);
+        playerGroupRef.current.rotation.y = THREE.MathUtils.lerp(playerGroupRef.current.rotation.y, targetRotation, 0.2);
+      }
     }
+    
+    if (currentMoveDir !== moveDir) setMoveDir(currentMoveDir);
 
     // ----------------------------------------------------
     // OPTIMIZED 3RD PERSON CAMERA LOGIC (Rubber-banding & Raycast)
@@ -233,7 +346,7 @@ export default function PlayerController() {
     cameraOffset.applyAxisAngle(new THREE.Vector3(1, 0, 0), smoothRotX.current);
     cameraOffset.applyAxisAngle(new THREE.Vector3(0, 1, 0), smoothRotY.current);
     rayDirection.copy(cameraOffset).normalize();
-    
+
     // 3. Define the Ray Origin (Target Point) with smoothing
     // We smooth the anchor point to give a "cinematic" follow feel to the camera's orbit center.
     if (!camera.userData.smoothedTarget) camera.userData.smoothedTarget = new THREE.Vector3().copy(playerPos);
@@ -255,7 +368,7 @@ export default function PlayerController() {
       if (!camera.userData._cameraShape) {
         camera.userData._cameraShape = new rapier.Ball(0.5);
       }
-      
+
       const shapeOrigin = { x: rayOrigin.x, y: rayOrigin.y, z: rayOrigin.z };
       const shapeRotation = { w: 1.0, x: 0.0, y: 0.0, z: 0.0 };
       const shapeVelocity = { x: rayDirection.x, y: rayDirection.y, z: rayDirection.z };
@@ -295,7 +408,7 @@ export default function PlayerController() {
     if (camera.userData.currentZoom === undefined || isNaN(camera.userData.currentZoom)) {
       camera.userData.currentZoom = 12;
     }
-    
+
     if (camera.userData.currentZoom > maxSafeDist) {
       // Snap/fast-lerp inwards to immediately resolve collisions
       camera.userData.currentZoom = THREE.MathUtils.lerp(camera.userData.currentZoom, maxSafeDist, 0.4);
@@ -327,9 +440,14 @@ export default function PlayerController() {
     <RigidBody ref={rigidBodyRef} position={[0, 103, 0]} colliders={false} enabledRotations={[false, false, false]} mass={1} collisionGroups={0x0001FFFF}>
       <CapsuleCollider args={[0.5, 0.8]} />
       <group ref={playerGroupRef} position={[0, -1.3, 0]}>
-        <PlayerModel isMoving={isMoving} isSprinting={useKeyboardControls(s => s.sprint) || mobileInput.sprint} />
+        <PlayerModel 
+          isMoving={jumpPhase === 'none' ? isMoving : true} 
+          moveDir={jumpPhase === 'none' ? moveDir : jumpLock.current.dir} 
+          jumpPhase={jumpPhase} 
+          isSprinting={jumpPhase === 'none' ? isSprinting : jumpLock.current.sprint} 
+          config={animConfig}
+        />
       </group>
     </RigidBody>
   );
 }
-

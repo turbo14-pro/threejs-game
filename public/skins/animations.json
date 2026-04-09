@@ -1,0 +1,19 @@
+{
+  "Melee": {
+    "idle": "melee.idle.glb",
+    "walk_for": "melee.walk.for.glb",
+    "walk_bac": "melee.walk.bac.glb",
+    "run_for": "melee.run.for.glb",
+    "run_bac": "melee.run.bac.glb",
+    "jump": {
+      "file": "melee.jump.glb",
+      "launchFrames": 18,
+      "landFrames": 20
+    },
+    "run_jump": {
+      "file": "melee.run.jump.glb",
+      "launchFrames": 18,
+      "landFrames": 20
+    }
+  }
+}
