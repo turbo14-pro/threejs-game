@@ -4,8 +4,11 @@ import Joystick from './Joystick.jsx';
 import Options from './Options.jsx';
 
 export default function HUD() {
-  const playerHealth = useGameStore(state => state.playerHealth);
-  const selectedCharacter = useGameStore(state => state.selectedCharacter);
+  const playerHealth = useGameStore(state => state.player.health);
+  const selectedCharacter = useGameStore(state => state.player.selectedSkin);
+  const selectedWeapon = useGameStore(state => state.player.selectedWeapon);
+  const matchPhase = useGameStore(state => state.game.phase);
+  const countdown = useGameStore(state => state.game.countdown);
   const setGameState = useGameStore(state => state.setGameState);
   const setMobileInput = useGameStore(state => state.setMobileInput);
   const mobileInput = useGameStore(state => state.mobileInput);
@@ -48,10 +51,10 @@ export default function HUD() {
     setGameState('MENU');
   };
 
-  const respawn = useGameStore(state => state.respawn);
-
   const handleRespawn = () => {
-    respawn();
+    // We can use a custom action here if we want, but for now we'll just reset health
+    useGameStore.getState().damagePlayer(-100); 
+    useGameStore.getState().triggerWorldReset();
   };
 
   return (
@@ -65,6 +68,7 @@ export default function HUD() {
               <div className="controls-grid">
                 <div className="control-row"><span className="key">WASD</span> MOVE</div>
                 <div className="control-row"><span className="key">SHIFT</span> SPRINT</div>
+                <div className="control-row"><span className="key">CTRL</span> SLIDE</div>
                 <div className="control-row"><span className="key">SPACE</span> JUMP</div>
                 <div className="control-row"><span className="key">MOUSE</span> LOOK</div>
                 <div className="control-row"><span className="key">ESC</span> PAUSE</div>
@@ -87,6 +91,10 @@ export default function HUD() {
           <div className="status-value">{selectedCharacter}</div>
         </div>
         <div className="status-item">
+          <div className="status-label">WEAPON</div>
+          <div className="status-value">{selectedWeapon}</div>
+        </div>
+        <div className="status-item">
           <div className="status-label">HEALTH</div>
           <div className="health-bar-bg">
             <div 
@@ -96,6 +104,21 @@ export default function HUD() {
           </div>
         </div>
       </div>
+
+      {/* Leaderboard (Top 4) */}
+      {!isPaused && (
+        <div className="leaderboard">
+          {[1,2,3,4].map(rank => (
+            <div key={rank} className="leader-card">
+              <div className="leader-icon">{rank === 1 ? '🥇' : rank}</div>
+              <div className="leader-info">
+                <div className="leader-name">{rank === 1 ? 'PLAYER' : 'CPU BOT'}</div>
+                <div className="leader-kills">{rank === 1 ? '0' : Math.floor(Math.random() * 5)} KILLS</div>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
 
       {/* Crosshair */}
       {!isPaused && !isTouchDevice && (

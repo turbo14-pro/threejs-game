@@ -17,19 +17,13 @@ export default function PlayerController() {
   const playerGroupRef = useRef();
   const { camera, gl } = useThree();
   const { world, rapier } = useRapier();
-  const gameState = useGameStore(state => state.gameState);
+  const gameState = useGameStore(state => state.game.state);
   const mobileInput = useGameStore(state => state.mobileInput);
-
-  const [, getKeys] = useKeyboardControls();
-  const [isMoving, setIsMoving] = useState(false);
-  const [isSprinting, setIsSprinting] = useState(false);
-  const [moveDir, setMoveDir] = useState('for');
-  const [isGrounded, setIsGrounded] = useState(true);
-  const [jumpPhase, setJumpPhase] = useState('none');
-  const jumpTimer = useRef(0);
-  const physicsJumpTriggered = useRef(false);
-  const jumpLock = useRef({ sprint: false, dir: 'for' });
-  const [animConfig, setAnimConfig] = useState(null);
+  const teleportCount = useGameStore(state => state.teleportCount);
+  const matchPhase = useGameStore(state => state.game.phase);
+  const countdown = useGameStore(state => state.game.countdown);
+  const playerHealth = useGameStore(state => state.player.health);
+  const healPlayer = useGameStore(state => state.healPlayer);
 
   // Load animation configuration dynamically
   useEffect(() => {
@@ -121,13 +115,22 @@ export default function PlayerController() {
         if (count > 0 && rigidBodyRef.current) {
           console.log("🚀 Spawning Player into Arena... Selection Event:", count);
 
-          // Random location on the main arena floor (600x600 surface)
-          const x = (Math.random() - 0.5) * 500;
-          const z = (Math.random() - 0.5) * 500;
-
           // Force wake up and translate
           rigidBodyRef.current.wakeUp();
-          rigidBodyRef.current.setTranslation({ x, y: 5, z }, true);
+
+          // We check the phase to see where to teleport
+          const currentPhase = useGameStore.getState().game.phase;
+          
+          if (currentPhase === 'LOBBY') {
+            // Back to platform
+            rigidBodyRef.current.setTranslation({ x: 0, y: 103, z: 0 }, true);
+          } else {
+            // Into random arena spot
+            const x = (Math.random() - 0.5) * 500;
+            const z = (Math.random() - 0.5) * 500;
+            rigidBodyRef.current.setTranslation({ x, y: 5, z }, true);
+          }
+
           rigidBodyRef.current.setLinvel({ x: 0, y: 0, z: 0 }, true);
 
           // Lock pointer and set game state to playing
@@ -136,7 +139,7 @@ export default function PlayerController() {
           } catch (e) {
             console.warn("Pointer lock request failed (needs user gesture)");
           }
-          useGameStore.setState({ gameState: 'PLAYING' });
+          useGameStore.getState().setGameState('PLAYING');
         }
       }
     );
@@ -199,8 +202,35 @@ export default function PlayerController() {
     const moveZ = (keys.backward ? 1 : 0) - (keys.forward ? 1 : 0) - (mobileInput.y || 0);
     const sprintingInput = !!(keys.sprint || mobileInput.sprint);
     const jumpingInput = !!(keys.jump || mobileInput.jump);
+    const slidingInput = !!(keys.slide || mobileInput.slide);
 
-    const speed = sprintingInput ? 30 : 8;
+    // 1. PHASE HANDLING: Freeze player during PREMATCH and DROP
+    if (matchPhase === 'PREMATCH' || (matchPhase === 'DROP' && countdown > 0)) {
+      rigidBodyRef.current.setLinvel({ x: 0, y: 0, z: 0 }, true);
+      return;
+    }
+
+    // 2. SLIDE LOGIC
+    if (slidingInput && !isSliding && currentlyGrounded && isMoving && !isSprinting) {
+      setIsSliding(true);
+      slideTimer.current = 0.6; // 0.6s slide
+      // Add a burst of speed
+      direction.multiplyScalar(1.5);
+    }
+
+    if (isSliding) {
+      slideTimer.current -= delta;
+      if (slideTimer.current <= 0 || !currentlyGrounded) {
+        setIsSliding(false);
+      }
+    }
+
+    // 3. PASSIVE REGENERATION (Heals if not damaged for 5s)
+    if (Date.now() - lastDamageTime.current > 5000 && playerHealth < 100) {
+      healPlayer(10 * delta); // Heal 10 HP per second
+    }
+
+    const speed = isSliding ? 45 : (sprintingInput ? 30 : 8);
 
     // Movement calculation
     frontVector.set(0, 0, moveZ);
@@ -438,8 +468,8 @@ export default function PlayerController() {
 
   return (
     <RigidBody ref={rigidBodyRef} position={[0, 103, 0]} colliders={false} enabledRotations={[false, false, false]} mass={1} collisionGroups={0x0001FFFF}>
-      <CapsuleCollider args={[0.5, 0.8]} />
-      <group ref={playerGroupRef} position={[0, -1.3, 0]}>
+      <CapsuleCollider args={isSliding ? [0.2, 0.8] : [0.5, 0.8]} />
+      <group ref={playerGroupRef} position={[0, isSliding ? -0.8 : -1.3, 0]}>
         <PlayerModel 
           isMoving={jumpPhase === 'none' ? isMoving : true} 
           moveDir={jumpPhase === 'none' ? moveDir : jumpLock.current.dir} 

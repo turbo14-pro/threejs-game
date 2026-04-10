@@ -17,6 +17,7 @@ export default function App() {
     { name: "right", keys: ["ArrowRight", "KeyD"] },
     { name: "jump", keys: ["Space"] },
     { name: "sprint", keys: ["ShiftLeft", "ShiftRight"] },
+    { name: "slide", keys: ["ControlLeft", "ControlRight"] },
   ], []);
 
   return (

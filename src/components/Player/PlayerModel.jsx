@@ -35,8 +35,8 @@ const applySmoothShader = (material) => {
 
 
 export default function PlayerModel({ isMoving, moveDir, isSprinting, jumpPhase = 'none', config }) {
-  const selectedCharacter = useGameStore(state => state.selectedCharacter);
-  const isAvo = selectedCharacter === 'Avo';
+  const selectedSkin = useGameStore(state => state.player.selectedSkin);
+  const isAvo = selectedSkin === 'avo';
 
   const activeConfig = useMemo(() => {
     return config || {

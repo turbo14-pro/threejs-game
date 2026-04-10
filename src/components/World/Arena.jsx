@@ -84,7 +84,7 @@ const getAdjustmentY = (extent, rotation) => {
  * Displays a character model on a podium with a blue touch pad to switch skins.
  */
 function SkinPodium({ character, position, padOffset }) {
-  const setSelectedCharacter = useGameStore(state => state.setSelectedCharacter);
+  const setPlayerSkin = useGameStore(state => state.setPlayerSkin);
   const { scene } = useGLTF(`/skins/${character.toLowerCase()}.glb`);
   
   const clone = useMemo(() => {
@@ -113,7 +113,7 @@ function SkinPodium({ character, position, padOffset }) {
       <RigidBody 
         type="fixed" 
         sensor 
-        onIntersectionEnter={() => setSelectedCharacter(character)}
+        onIntersectionEnter={() => setPlayerSkin(character.toLowerCase())}
         position={padOffset}
       >
         <CuboidCollider args={[1.5, 0.1, 1.5]} />
@@ -133,6 +133,50 @@ function SkinPodium({ character, position, padOffset }) {
   );
 }
 
+/**
+ * WeaponPodium Component
+ * Allows players to choose their starting weapon.
+ */
+function WeaponPodium({ weapon, position, color = "#ff9300" }) {
+  const setPlayerWeapon = useGameStore(state => state.setPlayerWeapon);
+  const currentWeapon = useGameStore(state => state.player.selectedWeapon);
+  
+  return (
+    <group position={position}>
+      <mesh position={[0, 0.5, 0]} castShadow receiveShadow>
+        <cylinderGeometry args={[1.5, 1.7, 0.8, 32]} />
+        <meshStandardMaterial color="#444444" metalness={0.5} roughness={0.5} />
+      </mesh>
+
+      <TextDrei
+        position={[0, 3, 0]}
+        rotation={[0, Math.PI, 0]}
+        fontSize={1.2}
+        color="white"
+      >
+        {weapon.toUpperCase()}
+      </TextDrei>
+
+      <RigidBody 
+        type="fixed" 
+        sensor 
+        onIntersectionEnter={() => setPlayerWeapon(weapon.toLowerCase())}
+      >
+        <CuboidCollider args={[1.5, 0.5, 1.5]} />
+        <mesh position={[0, 0.1, 0]}>
+          <boxGeometry args={[3, 0.1, 3]} />
+          <meshStandardMaterial 
+            color={currentWeapon === weapon ? "#ffffff" : color} 
+            emissive={currentWeapon === weapon ? "#ffffff" : color} 
+            emissiveIntensity={currentWeapon === weapon ? 10 : 2} 
+            toneMapped={false}
+          />
+        </mesh>
+      </RigidBody>
+    </group>
+  );
+}
+
 
 
 /**
@@ -141,7 +185,40 @@ function SkinPodium({ character, position, padOffset }) {
  * while applying the new procedural wood texture.
  */
 export default function Arena() {
-  const triggerSpawn = useGameStore(state => state.triggerSpawn);
+  const matchPhase = useGameStore(state => state.game.phase);
+  const setMatchPhase = useGameStore(state => state.setMatchPhase);
+  const countdown = useGameStore(state => state.game.countdown);
+  const setCountdown = useGameStore(state => state.setCountdown);
+  const startMatchSequence = useGameStore(state => state.startMatchSequence);
+  const triggerWorldReset = useGameStore(state => state.triggerWorldReset);
+
+  // Match Countdown Timer
+  useEffect(() => {
+    if (matchPhase === 'LOBBY') return;
+    
+    const interval = setInterval(() => {
+      if (countdown > 0) {
+        setCountdown(countdown - 1);
+      } else {
+        // Phase Transitions
+        if (matchPhase === 'PREMATCH') {
+          setMatchPhase('DROP');
+          setCountdown(3);
+          // Teleport to drop platforms
+          triggerWorldReset(); 
+        } else if (matchPhase === 'DROP') {
+          setMatchPhase('BATTLE');
+        }
+      }
+    }, 1000);
+    
+    return () => clearInterval(interval);
+  }, [matchPhase, countdown]);
+
+  const dropPoints = useMemo(() => [
+    [50, 80, 50], [-50, 80, 50], [50, 80, -50], [-50, 80, -50],
+    [100, 80, 0], [-100, 80, 0], [0, 80, 100], [0, 80, -100]
+  ], []);
 
   // Load Cereal Box Model (new mesh 30x12x36)
   const cerealBoxModel = useGLTF('/models/cerealbox.glb');
@@ -442,32 +519,59 @@ export default function Arena() {
       />
 
       {/* START BUTTON (Central on Platform 1) */}
-      <group position={[0, 101, 8]}>
-        <TextDrei
-          position={[0, 5, 0]}
-          rotation={[0, Math.PI, 0]}
-          fontSize={2.5}
-          color="#ffcc00"
-          anchorX="center"
-          anchorY="middle"
-          outlineWidth={0.2}
-          outlineColor="#000000"
-        >
-          START
-        </TextDrei>
-        <RigidBody
-          type="fixed"
-          sensor
-          onIntersectionEnter={() => triggerSpawn()}
-          position={[0, 0.5, 0]}
-        >
-          <CuboidCollider args={[2, 0.5, 2]} />
-          <mesh>
-            <boxGeometry args={[4, 0.2, 4]} />
-            <meshStandardMaterial color="#ffcc00" emissive="#ffcc00" emissiveIntensity={2} toneMapped={false} />
+      {matchPhase === 'LOBBY' && (
+        <group position={[0, 101, 8]}>
+          <TextDrei
+            position={[0, 5, 0]}
+            rotation={[0, Math.PI, 0]}
+            fontSize={2.5}
+            color="#ffcc00"
+            anchorX="center"
+            anchorY="middle"
+            outlineWidth={0.2}
+            outlineColor="#000000"
+          >
+            JOIN BATTLE
+          </TextDrei>
+          <RigidBody
+            type="fixed"
+            sensor
+            onIntersectionEnter={() => startMatchSequence()}
+            position={[0, 0.5, 0]}
+          >
+            <CuboidCollider args={[2, 0.5, 2]} />
+            <mesh>
+              <boxGeometry args={[4, 0.2, 4]} />
+              <meshStandardMaterial color="#ffcc00" emissive="#ffcc00" emissiveIntensity={2} toneMapped={false} />
+            </mesh>
+          </RigidBody>
+        </group>
+      )}
+
+      {/* DROP PLATFORMS (These vanish when match starts) */}
+      {matchPhase === 'DROP' && countdown > 0 && dropPoints.map((pos, i) => (
+        <RigidBody key={`drop-${i}`} type="fixed" position={pos} colliders="cuboid">
+          <mesh receiveShadow>
+            <boxGeometry args={[4, 1, 4]} />
+            <meshStandardMaterial color="#0088ff" emissive="#0088ff" emissiveIntensity={2} />
           </mesh>
         </RigidBody>
-      </group>
+      ))}
+
+      {/* Phase Indicator (In-World) */}
+      {(matchPhase === 'PREMATCH' || (matchPhase === 'DROP' && countdown > 0)) && (
+        <group position={[0, 120, 0]}>
+          <TextDrei
+            fontSize={8}
+            color="#ffffff"
+            position={[0, 0, 0]}
+            outlineWidth={0.5}
+            outlineColor="#000000"
+          >
+            {matchPhase === 'PREMATCH' ? `MATCH STARTING IN ${countdown}...` : `THE DROP: ${countdown}`}
+          </TextDrei>
+        </group>
+      )}
 
       {/* 3. Platform 2 */}
       <RigidBody type="fixed" position={[0, 100, -45]} colliders="cuboid">
@@ -527,6 +631,13 @@ export default function Arena() {
           <planeGeometry args={[20, 2]} />
           <meshStandardMaterial map={darkWoodTexture} roughness={0.4} />
         </mesh>
+      </group>
+
+      {/* WEAPON PODIUMS on Platform 2 */}
+      <group position={[0, 101, -45]}>
+        <WeaponPodium weapon="Baguette" position={[-20, 0, 0]} color="#f1c232" />
+        <WeaponPodium weapon="Donut" position={[0, 0, 0]} color="#ea9999" />
+        <WeaponPodium weapon="Breadstick" position={[20, 0, 0]} color="#ce7e00" />
       </group>
 
       {/* 5. Cereal Box Obstacles (Instanced) */}
