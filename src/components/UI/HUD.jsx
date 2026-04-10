@@ -8,6 +8,7 @@ export default function HUD() {
   const selectedCharacter = useGameStore(state => state.selectedCharacter);
   const setGameState = useGameStore(state => state.setGameState);
   const setMobileInput = useGameStore(state => state.setMobileInput);
+  const mobileInput = useGameStore(state => state.mobileInput);
   
   const [isPaused, setIsPaused] = useState(false);
   const [showOptions, setShowOptions] = useState(false);
@@ -112,9 +113,11 @@ export default function HUD() {
               onTouchEnd={() => setMobileInput({ jump: false })}
             >JUMP</button>
             <button 
-              className="mobile-btn sprint-btn" 
-              onTouchStart={() => setMobileInput({ sprint: true })}
-              onTouchEnd={() => setMobileInput({ sprint: false })}
+              className={`mobile-btn sprint-btn ${mobileInput.sprint ? 'active' : ''}`}
+              onTouchStart={(e) => {
+                e.preventDefault();
+                setMobileInput({ sprint: !mobileInput.sprint });
+              }}
             >SPRINT</button>
           </div>
         </>

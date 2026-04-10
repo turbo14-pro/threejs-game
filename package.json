@@ -9,7 +9,7 @@
     "preview": "vite preview",
     "test": "vitest",
     "test:e2e": "playwright test",
-    "deploy": "npm run build && node deploy.cjs && git push"
+    "deploy": "npm run build && node deploy.cjs && git push origin main"
   },
   "devDependencies": {
     "@playwright/test": "^1.58.2",
