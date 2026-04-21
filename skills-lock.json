@@ -1,6 +1,31 @@
 {
   "version": 1,
   "skills": {
+    "folder-organization": {
+      "source": "delphine-l/claude_global",
+      "sourceType": "github",
+      "computedHash": "53861ab5d1b207c5a3092d94d671374770f151be5a2fd86032749aefdcfc36d2"
+    },
+    "game-performance-optimization": {
+      "source": "shyamsridhar123/chadpowers-superbowl",
+      "sourceType": "github",
+      "computedHash": "3b75b6409cda07c92bbd873b41a26a60c76430501f0ae93c9a2f09bdbdcf43f9"
+    },
+    "mobile-touch-controls": {
+      "source": "shyamsridhar123/chadpowers-superbowl",
+      "sourceType": "github",
+      "computedHash": "8356d847e01352472e55945edd2b2b7fee25918d1bb9bfd54bd33b4c72504519"
+    },
+    "rapier-physics-worker": {
+      "source": "shyamsridhar123/chadpowers-superbowl",
+      "sourceType": "github",
+      "computedHash": "9835e61319cad192b8966656d193559d232aedfce4557c58c60988a3b3fbf8b9"
+    },
+    "react-three-fiber": {
+      "source": "vercel-labs/json-render",
+      "sourceType": "github",
+      "computedHash": "33cfac131cbe9c89b14c4b49ca01e0b0a4a3f9c23bb6c81ac0514143703283e8"
+    },
     "threejs-builder": {
       "source": "chongdashu/cc-skills-nanobananapro",
       "sourceType": "github",
@@ -10,6 +35,11 @@
       "source": "404kidwiz/claude-supercode-skills",
       "sourceType": "github",
       "computedHash": "d301a9fda758128cea3259a7578c0a0b5f0cf871d8f684476dd231f301ae4f7d"
+    },
+    "threejs-webgpu-rendering": {
+      "source": "shyamsridhar123/chadpowers-superbowl",
+      "sourceType": "github",
+      "computedHash": "7c2bfccf8b0fd44fd938569a4f087522d63ef215d645a2e94552fbd15422f730"
     }
   }
 }

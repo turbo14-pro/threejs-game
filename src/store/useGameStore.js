@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { subscribeWithSelector, persist } from 'zustand/middleware';
 import { SKINS, WEAPONS, LEVELS } from '../data/registries';
+import { Logger } from '../utils/Logger';
 
 /**
  * THE MAIN BRAIN (Game Store)
@@ -60,13 +61,18 @@ export const useGameStore = create(
         setCountdown: (val) => set((s) => ({ game: { ...s.game, countdown: val } })),
         
         startMatchSequence: () => {
+          Logger.info('Match', 'Starting battle sequence');
           set((s) => ({ 
-            game: { ...s.game, phase: 'PREMATCH', countdown: 10 } 
+            game: { ...s.game, phase: 'BATTLE', countdown: 0 },
+            teleportCount: s.teleportCount + 1
           }));
         },
 
         // Player Control
-        setPlayerSkin: (skinId) => set((s) => ({ player: { ...s.player, selectedSkin: skinId } })),
+        setPlayerSkin: (skinId) => {
+          Logger.info('Player', `Skin changed to: ${skinId}`);
+          set((s) => ({ player: { ...s.player, selectedSkin: skinId } }));
+        },
         setPlayerWeapon: (weaponId) => set((s) => ({ player: { ...s.player, selectedWeapon: weaponId } })),
         setUsername: (name) => set((s) => ({ player: { ...s.player, username: name } })),
         setIsHiding: (hiding) => set((s) => ({ player: { ...s.player, isHiding: hiding } })),
@@ -76,7 +82,7 @@ export const useGameStore = create(
           set((s) => ({ player: { ...s.player, health: newHealth } }));
           
           if (newHealth <= 0) {
-            // Player died: Update stats and kick back to lobby
+            Logger.info('Player', 'Player died — returning to lobby');
             set((s) => ({ 
               game: { ...s.game, phase: 'LOBBY' },
               player: { 
@@ -110,8 +116,10 @@ export const useGameStore = create(
       }),
       {
         name: 'food-frenzy-data',
+        version: 1,
         // Persistence Strategy: Only save player progress and settings
         partialize: (state) => ({ 
+          saveVersion: 1,
           player: {
             username: state.player.username,
             unlockedSkins: state.player.unlockedSkins,
@@ -120,6 +128,12 @@ export const useGameStore = create(
           },
           settings: state.settings 
         }),
+        // When we change the save format, bump `version` above and add
+        // a case here to convert old data into the new shape.
+        migrate: (savedState, version) => {
+          // version 0 → 1: no changes needed, this is the first version
+          return savedState;
+        },
       }
     )
   )

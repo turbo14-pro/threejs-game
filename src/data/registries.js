@@ -8,14 +8,14 @@ export const SKINS = [
   {
     id: 'avo',
     name: 'Avo',
-    model: '/skins/avo.glb',
+    model: '/skins/skin_avo.glb',
     description: 'The green guard.',
     stats: { speed: 1.0, health: 100 }
   },
   {
     id: 'egg',
     name: 'Egg',
-    model: '/skins/egg.glb',
+    model: '/skins/skin_egg.glb',
     description: 'The golden yolk.',
     stats: { speed: 1.1, health: 80 }
   }

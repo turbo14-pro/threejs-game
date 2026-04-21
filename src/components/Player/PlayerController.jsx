@@ -17,6 +17,7 @@ export default function PlayerController() {
   const playerGroupRef = useRef();
   const { camera, gl } = useThree();
   const { world, rapier } = useRapier();
+  const [, getKeys] = useKeyboardControls();
   const gameState = useGameStore(state => state.game.state);
   const mobileInput = useGameStore(state => state.mobileInput);
   const teleportCount = useGameStore(state => state.teleportCount);
@@ -24,6 +25,21 @@ export default function PlayerController() {
   const countdown = useGameStore(state => state.game.countdown);
   const playerHealth = useGameStore(state => state.player.health);
   const healPlayer = useGameStore(state => state.healPlayer);
+
+  // --- PLAYER STATE ---
+  const [isSliding, setIsSliding] = useState(false);
+  const [isMoving, setIsMoving] = useState(false);
+  const [isWalking, setIsWalking] = useState(false);
+  const [moveDir, setMoveDir] = useState('for');
+  const [jumpPhase, setJumpPhase] = useState('none'); // none, launch, air, land
+  const [animConfig, setAnimConfig] = useState(null);
+
+  // --- REFS / TIMERS ---
+  const slideTimer = useRef(0);
+  const lastDamageTime = useRef(0);
+  const jumpTimer = useRef(0);
+  const physicsJumpTriggered = useRef(false);
+  const jumpLock = useRef({ sprint: false, dir: 'for' });
 
   // Load animation configuration dynamically
   useEffect(() => {
@@ -200,9 +216,15 @@ export default function PlayerController() {
     // Input Aggregation (Keyboard + Mobile)
     const moveX = (keys.right ? 1 : 0) - (keys.left ? 1 : 0) + (mobileInput.x || 0);
     const moveZ = (keys.backward ? 1 : 0) - (keys.forward ? 1 : 0) - (mobileInput.y || 0);
-    const sprintingInput = !!(keys.sprint || mobileInput.sprint);
+    const walkingInput = !!(keys.walk || mobileInput.walk);
     const jumpingInput = !!(keys.jump || mobileInput.jump);
     const slidingInput = !!(keys.slide || mobileInput.slide);
+
+    // Reliable ground detection via Raycast (MOVED TO TOP)
+    const rayOriginG = { x: playerPos.x, y: playerPos.y - 1.2, z: playerPos.z };
+    const rayDirG = { x: 0, y: -1, z: 0 };
+    const groundHit = world.castRay(new rapier.Ray(rayOriginG, rayDirG), 0.8, true, null, 0x0001FFFF, null, rigidBodyRef.current);
+    const currentlyGrounded = groundHit !== null;
 
     // 1. PHASE HANDLING: Freeze player during PREMATCH and DROP
     if (matchPhase === 'PREMATCH' || (matchPhase === 'DROP' && countdown > 0)) {
@@ -210,8 +232,14 @@ export default function PlayerController() {
       return;
     }
 
+    // Determine movement direction vector
+    frontVector.set(0, 0, moveZ);
+    sideVector.set(-moveX, 0, 0);
+    direction.subVectors(frontVector, sideVector);
+    const moving = direction.lengthSq() > 0.01;
+
     // 2. SLIDE LOGIC
-    if (slidingInput && !isSliding && currentlyGrounded && isMoving && !isSprinting) {
+    if (slidingInput && !isSliding && currentlyGrounded && moving && !walkingInput) {
       setIsSliding(true);
       slideTimer.current = 0.6; // 0.6s slide
       // Add a burst of speed
@@ -230,26 +258,16 @@ export default function PlayerController() {
       healPlayer(10 * delta); // Heal 10 HP per second
     }
 
-    const speed = isSliding ? 45 : (sprintingInput ? 30 : 8);
+    const speed = isSliding ? 45 : (walkingInput ? 8 : 30);
 
-    // Movement calculation
-    frontVector.set(0, 0, moveZ);
-    sideVector.set(-moveX, 0, 0);
-    direction.subVectors(frontVector, sideVector);
-    // CRITICAL: normalize() on a zero-vector produces NaN, which corrupts Rapier and freezes the game
+    // apply speed and rotation to direction
     if (direction.lengthSq() > 0) {
       direction.normalize().multiplyScalar(speed).applyAxisAngle(new THREE.Vector3(0, 1, 0), rotationY.current);
     }
 
     const currentVelocity = rigidBodyRef.current.linvel();
 
-    // Reliable ground detection via Raycast
-    // Ray starts near player's feet (y=-1.2)
-    // Antigravity: Triggering landing transition ~12 frames before impact
-    const rayOriginG = { x: playerPos.x, y: playerPos.y - 1.2, z: playerPos.z };
-    const rayDirG = { x: 0, y: -1, z: 0 };
-    const groundHit = world.castRay(new rapier.Ray(rayOriginG, rayDirG), 0.8, true, null, 0x0001FFFF, null, rigidBodyRef.current);
-    const currentlyGrounded = groundHit !== null;
+    // Ground detection already calculated above
 
     // Jump State Machine
     let currentPhase = jumpPhase;
@@ -262,8 +280,8 @@ export default function PlayerController() {
        }
        
        if (currentPhase === 'land' || currentPhase === 'none') {
-           if (jumpingInput && Math.abs(currentVelocity.y) < 2.0 && animConfig) {
-               const config = sprintingInput ? animConfig.run_jump : animConfig.jump;
+            if (jumpingInput && Math.abs(currentVelocity.y) < 2.0 && animConfig) {
+                const config = !walkingInput ? animConfig.run_jump : animConfig.jump;
                currentPhase = 'launch';
                jumpTimer.current = config.launchFrames / 30; // Use JSON values
                physicsJumpTriggered.current = false;
@@ -314,9 +332,9 @@ export default function PlayerController() {
     }
 
     if (jumpPhase !== currentPhase) {
-        // When starting a jump, lock the current sprint/dir state for the animation
+        // When starting a jump, lock the current walk/dir state for the animation
         if (jumpPhase === 'none' && (currentPhase === 'launch' || currentPhase === 'air')) {
-          jumpLock.current = { sprint: sprintingInput, dir: moveDir };
+          jumpLock.current = { sprint: !walkingInput, dir: moveDir };
         }
         setJumpPhase(currentPhase);
     }
@@ -325,10 +343,9 @@ export default function PlayerController() {
     rigidBodyRef.current.setLinvel({ x: direction.x, y: rigidBodyRef.current.linvel().y, z: direction.z }, true);
 
     // Sync movement direction for animations with hysteresis
-    const moving = direction.lengthSq() > 0.1; // Increased deadzone
     if (moving !== isMoving) setIsMoving(moving);
 
-    if (sprintingInput !== isSprinting) setIsSprinting(sprintingInput);
+    if (walkingInput !== isWalking) setIsWalking(walkingInput);
 
     // Contextual movement: Backwards logic
     // Determine if we should walk backwards based on mesh forward vs camera forward
@@ -474,7 +491,7 @@ export default function PlayerController() {
           isMoving={jumpPhase === 'none' ? isMoving : true} 
           moveDir={jumpPhase === 'none' ? moveDir : jumpLock.current.dir} 
           jumpPhase={jumpPhase} 
-          isSprinting={jumpPhase === 'none' ? isSprinting : jumpLock.current.sprint} 
+          isSprinting={jumpPhase === 'none' ? !isWalking : jumpLock.current.sprint} 
           config={animConfig}
         />
       </group>

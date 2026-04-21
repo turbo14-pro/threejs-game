@@ -5,10 +5,12 @@ import { KeyboardControls } from '@react-three/drei';
 import MainMenu from './components/UI/MainMenu.jsx';
 import HUD from './components/UI/HUD.jsx';
 import GameCanvas from './components/GameCanvas.jsx';
+import MCPController from './components/MCPController.jsx';
+import SpeedCheck from './components/World/SpeedCheck.jsx';
 import { useGameStore } from './store/useGameStore.js';
 
 export default function App() {
-  const gameState = useGameStore(state => state.gameState);
+  const gameState = useGameStore(state => state.game.state);
 
   const map = useMemo(() => [
     { name: "forward", keys: ["ArrowUp", "KeyW"] },
@@ -16,7 +18,7 @@ export default function App() {
     { name: "left", keys: ["ArrowLeft", "KeyA"] },
     { name: "right", keys: ["ArrowRight", "KeyD"] },
     { name: "jump", keys: ["Space"] },
-    { name: "sprint", keys: ["ShiftLeft", "ShiftRight"] },
+    { name: "walk", keys: ["ShiftLeft", "ShiftRight"] },
     { name: "slide", keys: ["ControlLeft", "ControlRight"] },
   ], []);
 
@@ -30,6 +32,12 @@ export default function App() {
           <Suspense fallback={null}>
             <color attach="background" args={['#101010']} />
             <GameCanvas />
+            {import.meta.env.DEV && (
+              <>
+                <MCPController />
+                <SpeedCheck />
+              </>
+            )}
           </Suspense>
         </Canvas>
       </div>

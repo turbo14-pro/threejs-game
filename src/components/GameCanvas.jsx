@@ -9,7 +9,7 @@ import Effects from './World/Effects.jsx';
 
 export default function GameCanvas() {
 
-  const gameState = useGameStore(state => state.gameState);
+  const gameState = useGameStore(state => state.game.state);
 
   return (
     <>

@@ -38,6 +38,8 @@ export default function EnvironmentSetup() {
         shadow-camera-right={200}
         shadow-camera-top={200}
         shadow-camera-bottom={-200}
+        shadow-bias={-0.0005}
+        shadow-normalBias={0.4}
       />
       
       {/* 

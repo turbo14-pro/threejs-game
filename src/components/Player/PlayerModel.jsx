@@ -3,29 +3,64 @@ import { useGLTF } from '@react-three/drei';
 import { useFrame } from '@react-three/fiber';
 import * as THREE from 'three';
 import * as SkeletonUtils from 'three/examples/jsm/utils/SkeletonUtils.js';
+import * as BufferGeometryUtils from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { useGameStore } from '../../store/useGameStore';
 
 /**
  * Performant "Smooth" Shader - Adds soft rim lighting and shadow filling 
  * while preserving original colors.
  */
-const applySmoothShader = (material) => {
-  if (material.normalMap) material.normalScale.set(1.5, 1.5);
-  if (material.bumpMap) material.bumpScale = 0.02;
+/**
+ * Advanced Character Material Tool:
+ * This adds "Rim Lighting" (glowing edges) and "Noise Bumps" (procedural texture).
+ * We apply the bumps specifically to materials named 'dark' (the Avo skin).
+ */
+const applyCharacterMaterials = (material) => {
+  material.dithering = true;
+  material.flatShading = false;
+  
+  // Check if this is the 'dark' part of the Avo
+  const isDark = material.name.toLowerCase().includes('dark');
 
   material.onBeforeCompile = (shader) => {
-    shader.uniforms.rimIntensity = { value: 0.4 };
+    shader.uniforms.rimIntensity = { value: 0.3 };
+    shader.uniforms.bumpScale = { value: isDark ? 0.06 : 0.0 };
+
     shader.fragmentShader = `
       uniform float rimIntensity;
+      uniform float bumpScale;
+      
+      // Simple noise for the bumpy look
+      float getNoise(vec2 p) {
+        return fract(sin(dot(p, vec2(12.989, 78.233))) * 43758.545) - 0.5;
+      }
+
       ${shader.fragmentShader}
     `.replace(
+      '#include <normal_fragment_begin>',
+      `
+      #include <normal_fragment_begin>
+      if (bumpScale > 0.0) {
+        // SAFETY: Only use vUv if the model has UV coordinates defined
+        #ifdef USE_UV
+          float n = getNoise(vUv * 60.0) * bumpScale;
+        #else
+          // Fallback to screen space noise if no UVs
+          float n = getNoise(gl_FragCoord.xy * 0.1) * bumpScale;
+        #endif
+        normal = normalize(normal + vec3(n, n, 0.0));
+      }
+      `
+    ).replace(
       '#include <dithering_fragment>',
       `
-      float vDotN = 1.0 - max(dot(normalize(vNormal), normalize(-vViewPosition)), 0.0);
-      float rim = pow(vDotN, 5.0) * rimIntensity;
+      // Shadow filling and Rim light
+      // Use 'rimNormal' to avoid conflict with the built-in 'vNormal' varying
+      vec3 rimNormal = normalize(normal); 
+      vec3 viewDir = normalize(-vViewPosition);
+      float rim = pow(1.0 - max(dot(rimNormal, viewDir), 0.0), 4.0) * rimIntensity;
       gl_FragColor.rgb += diffuseColor.rgb * rim;
-      float bounce = max(0.0, dot(vNormal, vec3(0.0, 1.0, 0.0)));
-      gl_FragColor.rgb = mix(gl_FragColor.rgb, gl_FragColor.rgb + (diffuseColor.rgb * 0.1), (1.0 - bounce) * 0.1);
+      
       #include <dithering_fragment>
       `
     );
@@ -112,14 +147,23 @@ export default function PlayerModel({ isMoving, moveDir, isSprinting, jumpPhase 
       if (node.isMesh) {
         node.castShadow = true;
         node.receiveShadow = true;
+
+        // Ensure low poly character geometry is smoothed via normal averaging
+        if (node.geometry) {
+          // Weld vertices to ensure neighbors share points, allowing smooth normal calculation
+          node.geometry = BufferGeometryUtils.mergeVertices(node.geometry);
+          node.geometry.computeVertexNormals();
+        }
+
         if (node.material) {
           node.material = node.material.clone();
-          applySmoothShader(node.material);
+          applyCharacterMaterials(node.material);
         }
       }
     });
     return clonedScene;
   }, [sourceScene]);
+
 
   // Robust manual mixer and actions management
   const mixer = useMemo(() => new THREE.AnimationMixer(clone), [clone]);

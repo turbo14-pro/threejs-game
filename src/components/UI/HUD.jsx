@@ -67,7 +67,7 @@ export default function HUD() {
             {!isTouchDevice ? (
               <div className="controls-grid">
                 <div className="control-row"><span className="key">WASD</span> MOVE</div>
-                <div className="control-row"><span className="key">SHIFT</span> SPRINT</div>
+                <div className="control-row"><span className="key">SHIFT</span> WALK</div>
                 <div className="control-row"><span className="key">CTRL</span> SLIDE</div>
                 <div className="control-row"><span className="key">SPACE</span> JUMP</div>
                 <div className="control-row"><span className="key">MOUSE</span> LOOK</div>
@@ -136,12 +136,17 @@ export default function HUD() {
               onTouchEnd={() => setMobileInput({ jump: false })}
             >JUMP</button>
             <button 
-              className={`mobile-btn sprint-btn ${mobileInput.sprint ? 'active' : ''}`}
+              className={`mobile-btn walk-btn ${mobileInput.walk ? 'active' : ''}`}
               onTouchStart={(e) => {
                 e.preventDefault();
-                setMobileInput({ sprint: !mobileInput.sprint });
+                setMobileInput({ walk: !mobileInput.walk });
               }}
-            >SPRINT</button>
+            >WALK</button>
+            <button 
+              className="mobile-btn slide-btn"
+              onTouchStart={() => setMobileInput({ slide: true })}
+              onTouchEnd={() => setMobileInput({ slide: false })}
+            >SLIDE</button>
           </div>
         </>
       )}

@@ -519,7 +519,7 @@ export default function Arena() {
       />
 
       {/* START BUTTON (Central on Platform 1) */}
-      {matchPhase === 'LOBBY' && (
+      {matchPhase !== 'BATTLE' && (
         <group position={[0, 101, 8]}>
           <TextDrei
             position={[0, 5, 0]}
