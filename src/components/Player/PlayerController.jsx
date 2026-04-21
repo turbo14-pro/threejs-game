@@ -477,6 +477,11 @@ export default function PlayerController() {
       // Direct assignment instead of lerp! 
       // Lerping position cuts corners into geometry, causing the camera to clip through walls and floors.
       camera.position.copy(camPos);
+      
+      // Hide player model if camera is squished against the wall
+      if (playerGroupRef.current) {
+        playerGroupRef.current.visible = camera.userData.currentZoom > 1.2;
+      }
     }
 
     // Look at the smoothed target
@@ -484,7 +489,7 @@ export default function PlayerController() {
   });
 
   return (
-    <RigidBody ref={rigidBodyRef} position={[0, 103, 0]} colliders={false} enabledRotations={[false, false, false]} mass={1} collisionGroups={0x0001FFFF}>
+    <RigidBody ref={rigidBodyRef} position={[0, 103, 0]} colliders={false} enabledRotations={[false, false, false]} mass={1} collisionGroups={0x0001FFFF} friction={0}>
       <CapsuleCollider args={isSliding ? [0.2, 0.8] : [0.5, 0.8]} />
       <group ref={playerGroupRef} position={[0, isSliding ? -0.8 : -1.3, 0]}>
         <PlayerModel 

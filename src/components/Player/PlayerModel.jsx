@@ -86,8 +86,8 @@ export default function PlayerModel({ isMoving, moveDir, isSprinting, jumpPhase 
   }, [config]);
 
   // Load Models
-  const { scene: avoScene } = useGLTF('/skins/avo.glb');
-  const { scene: eggScene } = useGLTF('/skins/egg.glb');
+  const { scene: avoScene } = useGLTF('/skins/skin_avo.glb');
+  const { scene: eggScene } = useGLTF('/skins/skin_egg.glb');
 
   // Load Animation Files
   const { animations: idleClips } = useGLTF(`/skins/actions/${activeConfig.idle}`);
@@ -247,8 +247,8 @@ export default function PlayerModel({ isMoving, moveDir, isSprinting, jumpPhase 
 }
 
 // Preload everything
-useGLTF.preload('/skins/avo.glb');
-useGLTF.preload('/skins/egg.glb');
+useGLTF.preload('/skins/skin_avo.glb');
+useGLTF.preload('/skins/skin_egg.glb');
 useGLTF.preload(`/skins/actions/melee.idle.glb`);
 useGLTF.preload(`/skins/actions/melee.walk.for.glb`);
 useGLTF.preload(`/skins/actions/melee.walk.bac.glb`);
