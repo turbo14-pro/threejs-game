@@ -221,10 +221,10 @@ const PlayerModel = memo(({ isMoving, moveDir, isSprinting, jumpPhase = 'none', 
       action.play();
 
       if (prevAction.current && prevAction.current.getMixer() === mixer) {
-        // Use 8 frames (8/30 = 0.266s) for transitions into the loop to avoid jitter
+        // Use 2 frames (2/30s) for transitions into the loop to avoid overlap with short animations
         let fadeTime = 0.2;
         if (animState.includes('launch')) fadeTime = 0.05;
-        if (animState.includes('loop')) fadeTime = 8 / 30;
+        if (animState.includes('loop')) fadeTime = 2 / 30;
         
         prevAction.current.crossFadeTo(action, fadeTime, true);
       }

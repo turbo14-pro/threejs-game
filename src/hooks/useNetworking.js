@@ -24,18 +24,19 @@ export function useNetworking() {
     }
 
     // 2. Determine which server to talk to
-    // If we are in 'DEV' mode (npm run dev), use local.
-    // Otherwise, use the production URL from our .env file.
     const isDev = import.meta.env.DEV;
-    const serverUrl = isDev 
+    const rawUrl = isDev 
       ? import.meta.env.VITE_SERVER_URL_LOCAL 
       : import.meta.env.VITE_SERVER_URL_PRODUCTION;
 
-    console.log(`[Network] Attempting to connect to ${isDev ? 'LOCAL' : 'REMOTE'} server:`, serverUrl);
+    // BULLETPROOF CLEANING: Strip 'http://' and any extra ports
+    const cleanHost = rawUrl.replace('http://', '').split(':')[0];
+    const cleanPort = 9208;
 
-    // Connect to the server
-    // We only pass the url now to avoid "Double Port" glitches!
-    const channel = geckos({ url: serverUrl });
+    console.log(`[Network] Connecting to ${isDev ? 'LOCAL' : 'REMOTE'} -> ${cleanHost}:${cleanPort}`);
+
+    // Connect using host and port separately (safest way)
+    const channel = geckos({ host: cleanHost, port: cleanPort });
     channelRef.current = channel;
 
     channel.onConnect(error => {
