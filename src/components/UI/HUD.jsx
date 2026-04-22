@@ -15,6 +15,8 @@ export default function HUD() {
   
   const [isPaused, setIsPaused] = useState(false);
   const [showOptions, setShowOptions] = useState(false);
+  const [showHelp, setShowHelp] = useState(false);
+  const [showControls, setShowControls] = useState(false); // Added Controls state
   const [showTutorial, setShowTutorial] = useState(true);
   const [isTouchDevice, setIsTouchDevice] = useState(false);
 
@@ -26,7 +28,11 @@ export default function HUD() {
     const handlePointerLockChange = () => {
       const locked = !!document.pointerLockElement;
       setIsPaused(!locked);
-      if (locked) setShowOptions(false);
+      if (locked) {
+        setShowOptions(false);
+        setShowHelp(false);
+        setShowControls(false); // Reset controls on lock
+      }
     };
 
 
@@ -68,7 +74,7 @@ export default function HUD() {
               <div className="controls-grid">
                 <div className="control-row"><span className="key">WASD</span> MOVE</div>
                 <div className="control-row"><span className="key">SHIFT</span> WALK</div>
-                <div className="control-row"><span className="key">CTRL</span> SLIDE</div>
+                <div className="control-row"><span className="key">C</span> SLIDE</div>
                 <div className="control-row"><span className="key">SPACE</span> JUMP</div>
                 <div className="control-row"><span className="key">MOUSE</span> LOOK</div>
                 <div className="control-row"><span className="key">ESC</span> PAUSE</div>
@@ -122,7 +128,9 @@ export default function HUD() {
 
       {/* Crosshair */}
       {!isPaused && !isTouchDevice && (
-        <div className="crosshair" />
+        <div className="crosshair">
+          <div className="crosshair-center" />
+        </div>
       )}
 
       {/* Mobile Input UI */}
@@ -157,6 +165,43 @@ export default function HUD() {
           <div className="menu-content" style={{ pointerEvents: 'auto' }}>
             {showOptions ? (
               <Options onBack={() => setShowOptions(false)} />
+            ) : showControls ? (
+              <>
+                <h1>CONTROLS</h1>
+                <div className="controls-grid" style={{ marginBottom: '2.5rem' }}>
+                  {!isTouchDevice ? (
+                    <>
+                      <div className="control-row"><span className="key">WASD</span> MOVE</div>
+                      <div className="control-row"><span className="key">SHIFT</span> WALK</div>
+                      <div className="control-row"><span className="key">C</span> SLIDE</div>
+                      <div className="control-row"><span className="key">SPACE</span> JUMP</div>
+                      <div className="control-row"><span className="key">MOUSE</span> LOOK</div>
+                      <div className="control-row"><span className="key">ESC</span> PAUSE</div>
+                    </>
+                  ) : (
+                    <>
+                      <div className="control-row"><span className="touch-dot"></span> JOYSTICK TO MOVE</div>
+                      <div className="control-row"><span className="touch-dot"></span> DRAG RIGHT TO LOOK</div>
+                      <div className="control-row"><span className="btn-small">TAP BUTTONS</span> ACTION</div>
+                    </>
+                  )}
+                </div>
+                <button className="char-btn main-btn" onClick={() => setShowControls(false)}>
+                  <span className="btn-name">BACK</span>
+                </button>
+              </>
+            ) : showHelp ? (
+              <>
+                <h1>HELP</h1>
+                <div className="menu-stack">
+                  <button className="char-btn main-btn" onClick={() => setShowControls(true)}>
+                    <span className="btn-name">CONTROLS</span>
+                  </button>
+                  <button className="char-btn main-btn" onClick={() => setShowHelp(false)}>
+                    <span className="btn-name">BACK</span>
+                  </button>
+                </div>
+              </>
             ) : (
               <>
                 <h1>PAUSED</h1>
@@ -169,6 +214,12 @@ export default function HUD() {
                     onClick={() => setShowOptions(true)}
                   >
                     <span className="btn-name">OPTIONS</span>
+                  </button>
+                  <button 
+                    className="char-btn main-btn" 
+                    onClick={() => setShowHelp(true)}
+                  >
+                    <span className="btn-name">HELP</span>
                   </button>
                   <button className="char-btn main-btn" onClick={handleRespawn}>
                     <span className="btn-name">RESTART</span>

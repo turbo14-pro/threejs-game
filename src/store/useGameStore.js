@@ -24,10 +24,12 @@ export const useGameStore = create(
         player: {
           username: 'Guest Player',
           selectedSkin: SKINS[0].id,
-          selectedWeapon: WEAPONS[0].id,
+          selectedWeapon: 'Bat',
           health: 100,
           isHiding: false,
           isGrounded: true,
+          networkId: null,
+          playerAnimations: null, // Shared animation config
           // Stats for persistence
           stats: {
             kills: 0,
@@ -42,6 +44,9 @@ export const useGameStore = create(
         // --- TECHNICAL / INPUT ---
         teleportCount: 0, // Used to trigger player position resets
         mobileInput: { x: 0, y: 0, jump: false, sprint: false, slide: false },
+        
+        // --- MULTIPLAYER ---
+        remotePlayers: {}, // { id: { pos, rot, skin, username } }
         
         // --- VISUAL SETTINGS ---
         settings: {
@@ -73,7 +78,9 @@ export const useGameStore = create(
           Logger.info('Player', `Skin changed to: ${skinId}`);
           set((s) => ({ player: { ...s.player, selectedSkin: skinId } }));
         },
-        setPlayerWeapon: (weaponId) => set((s) => ({ player: { ...s.player, selectedWeapon: weaponId } })),
+        setSelectedWeapon: (weapon) => set((s) => ({ player: { ...s.player, selectedWeapon: weapon } })),
+        setNetworkId: (id) => set((s) => ({ player: { ...s.player, networkId: id } })),
+        setPlayerAnimations: (anim) => set((s) => ({ player: { ...s.player, playerAnimations: anim } })),
         setUsername: (name) => set((s) => ({ player: { ...s.player, username: name } })),
         setIsHiding: (hiding) => set((s) => ({ player: { ...s.player, isHiding: hiding } })),
         
@@ -100,6 +107,24 @@ export const useGameStore = create(
           set((s) => ({ player: { ...s.player, health: newHealth } }));
         },
 
+        // Multiplayer Sync
+        updateRemotePlayers: (list) => {
+          const remotePlayers = {};
+          const localId = get().player.networkId;
+          list.forEach(p => {
+            if (p.id !== localId) {
+              remotePlayers[p.id] = p;
+            }
+          });
+          set({ remotePlayers });
+        },
+        removeRemotePlayer: (id) => set((s) => {
+          const newPlayers = { ...s.remotePlayers };
+          delete newPlayers[id];
+          return { remotePlayers: newPlayers };
+        }),
+        setNetworkId: (id) => set((s) => ({ player: { ...s.player, networkId: id } })),
+        
         // System
         triggerWorldReset: () => set({ teleportCount: get().teleportCount + 1 }),
         setMobileInput: (input) => set({ mobileInput: { ...get().mobileInput, ...input } }),

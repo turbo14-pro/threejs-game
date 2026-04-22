@@ -16,12 +16,8 @@ import * as SkeletonUtils from 'three/examples/jsm/utils/SkeletonUtils.js';
  */
 function CerealBoxPhysics({ position, rotation, boxSize }) {
   const { x: w, y: h, z: d } = boxSize;
-  const thickness = 0.5; // Thickness of the "cardboard" walls
-  const doorHeight = 18; // Height of the player entrance (half of 36)
-
-  // Calculate solid part of the front wall relative to the center of the box (0,0,0)
-  const solidPartHeight = Math.max(0, h - doorHeight);
-  const relativeHeaderCenter = h / 2 - solidPartHeight / 2; // Position at the top
+  const thickness = 0.5; // Thickness of the "cardboard"
+  const doorHeight = 16; // Height of the doorway
 
   return (
     <RigidBody
@@ -30,22 +26,24 @@ function CerealBoxPhysics({ position, rotation, boxSize }) {
       rotation={rotation}
       collisionGroups={0x0001FFFF}
     >
-      {/* Bottom Wall (Floor) */}
-      <CuboidCollider args={[w / 2, thickness / 2, d / 2]} position={[0, -h / 2, 0]} />
-
-      {/* Back Wall */}
-      <CuboidCollider args={[w / 2, h / 2, thickness / 2]} position={[0, 0, -d / 2]} />
-      {/* Side Walls */}
-      <CuboidCollider args={[thickness / 2, h / 2, d / 2]} position={[-w / 2, 0, 0]} />
-      <CuboidCollider args={[thickness / 2, h / 2, d / 2]} position={[w / 2, 0, 0]} />
+      {/* 1. Floor */}
+      <CuboidCollider args={[w/2, thickness/2, d/2]} position={[0, -h/2, 0]} />
       
-      {/* Front Wall (Header part only) */}
-      {solidPartHeight > 0 && (
-        <CuboidCollider 
-          args={[w / 2, solidPartHeight / 2, thickness / 2]} 
-          position={[0, relativeHeaderCenter, d / 2]} 
-        />
-      )}
+      {/* 2. Side Walls (Narrower faces are 'd', wider are 'w') */}
+      <CuboidCollider args={[thickness/2, h/2, d/2]} position={[-w/2, 0, 0]} />
+      <CuboidCollider args={[thickness/2, h/2, d/2]} position={[w/2, 0, 0]} />
+      
+      {/* 3. Back Wall */}
+      <CuboidCollider args={[w/2, h/2, thickness/2]} position={[0, 0, -d/2]} />
+      
+      {/* 4. Front Wall with Doorway (Narrow side face) */}
+      {/* This collider is only the TOP part of the front face */}
+      <CuboidCollider 
+        args={[w/2, (h - doorHeight)/2, thickness/2]} 
+        position={[0, h/2 - (h - doorHeight)/2, d/2]} 
+      />
+      
+      {/* NO TOP: Open for jumping in */}
     </RigidBody>
   );
 }
@@ -338,6 +336,15 @@ export default function Arena() {
   const woodTexture = useMemo(() => makeWoodCanvas('#3d2b1f'), []);
   const darkWoodTexture = useMemo(() => makeWoodCanvas('#2a1c13'), []);
 
+  // Seeded random for synced layouts
+  const seededRandom = (seed) => {
+    let s = seed;
+    return () => {
+      s = (s * 9301 + 49297) % 233280;
+      return s / 233280;
+    };
+  };
+
   const woodMaterial = (
     <meshStandardMaterial
       map={woodTexture}
@@ -346,6 +353,7 @@ export default function Arena() {
   );
 
   const cerealBoxes = useMemo(() => {
+    const random = seededRandom(42); // SYNC SEED
     const boxes = [];
     const w = 30, h = 36, d = 12;
     
@@ -372,8 +380,8 @@ export default function Arena() {
       
       // Try to find a non-intersecting position
       while (!valid && attempts < 100) {
-        x = (Math.random() - 0.5) * 520;
-        z = (Math.random() - 0.5) * 520;
+        x = (random() - 0.5) * 520;
+        z = (random() - 0.5) * 520;
         attempts++;
         
         // Don't spawn on the starting platforms
@@ -402,8 +410,8 @@ export default function Arena() {
 
       if (!valid) continue; // If we couldn't find a safe spot, skip this iteration
 
-      const baseRot = orientations[Math.floor(Math.random() * orientations.length)];
-      const spin = Math.floor(Math.random() * 4) * (Math.PI / 2);
+      const baseRot = orientations[Math.floor(random() * orientations.length)];
+      const spin = Math.floor(random() * 4) * (Math.PI / 2);
       const finalRot = [baseRot[0], baseRot[1] + spin, baseRot[2]];
       
       const yOffset = getAdjustmentY(cerealBoxExtent, finalRot);
@@ -644,8 +652,9 @@ export default function Arena() {
       <Instances
         geometry={cerealBoxGeometry}
         material={cerealBoxMaterial}
-        castShadow
-        receiveShadow
+        // Disabled shadows on static boxes for HUGE FPS boost
+        castShadow={false}
+        receiveShadow={false}
       >
         {cerealBoxes.map((box) => (
           <Instance

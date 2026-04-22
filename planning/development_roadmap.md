@@ -68,6 +68,8 @@ This is the main plan for the project.
 
 ---
 
+---
+
 ## Phase 2: Movement, Camera, and Sound
 **Goal:** Build the physics for moving, the camera view, and the main sounds.
 
@@ -106,53 +108,53 @@ This is the main plan for the project.
 
 ---
 
-## Phase 3: The Lobby and World Menus
-**Goal:** Build the match map, the tip popups, and the main screens.
+## Phase 3: The Quick Link (Simple Multiplayer)
+**Goal:** Sync players so you can see each other move in real-time.
 
 ### Stage 3.0: Phase 3 Planning and Research
-1.  **Step 3.0.1:** Create the `planning/phase3_details.md` file.
-2.  **Step 3.0.2:** Design the **Match Order** (The loop: Lobby -> Start -> End -> Play Again).
+1. **Step 3.0.1:** Create the `planning/phase3_details.md` file.
+2. **Step 3.0.2:** Plan the **Geckos Server** (The connection that talks to all players).
 
-### Stage 3.1: The Lobby Map
-1. **Step 3.1.1:** Plan the layout of the Lobby (where players stay before the game starts).
-2. **Step 3.1.2:** Create the **Lobby Map**.
+### Stage 3.1: Building the Server and Client
+1. **Step 3.1.1:** Research and plan how to send position data fast over long distances.
+2. **Step 3.1.2:** Connect the **Network Tool** (Geckos).
+3. **Step 3.1.3:** Build the **Simple Link** (A way to join a room).
 
-### Stage 3.2: Game Screens and Settings
-1. **Step 3.2.1:** Research **Help Messages** and **Screen Resizing** (making buttons look good on phones).
-2. **Step 3.2.2:** Build the **Main Menu, Pause Menu, and Settings**.
-3. **Step 3.2.3:** Build the **Control Editing** screen (changing keys).
+### Stage 3.2: Syncing the Players
+1. **Step 3.2.1:** Make the game update your friend's position on your screen.
+2. **Step 3.2.2:** Sync which **Skin** each player is using from the Master List.
 
-### Stage 3.3: Match Start Countdown
-1. **Step 3.3.1:** Plan the timing and gravity for the fall into the match.
-2. **Step 3.3.2:** Build the **Timer and Drop** (the 3-second countdown before falling into the match).
-*   **Git Goal:** `git commit -m "feat: phase 3.3 - lobby maps and start logic" && git tag -a v0.3.3-lobby -m "Phase 3.3 Lobby and Countdown Complete"`
-
-### Stage 3.4: Testing the Match Loop
-1. **Step 3.4.1:** Can you start a match, play it, and finish it without the game breaking?
-2. **Step 3.4.2:** Does the screen look correct when you change your key bindings?
+### Stage 3.3: Testing the Link
+1. **Step 3.3.1:** Can two people move around the arena without the game crashing?
+2. **Step 3.3.2:** Does the game correctly show when a player leaves?
+*   **Git Goal:** `git commit -m "feat: phase 3.3 - basic player sync" && git tag -a v0.3.3-link -m "Phase 3.3 Multiplayer Link Complete"`
 
 ---
 
-## Phase 4: The Quick Link (Simple Multiplayer)
-**Goal:** Sync players so you can see each other move in real-time.
+## Phase 4: The Lobby and World Menus
+**Goal:** Build the match map, the tip popups, and the main screens.
 
 ### Stage 4.0: Phase 4 Planning and Research
-1. **Step 4.0.1:** Create the `planning/phase4_details.md` file.
-2. **Step 4.0.2:** Plan the **Geckos Server** (The connection that talks to all players).
+1.  **Step 4.0.1:** Create the `planning/phase4_details.md` file.
+2.  **Step 4.0.2:** Design the **Match Order** (The loop: Lobby -> Start -> End -> Play Again).
 
-### Stage 4.1: Building the Server and Client
-1. **Step 4.1.1:** Research and plan how to send position data fast over long distances.
-2. **Step 4.1.2:** Connect the **Network Tool** (Geckos).
-3. **Step 4.1.3:** Build the **Simple Link** (A way to join a room).
+### Stage 4.1: The Lobby Map
+1. **Step 4.1.1:** Plan the layout of the Lobby (where players stay before the game starts).
+2. **Step 4.1.2:** Create the **Lobby Map**.
 
-### Stage 4.2: Syncing the Players
-1. **Step 4.2.1:** Make the game update your friend's position on your screen.
-2. **Step 4.2.2:** Sync which **Skin** each player is using from the Master List.
+### Stage 4.2: Game Screens and Settings
+1. **Step 4.2.1:** Research **Help Messages** and **Screen Resizing** (making buttons look good on phones).
+2. **Step 4.2.2:** Build the **Main Menu, Pause Menu, and Settings**.
+3. **Step 4.2.3:** Build the **Control Editing** screen (changing keys).
 
-### Stage 4.3: Testing the Link
-1. **Step 4.3.1:** Can two people move around the arena without the game crashing?
-2. **Step 4.3.2:** Does the game correctly show when a player leaves?
-*   **Git Goal:** `git commit -m "feat: phase 4.3 - basic player sync" && git tag -a v0.4.3-link -m "Phase 4.3 Multiplayer Link Complete"`
+### Stage 4.3: Match Start Countdown
+1. **Step 4.3.1:** Plan the timing and gravity for the fall into the match.
+2. **Step 4.3.2:** Build the **Timer and Drop** (the 3-second countdown before falling into the match).
+*   **Git Goal:** `git commit -m "feat: phase 4.3 - lobby maps and start logic" && git tag -a v0.4.3-lobby -m "Phase 4.3 Lobby and Countdown Complete"`
+
+### Stage 4.4: Testing the Match Loop
+1. **Step 4.4.1:** Can you start a match, play it, and finish it without the game breaking?
+2. **Step 4.4.2:** Does the screen look correct when you change your key bindings?
 
 ---
 

@@ -1,4 +1,4 @@
-import React, { Suspense, useMemo } from 'react';
+import React, { Suspense, useMemo, useEffect } from 'react';
 import { Canvas } from '@react-three/fiber';
 import * as THREE from 'three';
 import { KeyboardControls } from '@react-three/drei';
@@ -8,9 +8,26 @@ import GameCanvas from './components/GameCanvas.jsx';
 import MCPController from './components/MCPController.jsx';
 import SpeedCheck from './components/World/SpeedCheck.jsx';
 import { useGameStore } from './store/useGameStore.js';
+import { useNetworking } from './hooks/useNetworking.js';
 
 export default function App() {
   const gameState = useGameStore(state => state.game.state);
+  const { sendUpdate } = useNetworking();
+
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      // Prevent browser shortcuts for Ctrl + keys (like Ctrl+S, Ctrl+D)
+      // Note: Some browsers still force Ctrl+W or Ctrl+T to work, so we also add 'KeyC' as an alternative slide key.
+      if (e.ctrlKey && e.code !== 'KeyI' && e.code !== 'KeyR' && e.code !== 'KeyC' && e.code !== 'KeyV') {
+        e.preventDefault();
+      }
+    };
+    
+    window.addEventListener('keydown', handleKeyDown, { passive: false });
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+    };
+  }, []);
 
   const map = useMemo(() => [
     { name: "forward", keys: ["ArrowUp", "KeyW"] },
@@ -19,7 +36,7 @@ export default function App() {
     { name: "right", keys: ["ArrowRight", "KeyD"] },
     { name: "jump", keys: ["Space"] },
     { name: "walk", keys: ["ShiftLeft", "ShiftRight"] },
-    { name: "slide", keys: ["ControlLeft", "ControlRight"] },
+    { name: "slide", keys: ["KeyC"] },
   ], []);
 
   return (
@@ -31,7 +48,7 @@ export default function App() {
         <Canvas shadows={{ type: THREE.PCFShadowMap }} gl={{ antialias: false, toneMapping: THREE.NoToneMapping }} camera={{ position: [0, 50, 100], fov: 75, near: 0.5, far: 2000 }} style={{ position: 'absolute', top: 0, left: 0, zIndex: 0 }}>
           <Suspense fallback={null}>
             <color attach="background" args={['#101010']} />
-            <GameCanvas />
+            <GameCanvas sendUpdate={sendUpdate} />
             {import.meta.env.DEV && (
               <>
                 <MCPController />

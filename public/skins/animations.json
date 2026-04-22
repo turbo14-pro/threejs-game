@@ -7,13 +7,15 @@
     "run_bac": "melee.run.bac.glb",
     "jump": {
       "file": "melee.jump.glb",
-      "launchFrames": 18,
-      "landFrames": 20
+      "launchFrames": 4,
+      "loopFrames": 5,
+      "landFrames": 10
     },
     "run_jump": {
-      "file": "melee.run.jump.glb",
-      "launchFrames": 18,
-      "landFrames": 20
+      "file": "melee.jump.glb",
+      "launchFrames": 4,
+      "loopFrames": 5,
+      "landFrames": 10
     }
   }
 }

@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState, memo } from 'react';
 import { useGLTF } from '@react-three/drei';
 import { useFrame } from '@react-three/fiber';
 import * as THREE from 'three';
@@ -69,12 +69,17 @@ const applyCharacterMaterials = (material) => {
 };
 
 
-export default function PlayerModel({ isMoving, moveDir, isSprinting, jumpPhase = 'none', config }) {
-  const selectedSkin = useGameStore(state => state.player.selectedSkin);
+const PlayerModel = memo(({ isMoving, moveDir, isSprinting, jumpPhase = 'none', config, skinOverride }) => {
+  const localSkin = useGameStore(state => state.player.selectedSkin);
+  const globalAnimConfig = useGameStore(state => state.player.playerAnimations);
+  
+  // LOGIC FIX: If skinOverride is provided (even if null/empty), it means this is a remote player.
+  // Never default a remote player to the local user's skin!
+  const selectedSkin = skinOverride ? skinOverride : (skinOverride === undefined ? localSkin : 'egg');
   const isAvo = selectedSkin === 'avo';
 
   const activeConfig = useMemo(() => {
-    return config || {
+    return config || globalAnimConfig || {
       idle: "melee.idle.glb",
       walk_for: "melee.walk.for.glb",
       walk_bac: "melee.walk.bac.glb",
@@ -83,7 +88,7 @@ export default function PlayerModel({ isMoving, moveDir, isSprinting, jumpPhase 
       jump: { file: "melee.jump.glb", launchFrames: 18, landFrames: 20 },
       run_jump: { file: "melee.run.jump.glb", launchFrames: 18, landFrames: 20 }
     };
-  }, [config]);
+  }, [config, globalAnimConfig]);
 
   // Load Models
   const { scene: avoScene } = useGLTF('/skins/skin_avo.glb');
@@ -121,16 +126,18 @@ export default function PlayerModel({ isMoving, moveDir, isSprinting, jumpPhase 
     addClips(runForClips, 'run_for');
     addClips(runBacClips, 'run_bac');
 
-    // Slice Jump Actions
     const sliceJump = (clips, prefix, config) => {
       const mainClip = clips[0];
       if (!mainClip) return;
 
-      const totalFrames = Math.floor(mainClip.duration * FPS);
-      
-      const launch = THREE.AnimationUtils.subclip(mainClip, `${prefix}_launch`, 0, config.launchFrames, FPS);
-      const loop = THREE.AnimationUtils.subclip(mainClip, `${prefix}_loop`, config.launchFrames, totalFrames - config.landFrames, FPS);
-      const land = THREE.AnimationUtils.subclip(mainClip, `${prefix}_land`, totalFrames - config.landFrames, totalFrames, FPS);
+      const totalFrames = Math.round(mainClip.duration * FPS);
+      const launchEnd = config.launchFrames;
+      const loopEnd = config.loopFrames ? (launchEnd + config.loopFrames) : (totalFrames - config.landFrames);
+      const landStart = config.loopFrames ? loopEnd : (totalFrames - config.landFrames);
+
+      const launch = THREE.AnimationUtils.subclip(mainClip, `${prefix}_launch`, 0, launchEnd, FPS);
+      const loop = THREE.AnimationUtils.subclip(mainClip, `${prefix}_loop`, launchEnd, loopEnd, FPS);
+      const land = THREE.AnimationUtils.subclip(mainClip, `${prefix}_land`, landStart, totalFrames, FPS);
 
       allClips.push(launch, loop, land);
     };
@@ -214,7 +221,11 @@ export default function PlayerModel({ isMoving, moveDir, isSprinting, jumpPhase 
       action.play();
 
       if (prevAction.current && prevAction.current.getMixer() === mixer) {
-        const fadeTime = animState.includes('launch') ? 0.05 : 0.2;
+        // Use 8 frames (8/30 = 0.266s) for transitions into the loop to avoid jitter
+        let fadeTime = 0.2;
+        if (animState.includes('launch')) fadeTime = 0.05;
+        if (animState.includes('loop')) fadeTime = 8 / 30;
+        
         prevAction.current.crossFadeTo(action, fadeTime, true);
       }
 
@@ -244,7 +255,9 @@ export default function PlayerModel({ isMoving, moveDir, isSprinting, jumpPhase 
   });
 
   return <primitive object={clone} scale={[scale, scale, scale]} />;
-}
+});
+
+export default PlayerModel;
 
 // Preload everything
 useGLTF.preload('/skins/skin_avo.glb');

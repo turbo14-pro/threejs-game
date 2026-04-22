@@ -1,10 +1,11 @@
 import React, { useRef, useState, useEffect } from 'react';
 import { useFrame, useThree } from '@react-three/fiber';
 import { useKeyboardControls } from '@react-three/drei';
-import { RigidBody, CapsuleCollider, useRapier } from '@react-three/rapier';
+import { RigidBody, CylinderCollider, CapsuleCollider, CuboidCollider, useRapier } from '@react-three/rapier';
 import * as THREE from 'three';
 import PlayerModel from './PlayerModel.jsx';
 import { useGameStore } from '../../store/useGameStore';
+import { soundManager } from '../../utils/SoundManager';
 
 const direction = new THREE.Vector3();
 const frontVector = new THREE.Vector3();
@@ -12,7 +13,7 @@ const sideVector = new THREE.Vector3();
 const rayDirection = new THREE.Vector3();
 const camPos = new THREE.Vector3();
 
-export default function PlayerController() {
+export default function PlayerController({ sendUpdate }) {
   const rigidBodyRef = useRef();
   const playerGroupRef = useRef();
   const { camera, gl } = useThree();
@@ -25,6 +26,7 @@ export default function PlayerController() {
   const countdown = useGameStore(state => state.game.countdown);
   const playerHealth = useGameStore(state => state.player.health);
   const healPlayer = useGameStore(state => state.healPlayer);
+  const selectedSkin = useGameStore(state => state.player.selectedSkin);
 
   // --- PLAYER STATE ---
   const [isSliding, setIsSliding] = useState(false);
@@ -32,7 +34,11 @@ export default function PlayerController() {
   const [isWalking, setIsWalking] = useState(false);
   const [moveDir, setMoveDir] = useState('for');
   const [jumpPhase, setJumpPhase] = useState('none'); // none, launch, air, land
-  const [animConfig, setAnimConfig] = useState(null);
+  const animConfig = useGameStore(state => state.player.playerAnimations);
+  const setPlayerAnimations = useGameStore(state => state.setPlayerAnimations);
+  const targetRotationY = useRef(Math.PI);
+  const [hasDoubleJumped, setHasDoubleJumped] = useState(false);
+  const netTick = useRef(0);
 
   // --- REFS / TIMERS ---
   const slideTimer = useRef(0);
@@ -40,14 +46,16 @@ export default function PlayerController() {
   const jumpTimer = useRef(0);
   const physicsJumpTriggered = useRef(false);
   const jumpLock = useRef({ sprint: false, dir: 'for' });
+  const lastFootstepTime = useRef(0);
 
   // Load animation configuration dynamically
   useEffect(() => {
+    if (animConfig) return; // Already loaded!
     fetch('/skins/animations.json')
       .then(res => res.json())
-      .then(data => setAnimConfig(data.Melee))
-      .catch(err => console.error("Failed to load animations.json", err));
-  }, []); // Lock animation states during jump phase
+      .then(d => setPlayerAnimations(d.Melee))
+      .catch(err => console.error("PlayerController failed to load animations.json", err));
+  }, [animConfig, setPlayerAnimations]); // Lock animation states during jump phase
 
   // Camera & Zoom State
   const rotationY = useRef(Math.PI);
@@ -136,7 +144,7 @@ export default function PlayerController() {
 
           // We check the phase to see where to teleport
           const currentPhase = useGameStore.getState().game.phase;
-          
+
           if (currentPhase === 'LOBBY') {
             // Back to platform
             rigidBodyRef.current.setTranslation({ x: 0, y: 103, z: 0 }, true);
@@ -175,8 +183,15 @@ export default function PlayerController() {
           rigidBodyRef.current.setLinvel({ x: 0, y: 0, z: 0 }, true);
           rotationY.current = Math.PI;
           smoothRotY.current = Math.PI;
+          targetRotationY.current = Math.PI;
+
+          if (rigidBodyRef.current) {
+            const quat = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), Math.PI);
+            rigidBodyRef.current.setRotation(quat, true);
+          }
+
           if (playerGroupRef.current) {
-            playerGroupRef.current.rotation.y = Math.PI;
+            playerGroupRef.current.rotation.y = 0; // Reset local rotation
           }
 
           try {
@@ -207,8 +222,15 @@ export default function PlayerController() {
       rigidBodyRef.current.setLinvel({ x: 0, y: 0, z: 0 }, true);
       rotationY.current = Math.PI;
       smoothRotY.current = Math.PI;
+      targetRotationY.current = Math.PI;
+
+      if (rigidBodyRef.current) {
+        const quat = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), Math.PI);
+        rigidBodyRef.current.setRotation(quat, true);
+      }
+
       if (playerGroupRef.current) {
-        playerGroupRef.current.rotation.y = Math.PI;
+        playerGroupRef.current.rotation.y = 0;
       }
       return;
     }
@@ -220,8 +242,9 @@ export default function PlayerController() {
     const jumpingInput = !!(keys.jump || mobileInput.jump);
     const slidingInput = !!(keys.slide || mobileInput.slide);
 
-    // Reliable ground detection via Raycast (MOVED TO TOP)
-    const rayOriginG = { x: playerPos.x, y: playerPos.y - 1.2, z: playerPos.z };
+    // Reliable ground detection via Raycast
+    // Start slightly above the feet (-0.8) and cast down far enough (0.8) to stay 'glued' to the floor
+    const rayOriginG = { x: playerPos.x, y: playerPos.y - 0.8, z: playerPos.z };
     const rayDirG = { x: 0, y: -1, z: 0 };
     const groundHit = world.castRay(new rapier.Ray(rayOriginG, rayDirG), 0.8, true, null, 0x0001FFFF, null, rigidBodyRef.current);
     const currentlyGrounded = groundHit !== null;
@@ -273,70 +296,82 @@ export default function PlayerController() {
     let currentPhase = jumpPhase;
 
     if (currentlyGrounded) {
-       // Only allow landing if moving down or stationary
-       if (currentPhase === 'air' && currentVelocity.y <= 1.0) {
-           currentPhase = 'land';
-           jumpTimer.current = 10 / 30; // Wait 10 frames of land before allowing move/idle
-       }
-       
-       if (currentPhase === 'land' || currentPhase === 'none') {
-            if (jumpingInput && Math.abs(currentVelocity.y) < 2.0 && animConfig) {
-                const config = !walkingInput ? animConfig.run_jump : animConfig.jump;
-               currentPhase = 'launch';
-               jumpTimer.current = config.launchFrames / 30; // Use JSON values
-               physicsJumpTriggered.current = false;
-           } else if (currentPhase === 'land') {
-               jumpTimer.current -= delta;
-               if (jumpTimer.current <= 0 || (direction.lengthSq() > 0.01 && currentlyGrounded)) {
-                   currentPhase = 'none';
-               }
-           }
-       }
+      setHasDoubleJumped(false); // Reset double jump
+      // Only allow landing if moving down or stationary
+      if (currentPhase === 'air' && currentVelocity.y <= 1.0) {
+        currentPhase = 'land';
+        const landDuration = (animConfig?.jump?.landFrames || 7) / 30;
+        jumpTimer.current = landDuration;
+        soundManager.playPositional('land', playerGroupRef.current, 0.5);
+      }
 
-       if (currentPhase === 'launch') {
-           jumpTimer.current -= delta;
-           const config = jumpLock.current.sprint ? animConfig.run_jump : animConfig.jump;
-           
-           // DYNAMIC LIFTOFF: Trigger physics jump at frame 6 (0.2s) regardless of total launch frames
-           // This provides snappy feedback while the launch animation continues visually.
-           const triggerTime = Math.max(0.05, (config.launchFrames - 6) / 30);
-           if (!physicsJumpTriggered.current && jumpTimer.current <= triggerTime) {
-               rigidBodyRef.current.setLinvel({ x: currentVelocity.x, y: 30, z: currentVelocity.z }, true);
-               physicsJumpTriggered.current = true;
-           }
+      if (currentPhase === 'land' || currentPhase === 'none') {
+        if (jumpingInput && Math.abs(currentVelocity.y) < 2.0 && animConfig) {
+          const config = !walkingInput ? animConfig.run_jump : animConfig.jump;
+          currentPhase = 'launch';
+          jumpTimer.current = config.launchFrames / 30; // Use JSON values
+          physicsJumpTriggered.current = false;
+          soundManager.playPositional('jump', playerGroupRef.current, 0.4);
+        } else if (currentPhase === 'land') {
+          jumpTimer.current -= delta;
+          if (jumpTimer.current <= 0 || (direction.lengthSq() > 0.01 && currentlyGrounded)) {
+            currentPhase = 'none';
+          }
+        }
+      }
 
-           if (jumpTimer.current <= 0) {
-               currentPhase = 'air'; 
-           }
-       }
+      if (currentPhase === 'launch') {
+        jumpTimer.current -= delta;
+        const config = jumpLock.current.sprint ? animConfig.run_jump : animConfig.jump;
+
+        // DYNAMIC LIFTOFF: Trigger physics jump at frame 6 (0.2s) regardless of total launch frames
+        // This provides snappy feedback while the launch animation continues visually.
+        const triggerTime = Math.max(0.05, (config.launchFrames - 6) / 30);
+        if (!physicsJumpTriggered.current && jumpTimer.current <= triggerTime) {
+          rigidBodyRef.current.setLinvel({ x: currentVelocity.x, y: 30, z: currentVelocity.z }, true);
+          physicsJumpTriggered.current = true;
+        }
+
+        if (jumpTimer.current <= 0) {
+          currentPhase = 'air';
+        }
+      }
     } else {
-       // We are freely in the air
-       if (currentPhase === 'none' || currentPhase === 'land') {
-           currentPhase = 'air';
-       }
-       if (currentPhase === 'launch') {
-           jumpTimer.current -= delta;
-           const config = jumpLock.current.sprint ? animConfig.run_jump : animConfig.jump;
-           
-           // Dynamic liftoff even if we fell off a ledge mid-launch
-           const triggerTime = Math.max(0.05, (config.launchFrames - 6) / 30);
-           if (!physicsJumpTriggered.current && jumpTimer.current <= triggerTime) {
-               rigidBodyRef.current.setLinvel({ x: currentVelocity.x, y: 30, z: currentVelocity.z }, true);
-               physicsJumpTriggered.current = true;
-           }
-           
-           if (jumpTimer.current <= 0) {
-               currentPhase = 'air'; 
-           }
-       }
+      // We are freely in the air
+      if (currentPhase === 'none' || currentPhase === 'land') {
+        currentPhase = 'air';
+      }
+
+      // DOUBLE JUMP LOGIC
+      if (currentPhase === 'air' && jumpingInput && !hasDoubleJumped) {
+        rigidBodyRef.current.setLinvel({ x: currentVelocity.x, y: 30, z: currentVelocity.z }, true);
+        setHasDoubleJumped(true);
+        // We stay in 'air' phase visually but physics gets a boost
+      }
+
+      if (currentPhase === 'launch') {
+        jumpTimer.current -= delta;
+        const config = jumpLock.current.sprint ? animConfig.run_jump : animConfig.jump;
+
+        // Dynamic liftoff even if we fell off a ledge mid-launch
+        const triggerTime = Math.max(0.05, (config.launchFrames - 6) / 30);
+        if (!physicsJumpTriggered.current && jumpTimer.current <= triggerTime) {
+          rigidBodyRef.current.setLinvel({ x: currentVelocity.x, y: 30, z: currentVelocity.z }, true);
+          physicsJumpTriggered.current = true;
+        }
+
+        if (jumpTimer.current <= 0) {
+          currentPhase = 'air';
+        }
+      }
     }
 
     if (jumpPhase !== currentPhase) {
-        // When starting a jump, lock the current walk/dir state for the animation
-        if (jumpPhase === 'none' && (currentPhase === 'launch' || currentPhase === 'air')) {
-          jumpLock.current = { sprint: !walkingInput, dir: moveDir };
-        }
-        setJumpPhase(currentPhase);
+      // When starting a jump, lock the current walk/dir state for the animation
+      if (jumpPhase === 'none' && (currentPhase === 'launch' || currentPhase === 'air')) {
+        jumpLock.current = { sprint: !walkingInput, dir: moveDir };
+      }
+      setJumpPhase(currentPhase);
     }
 
     // Apply Horizontal Velocity ONLY (preserve vertical velocity)
@@ -344,14 +379,22 @@ export default function PlayerController() {
 
     // Sync movement direction for animations with hysteresis
     if (moving !== isMoving) setIsMoving(moving);
-
     if (walkingInput !== isWalking) setIsWalking(walkingInput);
+
+    // FOOTSTEP SOUNDS
+    if (currentlyGrounded && moving && currentPhase === 'none') {
+      const footstepDelay = walkingInput ? 400 : 250; // Faster frequency when sprinting
+      if (Date.now() - lastFootstepTime.current > footstepDelay) {
+        soundManager.playPositional('footstep', playerGroupRef.current, 0.2, 3);
+        lastFootstepTime.current = Date.now();
+      }
+    }
 
     // Contextual movement: Backwards logic
     // Determine if we should walk backwards based on mesh forward vs camera forward
     const meshForward = new THREE.Vector3(0, 0, 1).applyQuaternion(playerGroupRef.current.quaternion);
     const camForward = new THREE.Vector3(0, 0, -1).applyAxisAngle(new THREE.Vector3(0, 1, 0), rotationY.current);
-    
+
     // dot > 0.3 defines a VERY generous ~144-degree detection zone
     // We use a significant hysteresis (0.0 vs 0.3) so that once you start backing up, 
     // it's very "sticky" and won't flip until you face almost sideways to the camera.
@@ -364,16 +407,40 @@ export default function PlayerController() {
     if (moving) {
       if (shouldBackUp) {
         currentMoveDir = 'bac';
-        const targetRotation = rotationY.current + Math.PI;
-        playerGroupRef.current.rotation.y = THREE.MathUtils.lerp(playerGroupRef.current.rotation.y, targetRotation, 0.2);
+        targetRotationY.current = rotationY.current + Math.PI;
       } else {
         currentMoveDir = 'for';
-        const targetRotation = Math.atan2(direction.x, direction.z);
-        playerGroupRef.current.rotation.y = THREE.MathUtils.lerp(playerGroupRef.current.rotation.y, targetRotation, 0.2);
+        targetRotationY.current = Math.atan2(direction.x, direction.z);
       }
     }
-    
+
+    // Instant rotation of the physics body to face the target heading
+    const targetQuat = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), targetRotationY.current);
+    rigidBodyRef.current.setRotation(targetQuat, true);
+
+    // Keep visual model locked to forward of body
+    if (playerGroupRef.current) {
+      playerGroupRef.current.rotation.y = 0;
+    }
+
     if (currentMoveDir !== moveDir) setMoveDir(currentMoveDir);
+
+    // --- NETWORKING: BROADCAST POSITION ---
+    netTick.current = (netTick.current || 0) + 1;
+    if (sendUpdate && netTick.current % 3 === 0) {
+      const pos = rigidBodyRef.current.translation();
+      sendUpdate({
+        pos: [pos.x, pos.y, pos.z],
+        rot: targetRotationY.current,
+        skin: selectedSkin,
+        anim: {
+          mv: moving,
+          dir: currentMoveDir,
+          jp: currentPhase, // currentPhase is the internal jump state
+          spr: !walkingInput
+        }
+      });
+    }
 
     // ----------------------------------------------------
     // OPTIMIZED 3RD PERSON CAMERA LOGIC (Rubber-banding & Raycast)
@@ -397,8 +464,18 @@ export default function PlayerController() {
     // 3. Define the Ray Origin (Target Point) with smoothing
     // We smooth the anchor point to give a "cinematic" follow feel to the camera's orbit center.
     if (!camera.userData.smoothedTarget) camera.userData.smoothedTarget = new THREE.Vector3().copy(playerPos);
-    const targetYOffset = 2;
-    const currentTarget = new THREE.Vector3(playerPos.x, playerPos.y + targetYOffset, playerPos.z);
+    const targetYOffset = 2.2;
+    const shoulderOffset = 2; // Shift camera to the right
+
+    // Calculate the right vector for the shoulder offset
+    const right = new THREE.Vector3().set(1, 0, 0).applyAxisAngle(new THREE.Vector3(0, 1, 0), smoothRotY.current);
+
+    const currentTarget = new THREE.Vector3(
+      playerPos.x + right.x * shoulderOffset,
+      playerPos.y + targetYOffset,
+      playerPos.z + right.z * shoulderOffset
+    );
+
     camera.userData.smoothedTarget.lerp(currentTarget, 0.2);
     const rayOrigin = camera.userData.smoothedTarget;
 
@@ -477,26 +554,34 @@ export default function PlayerController() {
       // Direct assignment instead of lerp! 
       // Lerping position cuts corners into geometry, causing the camera to clip through walls and floors.
       camera.position.copy(camPos);
-      
+
       // Hide player model if camera is squished against the wall
       if (playerGroupRef.current) {
         playerGroupRef.current.visible = camera.userData.currentZoom > 1.2;
       }
     }
 
-    // Look at the smoothed target
-    camera.lookAt(rayOrigin);
+    // Look past the shoulder into the distance so the crosshair points at the world
+    const lookDistance = 100;
+    const lookTarget = new THREE.Vector3().copy(rayOrigin).addScaledVector(rayDirection, -lookDistance);
+    camera.lookAt(lookTarget);
   });
 
   return (
-    <RigidBody ref={rigidBodyRef} position={[0, 103, 0]} colliders={false} enabledRotations={[false, false, false]} mass={1} collisionGroups={0x0001FFFF} friction={0}>
-      <CapsuleCollider args={isSliding ? [0.2, 0.8] : [0.5, 0.8]} />
-      <group ref={playerGroupRef} position={[0, isSliding ? -0.8 : -1.3, 0]}>
-        <PlayerModel 
-          isMoving={jumpPhase === 'none' ? isMoving : true} 
-          moveDir={jumpPhase === 'none' ? moveDir : jumpLock.current.dir} 
-          jumpPhase={jumpPhase} 
-          isSprinting={jumpPhase === 'none' ? !isWalking : jumpLock.current.sprint} 
+    <RigidBody ref={rigidBodyRef} position={[0, 103, 0]} colliders={false} enabledRotations={[false, true, false]} mass={1} collisionGroups={0x0001FFFF} friction={0}>
+      {/* 1. Main Body (Thick Cylinder) */}
+      <CylinderCollider args={[0.5, 1.5]} position={[0, 0.7, 0]} friction={0} />
+
+      {/* 2. 'Step-up' Bottom (Rounded Capsule) */}
+      {/* Aligned so the bottom of the curve is exactly at the feet (-1.2) */}
+      <CapsuleCollider args={[0.1, 1.5]} position={[0, 0.4, 0]} friction={0} />
+
+      <group ref={playerGroupRef} position={[0, isSliding ? -0.8 : -1.2, 0]}>
+        <PlayerModel
+          isMoving={jumpPhase === 'none' ? isMoving : true}
+          moveDir={jumpPhase === 'none' ? moveDir : jumpLock.current.dir}
+          jumpPhase={jumpPhase}
+          isSprinting={jumpPhase === 'none' ? !isWalking : jumpLock.current.sprint}
           config={animConfig}
         />
       </group>

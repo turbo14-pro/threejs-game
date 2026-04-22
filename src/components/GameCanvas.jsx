@@ -4,19 +4,30 @@ import { useGameStore } from '../store/useGameStore';
 import EnvironmentSetup from './World/EnvironmentSetup.jsx';
 import Arena from './World/Arena.jsx';
 import PlayerController from './Player/PlayerController.jsx';
+import RemotePlayers from './Player/RemotePlayers.jsx';
 import MenuCamera from './World/MenuCamera.jsx';
 import Effects from './World/Effects.jsx';
+import SoundListener from './World/SoundListener.jsx';
+import { SKINS } from '../data/registries';
 
-export default function GameCanvas() {
+export default function GameCanvas({ sendUpdate }) {
 
   const gameState = useGameStore(state => state.game.state);
 
   return (
     <>
       <EnvironmentSetup />
+      <SoundListener />
       <Physics gravity={[0, -90, 0]}>
         <Arena />
-        {gameState === 'PLAYING' ? <PlayerController /> : <MenuCamera />}
+        {gameState === 'PLAYING' ? (
+          <>
+            <PlayerController sendUpdate={sendUpdate} />
+            <RemotePlayers />
+          </>
+        ) : (
+          <MenuCamera />
+        )}
       </Physics>
       <Effects />
     </>
