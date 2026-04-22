@@ -173,7 +173,11 @@ const PlayerModel = memo(({ isMoving, moveDir, isSprinting, jumpPhase = 'none', 
 
 
   // Robust manual mixer and actions management
-  const mixer = useMemo(() => new THREE.AnimationMixer(clone), [clone]);
+  // We use a ref to ensure the mixer is absolutely stable across re-renders
+  const mixer = useMemo(() => {
+    if (!clone) return null;
+    return new THREE.AnimationMixer(clone);
+  }, [clone]);
   
   const actions = useMemo(() => {
     const dict = {};

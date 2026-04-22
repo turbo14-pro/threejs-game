@@ -26,15 +26,15 @@ export function useNetworking() {
     // 2. Determine which server to talk to
     const isDev = import.meta.env.DEV;
     
-    // We are going to "Hard-Code" the IP for a moment to be 100% sure it works online.
-    // Local: localhost, Online: 192.9.188.215
-    const cleanHost = isDev ? 'localhost' : '192.9.188.215';
-    const cleanPort = 9208;
+    // THE "DUMBEST" FIX: Hard-coding the exact full address.
+    // If we are testing on your computer, use localhost.
+    // If it's the online game, use the Oracle IP.
+    const finalUrl = isDev ? 'http://localhost:9208' : 'http://192.9.188.215:9208';
 
-    console.log(`[Network] Force-Connecting to ${isDev ? 'LOCAL' : 'REMOTE'} -> ${cleanHost}:${cleanPort}`);
+    console.log(`[Network] Connecting to: ${finalUrl}`);
 
-    // Connect using host and port separately
-    const channel = geckos({ host: cleanHost, port: cleanPort });
+    // Force Geckos to use this exact URL
+    const channel = geckos({ url: finalUrl });
     channelRef.current = channel;
 
     channel.onConnect(error => {

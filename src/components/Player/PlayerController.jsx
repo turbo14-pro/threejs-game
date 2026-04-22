@@ -297,10 +297,10 @@ export default function PlayerController({ sendUpdate }) {
 
     if (currentlyGrounded) {
       setHasDoubleJumped(false); // Reset double jump
-      // Only allow landing if moving down or stationary
-      if (currentPhase === 'air' && currentVelocity.y <= 1.0) {
+      // Only allow landing if moving DOWN and grounded
+      if (currentPhase === 'air' && currentVelocity.y < 0) {
         currentPhase = 'land';
-        const landDuration = (animConfig?.jump?.landFrames || 7) / 30;
+        const landDuration = (animConfig?.jump?.landFrames || 10) / 30;
         jumpTimer.current = landDuration;
         soundManager.playPositional('land', playerGroupRef.current, 0.5);
       }
