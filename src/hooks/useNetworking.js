@@ -34,7 +34,8 @@ export function useNetworking() {
     console.log(`[Network] Attempting to connect to ${isDev ? 'LOCAL' : 'REMOTE'} server:`, serverUrl);
 
     // Connect to the server
-    const channel = geckos({ url: serverUrl, port: 9208 });
+    // We only pass the url now to avoid "Double Port" glitches!
+    const channel = geckos({ url: serverUrl });
     channelRef.current = channel;
 
     channel.onConnect(error => {
