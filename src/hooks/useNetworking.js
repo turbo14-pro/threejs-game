@@ -25,17 +25,15 @@ export function useNetworking() {
 
     // 2. Determine which server to talk to
     const isDev = import.meta.env.DEV;
-    const rawUrl = isDev 
-      ? import.meta.env.VITE_SERVER_URL_LOCAL 
-      : import.meta.env.VITE_SERVER_URL_PRODUCTION;
-
-    // BULLETPROOF CLEANING: Strip 'http://' and any extra ports
-    const cleanHost = rawUrl.replace('http://', '').split(':')[0];
+    
+    // We are going to "Hard-Code" the IP for a moment to be 100% sure it works online.
+    // Local: localhost, Online: 192.9.188.215
+    const cleanHost = isDev ? 'localhost' : '192.9.188.215';
     const cleanPort = 9208;
 
-    console.log(`[Network] Connecting to ${isDev ? 'LOCAL' : 'REMOTE'} -> ${cleanHost}:${cleanPort}`);
+    console.log(`[Network] Force-Connecting to ${isDev ? 'LOCAL' : 'REMOTE'} -> ${cleanHost}:${cleanPort}`);
 
-    // Connect using host and port separately (safest way)
+    // Connect using host and port separately
     const channel = geckos({ host: cleanHost, port: cleanPort });
     channelRef.current = channel;
 
