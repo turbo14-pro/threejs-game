@@ -17,8 +17,9 @@ export function useMultiplayer() {
   useEffect(() => {
     // 1. Connect to the Geckos server
     // Default port is 9208
-    const channel = geckos({ port: 9208 });
-    channelRef.current = channel;
+    // DEACTIVATED: We now use useNetworking.js for the main connection
+    // const channel = geckos({ port: 9208 });
+    // channelRef.current = channel;
 
     channel.onConnect(error => {
       if (error) {

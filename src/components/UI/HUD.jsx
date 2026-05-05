@@ -2,11 +2,11 @@ import React, { useState, useEffect } from 'react';
 import { useGameStore } from '../../store/useGameStore';
 import Joystick from './Joystick.jsx';
 import Options from './Options.jsx';
+import LatencyGraph from './LatencyGraph.jsx';
 
 export default function HUD() {
   const playerHealth = useGameStore(state => state.player.health);
   const selectedCharacter = useGameStore(state => state.player.selectedSkin);
-  const selectedWeapon = useGameStore(state => state.player.selectedWeapon);
   const matchPhase = useGameStore(state => state.game.phase);
   const countdown = useGameStore(state => state.game.countdown);
   const setGameState = useGameStore(state => state.setGameState);
@@ -97,10 +97,6 @@ export default function HUD() {
           <div className="status-value">{selectedCharacter}</div>
         </div>
         <div className="status-item">
-          <div className="status-label">WEAPON</div>
-          <div className="status-value">{selectedWeapon}</div>
-        </div>
-        <div className="status-item">
           <div className="status-label">HEALTH</div>
           <div className="health-bar-bg">
             <div 
@@ -113,17 +109,20 @@ export default function HUD() {
 
       {/* Leaderboard (Top 4) */}
       {!isPaused && (
-        <div className="leaderboard">
-          {[1,2,3,4].map(rank => (
-            <div key={rank} className="leader-card">
-              <div className="leader-icon">{rank === 1 ? '🥇' : rank}</div>
-              <div className="leader-info">
-                <div className="leader-name">{rank === 1 ? 'PLAYER' : 'CPU BOT'}</div>
-                <div className="leader-kills">{rank === 1 ? '0' : Math.floor(Math.random() * 5)} KILLS</div>
+        <>
+          <div className="leaderboard">
+            {[1,2,3,4].map(rank => (
+              <div key={rank} className="leader-card">
+                <div className="leader-icon">{rank === 1 ? '🥇' : rank}</div>
+                <div className="leader-info">
+                  <div className="leader-name">{rank === 1 ? 'PLAYER' : 'CPU BOT'}</div>
+                  <div className="leader-kills">{rank === 1 ? '0' : Math.floor(Math.random() * 5)} KILLS</div>
+                </div>
               </div>
-            </div>
-          ))}
-        </div>
+            ))}
+          </div>
+          <LatencyGraph />
+        </>
       )}
 
       {/* Crosshair */}

@@ -9,6 +9,7 @@ import MCPController from './components/MCPController.jsx';
 import SpeedCheck from './components/World/SpeedCheck.jsx';
 import { useGameStore } from './store/useGameStore.js';
 import { useNetworking } from './hooks/useNetworking.js';
+import NetworkStatus from './components/UI/NetworkStatus.jsx';
 
 export default function App() {
   const gameState = useGameStore(state => state.game.state);
@@ -44,10 +45,12 @@ export default function App() {
       <div style={{ width: '100vw', height: '100vh', position: 'relative' }}>
         {gameState === 'MENU' && <MainMenu />}
         {gameState === 'PLAYING' && <HUD />}
+        <NetworkStatus />
         
-        <Canvas shadows={{ type: THREE.PCFShadowMap }} gl={{ antialias: false, toneMapping: THREE.NoToneMapping }} camera={{ position: [0, 50, 100], fov: 75, near: 0.5, far: 2000 }} style={{ position: 'absolute', top: 0, left: 0, zIndex: 0 }}>
+        <Canvas shadows={{ type: THREE.PCFSoftShadowMap }} gl={{ antialias: false, toneMapping: THREE.NoToneMapping }} camera={{ position: [0, 50, 100], fov: 75, near: 0.5, far: 2000 }} style={{ position: 'absolute', top: 0, left: 0, zIndex: 0 }}>
           <Suspense fallback={null}>
-            <color attach="background" args={['#101010']} />
+            <color attach="background" args={['#958164']} />
+            <fogExp2 attach="fog" args={['#958164', 0.004]} />
             <GameCanvas sendUpdate={sendUpdate} />
             {import.meta.env.DEV && (
               <>

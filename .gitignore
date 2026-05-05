@@ -27,3 +27,14 @@ dist-ssr
 *.sw?
 
 src/models/*.blend
+
+# Secrets
+*.key
+*.key.pub
+
+# Temporary Agent files
+.agents/
+scratch/
+processes.txt
+animation_names.txt
+

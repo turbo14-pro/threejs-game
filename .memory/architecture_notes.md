@@ -37,7 +37,9 @@
 
 | Tool | Purpose | Notes |
 |------|---------|-------|
-| InfinityFree.me | Static hosting | Free tier. Deploy via `deploy.cjs` |
+| InfinityFree.me | Static hosting | Frontend hosting. Deploy via `deploy.cjs` |
+| Oracle Cloud | VPS (Ubuntu) | Backend hosting for Geckos.io server |
+| PM2 | Process Manager | Keeps the Node.js server running 24/7 |
 
 ## 3D Pipeline
 
@@ -54,11 +56,12 @@
 | Three.js MCP | Inspect Three.js scenes | WebSocket connection to running dev server |
 | Sketchfab MCP | Search 3D models | API key in `.env` |
 
-## Multiplayer (Planned)
+## Multiplayer (Live)
 
 | Tool | Purpose | Notes |
 |------|---------|-------|
-| Geckos.io | WebRTC networking | Not yet installed. Planned for Phase 4 |
+| Geckos.io | WebRTC networking | Low-latency movement syncing. Uses port 9208. |
+| STUN (Google) | NAT Traversal | Used for handshake bypass on cloud firewalls |
 
 ---
 

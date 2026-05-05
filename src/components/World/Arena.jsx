@@ -7,6 +7,7 @@ import * as BufferGeometryUtils from 'three/examples/jsm/utils/BufferGeometryUti
 
 import { useGameStore } from '../../store/useGameStore';
 import * as SkeletonUtils from 'three/examples/jsm/utils/SkeletonUtils.js';
+import ArenaLightRays from './LightRays';
 
 /**
  * CerealBoxPhysics Component
@@ -17,6 +18,7 @@ import * as SkeletonUtils from 'three/examples/jsm/utils/SkeletonUtils.js';
 function CerealBoxPhysics({ position, rotation, boxSize }) {
   const { x: w, y: h, z: d } = boxSize;
   const thickness = 0.5; // Thickness of the "cardboard"
+  const t2 = thickness / 2; // Half-thickness for centering
   const doorHeight = 16; // Height of the doorway
 
   return (
@@ -26,21 +28,20 @@ function CerealBoxPhysics({ position, rotation, boxSize }) {
       rotation={rotation}
       collisionGroups={0x0001FFFF}
     >
-      {/* 1. Floor */}
-      <CuboidCollider args={[w/2, thickness/2, d/2]} position={[0, -h/2, 0]} />
+      {/* 1. Floor - Inset by half thickness so top surface matches visual bottom */}
+      <CuboidCollider args={[w/2, t2, d/2]} position={[0, -h/2 + t2, 0]} />
       
-      {/* 2. Side Walls (Narrower faces are 'd', wider are 'w') */}
-      <CuboidCollider args={[thickness/2, h/2, d/2]} position={[-w/2, 0, 0]} />
-      <CuboidCollider args={[thickness/2, h/2, d/2]} position={[w/2, 0, 0]} />
+      {/* 2. Side Walls - Inset so outer surface matches visual width */}
+      <CuboidCollider args={[t2, h/2, d/2]} position={[-w/2 + t2, 0, 0]} />
+      <CuboidCollider args={[t2, h/2, d/2]} position={[w/2 - t2, 0, 0]} />
       
-      {/* 3. Back Wall */}
-      <CuboidCollider args={[w/2, h/2, thickness/2]} position={[0, 0, -d/2]} />
+      {/* 3. Back Wall - Inset so outer surface matches visual depth */}
+      <CuboidCollider args={[w/2, h/2, t2]} position={[0, 0, -d/2 + t2]} />
       
-      {/* 4. Front Wall with Doorway (Narrow side face) */}
-      {/* This collider is only the TOP part of the front face */}
+      {/* 4. Front Wall with Doorway - Inset so outer surface matches visual depth */}
       <CuboidCollider 
-        args={[w/2, (h - doorHeight)/2, thickness/2]} 
-        position={[0, h/2 - (h - doorHeight)/2, d/2]} 
+        args={[w/2, (h - doorHeight)/2, t2]} 
+        position={[0, h/2 - (h - doorHeight)/2, d/2 - t2]} 
       />
       
       {/* NO TOP: Open for jumping in */}
@@ -89,7 +90,7 @@ function SkinPodium({ character, position, padOffset }) {
     const c = SkeletonUtils.clone(scene);
     c.traverse(node => {
       if (node.isMesh) {
-        node.castShadow = true;
+        node.castShadow = false;
         node.receiveShadow = true;
       }
     });
@@ -99,7 +100,7 @@ function SkinPodium({ character, position, padOffset }) {
   return (
     <group position={position}>
       {/* Podium Plate */}
-      <mesh position={[0, 0.5, 0]} castShadow receiveShadow>
+      <mesh position={[0, 0.5, 0]} receiveShadow>
         <cylinderGeometry args={[2.5, 2.7, 1, 32]} />
         <meshStandardMaterial color="#444444" metalness={0.8} roughness={0.2} />
       </mesh>
@@ -141,7 +142,7 @@ function WeaponPodium({ weapon, position, color = "#ff9300" }) {
   
   return (
     <group position={position}>
-      <mesh position={[0, 0.5, 0]} castShadow receiveShadow>
+      <mesh position={[0, 0.5, 0]} receiveShadow>
         <cylinderGeometry args={[1.5, 1.7, 0.8, 32]} />
         <meshStandardMaterial color="#444444" metalness={0.5} roughness={0.5} />
       </mesh>
@@ -498,6 +499,8 @@ export default function Arena() {
         <meshStandardMaterial color="#880000" roughness={0.8} />
       </mesh>
 
+      <ArenaLightRays />
+      
       {/* Platform Boundaries */}
       <group position={[0, 100, 0]}>
         <RigidBody type="fixed" position={[0, 2, 15]} collisionGroups={0x0002FFFF}> <CuboidCollider args={[35, 2, 0.5]} /> </RigidBody>
@@ -648,24 +651,29 @@ export default function Arena() {
         <WeaponPodium weapon="Breadstick" position={[20, 0, 0]} color="#ce7e00" />
       </group>
 
-      {/* 5. Cereal Box Obstacles (Instanced) */}
-      <Instances
-        geometry={cerealBoxGeometry}
-        material={cerealBoxMaterial}
-        // Disabled shadows on static boxes for HUGE FPS boost
-        castShadow={false}
-        receiveShadow={false}
-      >
-        {cerealBoxes.map((box) => (
-          <Instance
-            key={box.id}
-            position={box.position}
-            rotation={box.rotation}
+      {/* 5. Cereal Box Obstacles (Individual Meshes with Custom Shader) */}
+      {cerealBoxes.map((box) => (
+        <mesh
+          key={`mesh-${box.id}`}
+          geometry={cerealBoxGeometry}
+          position={box.position}
+          rotation={box.rotation}
+          castShadow
+          receiveShadow
+          layers={0}
+          frustumCulled={false}
+        >
+          <meshStandardMaterial 
+            map={munchiesTexture}
             color={box.color}
+            side={THREE.DoubleSide}
+            onBeforeCompile={(shader) => {
+              // Copy the original shader logic to this instance
+              cerealBoxMaterial.onBeforeCompile(shader);
+            }}
           />
-        ))}
-      </Instances>
-
+        </mesh>
+      ))}
 
       {/* 6. Cereal Box Physics */}
       {cerealBoxes.map((box) => (

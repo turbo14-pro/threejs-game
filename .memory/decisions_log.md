@@ -303,3 +303,66 @@
 **Agent**: Antigravity (AI).
 
 ---
+
+### 2026-04-23 - Multiplayer Hosting: Oracle Cloud VPS
+**Context**: Static hosting (InfinityFree) cannot run Node.js processes needed for the Geckos.io server. Needed a persistent server for signaling and relay.  
+**Decision**:  
+1. Use **Oracle Cloud "Always Free" Arm Instance** running Ubuntu.  
+2. Open **Port 9208 (TCP/UDP)** in the Oracle Security List and OS firewall (iptables).  
+3. Use **PM2** for process management and auto-restart.  
+**Impact**: Multiplayer logic runs on a dedicated VPS. Frontend remains on InfinityFree. Cross-origin communication handled via Geckos.io signaling.  
+**Agent**: Dev (human) + Antigravity (AI).
+
+---
+
+### 2026-04-23 - Networking Fix: STUN + Public IP Injection
+**Context**: Connection handshakes were hanging because the server was advertising internal/private IPs (127.0.0.1 or 10.x.x.x) instead of its public face.  
+**Decision**:  
+1. Add **Google STUN servers** to both client and server configurations.  
+2. Use the **GECKOS_PUBLIC_IP** environment variable on the server to force its identity.  
+3. Restrict Geckos to use **port 9208** for all WebRTC data via the `portRange` setting.  
+**Impact**: Successfully bypassed the cloud NAT firewall. Handshake succeeds in both Node.js and Browser environments.  
+**Agent**: Antigravity (AI).
+
+---
+
+### 2026-04-23 - UI Status: Glassmorphism Network Notifications
+**Context**: Needed a way to show players the connection status (Connecting, Online, Error) without requiring them to check the console.  
+**Decision**:  
+1. Implement a **NetworkStatus** component in React using **framer-motion**.  
+2. Use a **glassmorphism style** (blur, semi-transparent background) for a premium feel.  
+3. Link the UI to the global **Zustand store** (`networkStatus` field).  
+**Impact**: Players get instant visual feedback. Improved professional aesthetic for the game's HUD.  
+
+---
+
+### 2026-05-01 - Hybrid Physics Sync: Magnet + Local Prediction
+**Context**: Remote player movement was laggy with pure interpolation, and physics interactions (hits) were rubber-banding due to "Magnet" pull-back.  
+**Decision**:  
+1. Use a **PD Controller (Magnet)** with stiff constants (k=300, d=20) to pull remote players toward their network target.  
+2. Implement **Local Physics Prediction** for impacts: every client applies the hit impulse instantly to the remote player's body when an `impact` event is received.  
+3. Disable the "Magnet" pull for **1.2s** during a hit to allow the natural physics flight to finish.  
+**Impact**: Instant, snappy hits for observers. No rubber-banding during knockbacks. Hits look real-time for everyone.  
+**Agent**: Antigravity (AI).
+
+---
+
+### 2026-05-01 - Network Heartbeat: Latency Visualization
+**Context**: Needed to debug "ghost lag" and monitor server responsiveness.  
+**Decision**:  
+1. Implement a **Ping-Pong** system (Client sends `ping` -> Server responds with same timestamp -> Client measures RTT).  
+2. Added a **LatencyGraph** UI component in the top-right HUD.  
+**Impact**: Full transparency into network health. Confirmed stable round-trip times to Oracle instance.  
+**Agent**: Antigravity (AI).
+
+---
+
+### 2026-05-01 - Tick-Based Update Ordering
+**Context**: Packet jitter was causing remote players to "jump" backwards or jitter in place.  
+**Decision**:  
+1. Added a global `serverTick` counter on the server (increments at 30Hz).  
+2. Every network update includes the current tick.  
+**Impact**: Clients now have a reference for ordering packets, preventing jitter from late arrivals.  
+**Agent**: Antigravity (AI).
+
+---

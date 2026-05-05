@@ -5,17 +5,26 @@
     "walk_bac": "melee.walk.bac.glb",
     "run_for": "melee.run.for.glb",
     "run_bac": "melee.run.bac.glb",
+    "slide": "melee.slide.glb",
+    "doublejump": {
+      "file": "melee.doublejump.glb",
+      "frames": 20
+    },
+    "doublejump_back": {
+      "file": "melee.doublejumpback.glb",
+      "frames": 27
+    },
     "jump": {
       "file": "melee.jump.glb",
-      "launchFrames": 4,
-      "loopFrames": 5,
-      "landFrames": 10
+      "launchFrames": 6,
+      "loopFrames": 19,
+      "landFrames": 9
     },
     "run_jump": {
       "file": "melee.jump.glb",
-      "launchFrames": 4,
-      "loopFrames": 5,
-      "landFrames": 10
+      "launchFrames": 6,
+      "loopFrames": 19,
+      "landFrames": 9
     }
   }
 }

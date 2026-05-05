@@ -27,6 +27,9 @@ export default function PlayerController({ sendUpdate }) {
   const playerHealth = useGameStore(state => state.player.health);
   const healPlayer = useGameStore(state => state.healPlayer);
   const selectedSkin = useGameStore(state => state.player.selectedSkin);
+  const addShockwave = useGameStore(state => state.addShockwave);
+  const knockbackCount = useGameStore(state => state.knockbackCount);
+  const knockbackDir = useGameStore(state => state.knockbackDir);
 
   // --- PLAYER STATE ---
   const [isSliding, setIsSliding] = useState(false);
@@ -47,6 +50,10 @@ export default function PlayerController({ sendUpdate }) {
   const physicsJumpTriggered = useRef(false);
   const jumpLock = useRef({ sprint: false, dir: 'for' });
   const lastFootstepTime = useRef(0);
+  const prevJumpingInput = useRef(false);
+  const externalForce = useRef(new THREE.Vector3());
+  const worldVelocityRef = useRef(new THREE.Vector3());
+  const preImpactVelocity = useRef(new THREE.Vector3());
 
   // Load animation configuration dynamically
   useEffect(() => {
@@ -154,8 +161,8 @@ export default function PlayerController({ sendUpdate }) {
             const z = (Math.random() - 0.5) * 500;
             rigidBodyRef.current.setTranslation({ x, y: 5, z }, true);
           }
-
           rigidBodyRef.current.setLinvel({ x: 0, y: 0, z: 0 }, true);
+          rigidBodyRef.current.setAngvel({ x: 0, y: 0, z: 0 }, true);
 
           // Lock pointer and set game state to playing
           try {
@@ -185,13 +192,8 @@ export default function PlayerController({ sendUpdate }) {
           smoothRotY.current = Math.PI;
           targetRotationY.current = Math.PI;
 
-          if (rigidBodyRef.current) {
-            const quat = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), Math.PI);
-            rigidBodyRef.current.setRotation(quat, true);
-          }
-
           if (playerGroupRef.current) {
-            playerGroupRef.current.rotation.y = 0; // Reset local rotation
+            playerGroupRef.current.rotation.y = Math.PI; // Match targetRotationY
           }
 
           try {
@@ -204,6 +206,46 @@ export default function PlayerController({ sendUpdate }) {
     );
     return unsubscribe;
   }, [gl]);
+
+  // --- SKIN SYNC ---
+  // Sends our skin to the server whenever it changes.
+  // Because the server now "merges" data, this one-off packet 
+  // will update our skin in the global list without overwriting our position.
+  useEffect(() => {
+    if (sendUpdate && selectedSkin) {
+      console.log("👗 Sending Skin Update to Server:", selectedSkin);
+      sendUpdate({ skin: selectedSkin });
+    }
+  }, [selectedSkin, sendUpdate]);
+
+  // Knockback effect listener
+  useEffect(() => {
+    if (knockbackCount > 0 && rigidBodyRef.current) {
+      const setIsStunned = useGameStore.getState().setIsStunned;
+      setIsStunned(true);
+      
+      const forceMultiplier = 250;
+      // 1. Horizontal push
+      externalForce.current.set(
+        knockbackDir.x * forceMultiplier,
+        0,
+        knockbackDir.z * forceMultiplier
+      );
+      
+      // 2. Vertical pop
+      const currentVel = rigidBodyRef.current.linvel();
+      rigidBodyRef.current.setLinvel({
+        x: currentVel.x,
+        y: 55,
+        z: currentVel.z
+      }, true);
+      
+      soundManager.playPositional('hit', playerGroupRef.current, 0.5);
+
+      // Yield control for 1.2s to allow the flight to finish
+      setTimeout(() => setIsStunned(false), 1200);
+    }
+  }, [knockbackCount]);
 
   useFrame((state, delta) => {
     if (gameState !== 'PLAYING' || !rigidBodyRef.current || !playerGroupRef.current) return;
@@ -224,13 +266,8 @@ export default function PlayerController({ sendUpdate }) {
       smoothRotY.current = Math.PI;
       targetRotationY.current = Math.PI;
 
-      if (rigidBodyRef.current) {
-        const quat = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), Math.PI);
-        rigidBodyRef.current.setRotation(quat, true);
-      }
-
       if (playerGroupRef.current) {
-        playerGroupRef.current.rotation.y = 0;
+        playerGroupRef.current.rotation.y = Math.PI; // Match targetRotationY
       }
       return;
     }
@@ -242,12 +279,58 @@ export default function PlayerController({ sendUpdate }) {
     const jumpingInput = !!(keys.jump || mobileInput.jump);
     const slidingInput = !!(keys.slide || mobileInput.slide);
 
-    // Reliable ground detection via Raycast
-    // Start slightly above the feet (-0.8) and cast down far enough (0.8) to stay 'glued' to the floor
-    const rayOriginG = { x: playerPos.x, y: playerPos.y - 0.8, z: playerPos.z };
-    const rayDirG = { x: 0, y: -1, z: 0 };
-    const groundHit = world.castRay(new rapier.Ray(rayOriginG, rayDirG), 0.8, true, null, 0x0001FFFF, null, rigidBodyRef.current);
-    const currentlyGrounded = groundHit !== null;
+    // Reliable ground detection via ShapeCast (SphereCast)
+    // Replaces the single thin RayCast so that standing on edges works correctly
+    let currentlyGrounded = false;
+    let veryCloseToGround = false;
+
+    try {
+      // Lazy initialize the ground check shape once
+      if (playerGroupRef.current && !playerGroupRef.current.userData._groundShape) {
+        playerGroupRef.current.userData._groundShape = new rapier.Ball(0.3); // Match player radius
+      }
+      
+      if (playerGroupRef.current?.userData?._groundShape) {
+        const groundShape = playerGroupRef.current.userData._groundShape;
+        const shapeRotation = { w: 1.0, x: 0.0, y: 0.0, z: 0.0 };
+        const rayDirG = { x: 0, y: -1, z: 0 };
+
+        // 1. Glue Sensor (Long): Keeps physics stable
+        const glueHit = world.castShape(
+          playerPos,
+          shapeRotation,
+          rayDirG,
+          groundShape,
+          0.0,
+          2.6, // Distance from center for 5m pill (bottom is at -2.5)
+          true,
+          null,
+          0x00010001,
+          null,
+          rigidBodyRef.current
+        );
+        currentlyGrounded = glueHit !== null;
+
+        // 2. Impact Sensor (Short): Only triggers landing animation when very close to ground
+        const impactHit = world.castShape(
+          playerPos,
+          shapeRotation,
+          rayDirG,
+          groundShape,
+          0.0,
+          2.6,
+          true,
+          null,
+          0x00010001,
+          null,
+          rigidBodyRef.current
+        );
+        veryCloseToGround = impactHit !== null;
+      }
+    } catch (e) {
+      // Fallback if castShape fails for some reason during hot-reload
+      currentlyGrounded = false;
+    }
 
     // 1. PHASE HANDLING: Freeze player during PREMATCH and DROP
     if (matchPhase === 'PREMATCH' || (matchPhase === 'DROP' && countdown > 0)) {
@@ -260,6 +343,11 @@ export default function PlayerController({ sendUpdate }) {
     sideVector.set(-moveX, 0, 0);
     direction.subVectors(frontVector, sideVector);
     const moving = direction.lengthSq() > 0.01;
+    
+    // DEBUG: Only log if we are moving or if we just stopped
+    if (moving || isMoving) {
+      // console.log(`[Move Debug] moveX: ${moveX.toFixed(2)}, moveZ: ${moveZ.toFixed(2)}, moving: ${moving}`);
+    }
 
     // 2. SLIDE LOGIC
     if (slidingInput && !isSliding && currentlyGrounded && moving && !walkingInput) {
@@ -267,6 +355,12 @@ export default function PlayerController({ sendUpdate }) {
       slideTimer.current = 0.6; // 0.6s slide
       // Add a burst of speed
       direction.multiplyScalar(1.5);
+      // Ensure we don't carry upward momentum when starting a slide
+      const curVel = rigidBodyRef.current.linvel();
+      rigidBodyRef.current.setLinvel({ x: curVel.x, y: Math.min(curVel.y, 0), z: curVel.z }, true);
+      // Force player down a little to stay close to ground
+      // removed duplicate curVel declaration
+      rigidBodyRef.current.setLinvel({ x: curVel.x, y: -5, z: curVel.z }, true);
     }
 
     if (isSliding) {
@@ -297,10 +391,10 @@ export default function PlayerController({ sendUpdate }) {
 
     if (currentlyGrounded) {
       setHasDoubleJumped(false); // Reset double jump
-      // Only allow landing if moving DOWN and grounded
-      if (currentPhase === 'air' && currentVelocity.y < 0) {
+      // Only allow landing if moving DOWN and VERY CLOSE to the ground
+      if ((currentPhase === 'air' || currentPhase === 'doublejump') && currentVelocity.y < 0 && veryCloseToGround) {
         currentPhase = 'land';
-        const landDuration = (animConfig?.jump?.landFrames || 10) / 30;
+        const landDuration = (animConfig?.jump?.landFrames || 10) / (30 * 1.6);
         jumpTimer.current = landDuration;
         soundManager.playPositional('land', playerGroupRef.current, 0.5);
       }
@@ -328,7 +422,7 @@ export default function PlayerController({ sendUpdate }) {
         // This provides snappy feedback while the launch animation continues visually.
         const triggerTime = Math.max(0.05, (config.launchFrames - 6) / 30);
         if (!physicsJumpTriggered.current && jumpTimer.current <= triggerTime) {
-          rigidBodyRef.current.setLinvel({ x: currentVelocity.x, y: 30, z: currentVelocity.z }, true);
+          rigidBodyRef.current.setLinvel({ x: currentVelocity.x, y: 38, z: currentVelocity.z }, true);
           physicsJumpTriggered.current = true;
         }
 
@@ -343,10 +437,24 @@ export default function PlayerController({ sendUpdate }) {
       }
 
       // DOUBLE JUMP LOGIC
-      if (currentPhase === 'air' && jumpingInput && !hasDoubleJumped) {
-        rigidBodyRef.current.setLinvel({ x: currentVelocity.x, y: 30, z: currentVelocity.z }, true);
+      if (currentPhase === 'air' && jumpingInput && !prevJumpingInput.current && !hasDoubleJumped) {
+        rigidBodyRef.current.setLinvel({ x: currentVelocity.x, y: 35, z: currentVelocity.z }, true);
         setHasDoubleJumped(true);
-        // We stay in 'air' phase visually but physics gets a boost
+        currentPhase = 'doublejump';
+        
+        const isBack = jumpLock.current.dir === 'bac';
+        const djConfig = isBack ? animConfig?.doublejump_back : animConfig?.doublejump;
+        const frames = djConfig?.frames || 15;
+        jumpTimer.current = frames / 30;
+        
+        soundManager.playPositional('jump', playerGroupRef.current, 0.3); // Add double jump sound
+      }
+
+      if (currentPhase === 'doublejump') {
+        jumpTimer.current -= delta;
+        if (jumpTimer.current <= 0) {
+          currentPhase = 'air';
+        }
       }
 
       if (currentPhase === 'launch') {
@@ -368,14 +476,23 @@ export default function PlayerController({ sendUpdate }) {
 
     if (jumpPhase !== currentPhase) {
       // When starting a jump, lock the current walk/dir state for the animation
-      if (jumpPhase === 'none' && (currentPhase === 'launch' || currentPhase === 'air')) {
+      if (jumpPhase === 'none' && (currentPhase === 'launch' || currentPhase === 'air' || currentPhase === 'doublejump')) {
         jumpLock.current = { sprint: !walkingInput, dir: moveDir };
       }
       setJumpPhase(currentPhase);
     }
 
     // Apply Horizontal Velocity ONLY (preserve vertical velocity)
-    rigidBodyRef.current.setLinvel({ x: direction.x, y: rigidBodyRef.current.linvel().y, z: direction.z }, true);
+    // ADDITION: Apply and decay external forces (knockback)
+    const finalX = direction.x + externalForce.current.x;
+    const finalZ = direction.z + externalForce.current.z;
+    const finalY = rigidBodyRef.current.linvel().y;
+    
+    rigidBodyRef.current.setLinvel({ x: finalX, y: finalY, z: finalZ }, true);
+
+    // Decay the external force quickly
+    externalForce.current.multiplyScalar(Math.max(0, 1 - 8 * delta));
+    if (externalForce.current.lengthSq() < 0.1) externalForce.current.set(0, 0, 0);
 
     // Sync movement direction for animations with hysteresis
     if (moving !== isMoving) setIsMoving(moving);
@@ -414,29 +531,28 @@ export default function PlayerController({ sendUpdate }) {
       }
     }
 
-    // Instant rotation of the physics body to face the target heading
-    const targetQuat = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), targetRotationY.current);
-    rigidBodyRef.current.setRotation(targetQuat, true);
-
-    // Keep visual model locked to forward of body
+    // Smoothly rotate the visual mesh towards the target heading
     if (playerGroupRef.current) {
-      playerGroupRef.current.rotation.y = 0;
+      const targetQuat = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), targetRotationY.current);
+      playerGroupRef.current.quaternion.slerp(targetQuat, 0.2);
     }
 
     if (currentMoveDir !== moveDir) setMoveDir(currentMoveDir);
 
     // --- NETWORKING: BROADCAST POSITION ---
+    const isStunned = useGameStore.getState().isStunned;
     netTick.current = (netTick.current || 0) + 1;
-    if (sendUpdate && netTick.current % 3 === 0) {
+    if (sendUpdate && netTick.current % 2 === 0) {
       const pos = rigidBodyRef.current.translation();
       sendUpdate({
         pos: [pos.x, pos.y, pos.z],
         rot: targetRotationY.current,
-        skin: selectedSkin,
+        // We no longer send the skin every 3 frames. 
+        // It is handled by the dedicated useEffect below.
         anim: {
           mv: moving,
           dir: currentMoveDir,
-          jp: currentPhase, // currentPhase is the internal jump state
+          jp: currentPhase, 
           spr: !walkingInput
         }
       });
@@ -451,9 +567,9 @@ export default function PlayerController({ sendUpdate }) {
     const rawRotX = isNaN(rotationX.current) ? 0 : rotationX.current;
     const rawZoom = isNaN(zoomDistance.current) ? 12 : zoomDistance.current;
 
-    smoothRotY.current = THREE.MathUtils.lerp(smoothRotY.current, rawRotY, 0.3);
-    smoothRotX.current = THREE.MathUtils.lerp(smoothRotX.current, rawRotX, 0.3);
-    smoothZoom.current = THREE.MathUtils.lerp(smoothZoom.current, rawZoom, 0.2); // Expected zoom
+    smoothRotY.current = THREE.MathUtils.damp(smoothRotY.current, rawRotY, 20, delta);
+    smoothRotX.current = THREE.MathUtils.damp(smoothRotX.current, rawRotX, 20, delta);
+    smoothZoom.current = THREE.MathUtils.damp(smoothZoom.current, rawZoom, 15, delta); // Expected zoom
 
     // 2. Determine camera direction vector
     const cameraOffset = new THREE.Vector3(0, 0, 1);
@@ -476,7 +592,7 @@ export default function PlayerController({ sendUpdate }) {
       playerPos.z + right.z * shoulderOffset
     );
 
-    camera.userData.smoothedTarget.lerp(currentTarget, 0.2);
+    camera.userData.smoothedTarget.lerp(currentTarget, 1 - Math.exp(-15 * delta));
     const rayOrigin = camera.userData.smoothedTarget;
 
     // 4. RayCast with proper Rapier API parameter ordering.
@@ -535,10 +651,10 @@ export default function PlayerController({ sendUpdate }) {
 
     if (camera.userData.currentZoom > maxSafeDist) {
       // Snap/fast-lerp inwards to immediately resolve collisions
-      camera.userData.currentZoom = THREE.MathUtils.lerp(camera.userData.currentZoom, maxSafeDist, 0.4);
+      camera.userData.currentZoom = THREE.MathUtils.damp(camera.userData.currentZoom, maxSafeDist, 30, delta);
     } else {
       // Slow-lerp outwards when the path clears
-      camera.userData.currentZoom = THREE.MathUtils.lerp(camera.userData.currentZoom, maxSafeDist, 0.05);
+      camera.userData.currentZoom = THREE.MathUtils.damp(camera.userData.currentZoom, maxSafeDist, 3, delta);
     }
 
     // Prevent NaN corruption
@@ -565,23 +681,165 @@ export default function PlayerController({ sendUpdate }) {
     const lookDistance = 100;
     const lookTarget = new THREE.Vector3().copy(rayOrigin).addScaledVector(rayDirection, -lookDistance);
     camera.lookAt(lookTarget);
+
+    // Track World Velocity for Newtonian Prediction
+    const currentVel = rigidBodyRef.current.linvel();
+    worldVelocityRef.current.set(currentVel.x, currentVel.y, currentVel.z);
+
+    // Memory: Save velocity from frame BEFORE impact
+    if (isSliding && !preImpactVelocity.current.lengthSq()) {
+      preImpactVelocity.current.copy(worldVelocityRef.current);
+    } else if (!isSliding) {
+      preImpactVelocity.current.set(0, 0, 0);
+    }
+
+    prevJumpingInput.current = jumpingInput;
+
+    // --- VICTIM AUTHORITY ---
+    // If we were recently hit, we need to send our position more frequently 
+    // to ensure everyone else's "Magnet" knows where we actually landed.
+    if (knockbackCount > 0 && netTick.current % 2 === 0) {
+      const pos = rigidBodyRef.current.translation();
+      sendUpdate({
+        pos: [pos.x, pos.y, pos.z],
+        rot: rotationY.current,
+        skin: selectedSkin
+      });
+    }
   });
 
+  /**
+   * NEWTONIAN KNOCKBACK
+   * Applies a physical impulse to the character.
+   */
+  const triggerKnockback = (direction, force = 12) => {
+    if (!rigidBodyRef.current) return;
+    
+    // Apply World-Space Impulse
+    rigidBodyRef.current.applyImpulse({
+      x: direction.x * force,
+      y: 8, // Fixed upward pop for "Real Time" feel
+      z: direction.z * force
+    }, true);
+
+    // Visual/Audio Feedback
+    soundManager.playPositional('hit', playerGroupRef.current, 0.5);
+  };
+
+  const handleCollision = (e) => {
+    if (!rigidBodyRef.current) return;
+
+    const other = e.other.rigidBody;
+    if (!other || other.userData?.type !== 'remote-player') return;
+
+    // 1. I am the ATTACKER (I am sliding into someone)
+    console.log("🛠️ LOCAL COLLISION: sliding:", isSliding, "target:", other.userData?.id);
+    
+    if (isSliding) {
+      console.log("💥 Slide IMPACT! Launching Victim...");
+      
+      // 1. PHYSICAL KICK (Newtonian Interaction)
+      // We apply an impulse to the other body locally on our screen
+      // so they fly away instantly without waiting for the network.
+      const attackerPos = rigidBodyRef.current.translation();
+      const victimPos = other.translation();
+      
+      // 1. SIMPLE BLAST DIRECTION
+      // Victim flies directly away from the attacker's center.
+      const hitDir = new THREE.Vector3(
+        victimPos.x - attackerPos.x,
+        0,
+        victimPos.z - attackerPos.z
+      ).normalize();
+
+      // Apply a massive impulse to launch them!
+      const BLAST_POWER = 250;
+      console.log("🚀 BLASTING Victim with Force:", BLAST_POWER);
+      
+      other.applyImpulse({
+        x: hitDir.x * BLAST_POWER,
+        y: 45, // Massive upward pop
+        z: hitDir.z * BLAST_POWER
+      }, true);
+
+      // Trigger visual effects instantly for attacker
+      const contactPoint = e.contactPoint;
+      if (contactPoint) {
+        addShockwave([contactPoint.x, contactPoint.y, contactPoint.z]);
+      }
+
+      // Send network message for server validation
+      if (sendUpdate) {
+        sendUpdate({
+          type: 'impact',
+          victimId: other.userData.id,
+          dir: [hitDir.x, hitDir.y, hitDir.z],
+          position: contactPoint ? [contactPoint.x, contactPoint.y, contactPoint.z] : null
+        });
+      }
+    } 
+    // 2. I am the VICTIM (A sliding player hit me!)
+    else if (other.userData?.isSliding) {
+      console.log("🛡️ Newtonian Victim-side Knockback!");
+      
+      const attackerPos = other.translation();
+      const victimPos = rigidBodyRef.current.translation();
+      
+      // Calculate Glancing Blow (Offset Vector)
+      const glanceDir = new THREE.Vector3(
+        victimPos.x - attackerPos.x,
+        0,
+        victimPos.z - attackerPos.z
+      ).normalize();
+
+      // Blend Attacker Velocity with Glancing Blow
+      const attackerVel = other.linvel();
+      const velDir = new THREE.Vector3(attackerVel.x, 0, attackerVel.z).normalize();
+      
+      const finalDir = new THREE.Vector3()
+        .copy(velDir).multiplyScalar(0.7) // 70% Forward
+        .addScaledVector(glanceDir, 0.3)  // 30% Outward (Glance)
+        .normalize();
+
+      triggerKnockback(finalDir, 15);
+    }
+  };
+
   return (
-    <RigidBody ref={rigidBodyRef} position={[0, 103, 0]} colliders={false} enabledRotations={[false, true, false]} mass={1} collisionGroups={0x0001FFFF} friction={0}>
-      {/* 1. Main Body (Thick Cylinder) */}
-      <CylinderCollider args={[0.5, 1.5]} position={[0, 0.7, 0]} friction={0} />
+    <RigidBody 
+      ref={rigidBodyRef} 
+      position={[0, 105, 0]} 
+      colliders={false} 
+      lockRotations={true} 
+      mass={1} 
+      ccd={true} // Enable Continuous Collision for sliding
+      collisionGroups={0x0002FFFF} 
+      friction={0} 
+      frictionCombineRule={1} 
+      restitution={0}
+      onCollisionEnter={handleCollision}
+      userData={{ 
+        type: 'player', 
+        id: 'local', 
+        isSliding 
+      }}
+    >
+      {/* UNIFIED COLLIDER (Hidden Debug) */}
+      <CapsuleCollider args={[1.5, 1]} position={[0, 0, 0]} friction={0} frictionCombineRule={1} restitution={0}>
+        {/* <mesh>
+          <capsuleGeometry args={[1.5, 1]} />
+          <meshStandardMaterial color="purple" transparent opacity={0.3} depthTest={false} />
+        </mesh> */}
+      </CapsuleCollider>
 
-      {/* 2. 'Step-up' Bottom (Rounded Capsule) */}
-      {/* Aligned so the bottom of the curve is exactly at the feet (-1.2) */}
-      <CapsuleCollider args={[0.1, 1.5]} position={[0, 0.4, 0]} friction={0} />
 
-      <group ref={playerGroupRef} position={[0, isSliding ? -0.8 : -1.2, 0]}>
+      <group ref={playerGroupRef} name="localPlayer" position={[0, isSliding ? -2.8 : -2.5, 0]}>
         <PlayerModel
           isMoving={jumpPhase === 'none' ? isMoving : true}
           moveDir={jumpPhase === 'none' ? moveDir : jumpLock.current.dir}
           jumpPhase={jumpPhase}
           isSprinting={jumpPhase === 'none' ? !isWalking : jumpLock.current.sprint}
+          isSliding={isSliding}
           config={animConfig}
         />
       </group>

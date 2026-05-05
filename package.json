@@ -5,11 +5,11 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "vite build && git add . && git commit -m \"build\"",
+    "build": "vite build",
     "preview": "vite preview",
     "test": "vitest",
     "test:e2e": "playwright test",
-    "deploy": "npm run build && node deploy.cjs && git push origin main",
+    "deploy": "npm run build && node deploy.cjs",
     "server": "node server/index.js"
   },
   "devDependencies": {
@@ -36,6 +36,7 @@
     "@types/three": "^0.183.1",
     "@vitejs/plugin-react": "^6.0.1",
     "express": "^5.2.1",
+    "framer-motion": "^12.38.0",
     "gltf-pipeline": "^4.3.0",
     "lil-gui": "^0.21.0",
     "miniplex": "^2.0.0",

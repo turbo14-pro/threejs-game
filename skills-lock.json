@@ -6,6 +6,12 @@
       "sourceType": "github",
       "computedHash": "53861ab5d1b207c5a3092d94d671374770f151be5a2fd86032749aefdcfc36d2"
     },
+    "game-engine": {
+      "source": "github/awesome-copilot",
+      "sourceType": "github",
+      "skillPath": "skills/game-engine/SKILL.md",
+      "computedHash": "20057f62cf7a8b2d9f940b3de0b18e5426e8f4bb50e236d36b1033aa0d42c4d8"
+    },
     "game-performance-optimization": {
       "source": "shyamsridhar123/chadpowers-superbowl",
       "sourceType": "github",
@@ -15,6 +21,12 @@
       "source": "shyamsridhar123/chadpowers-superbowl",
       "sourceType": "github",
       "computedHash": "8356d847e01352472e55945edd2b2b7fee25918d1bb9bfd54bd33b4c72504519"
+    },
+    "multiplayer-game": {
+      "source": "rivet-dev/skills",
+      "sourceType": "github",
+      "skillPath": "multiplayer-game/SKILL.md",
+      "computedHash": "cf0f19244f1314e7d32820bd60e89dee7eeba6581a006569b6073714cdc6e124"
     },
     "rapier-physics-worker": {
       "source": "shyamsridhar123/chadpowers-superbowl",

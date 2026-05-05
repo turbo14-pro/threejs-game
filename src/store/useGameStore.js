@@ -14,17 +14,20 @@ export const useGameStore = create(
         // --- GAME STATE ---
         game: {
           state: 'MENU',     // MENU, PLAYING, PAUSED
+          networkStatus: 'OFFLINE', // OFFLINE, CONNECTING, ONLINE, ERROR
+          networkId: null,
+          remotePlayers: [],
           phase: 'LOBBY',    // LOBBY, PREMATCH, DROP, BATTLE
           countdown: 0,
           currentLevel: LEVELS[0].id,
           startTime: 0,
+          latency: 0,
         },
 
         // --- PLAYER STATE ---
         player: {
           username: 'Guest Player',
           selectedSkin: SKINS[0].id,
-          selectedWeapon: 'Bat',
           health: 100,
           isHiding: false,
           isGrounded: true,
@@ -49,21 +52,37 @@ export const useGameStore = create(
         remotePlayers: {}, // { id: { pos, rot, skin, username } }
         
         // --- VISUAL SETTINGS ---
+        performancePreset: 'Medium', // Lowest, Low, Medium, High, Ultra, Custom
         settings: {
+          shadowQuality: 'Medium', // None, Low, Medium, High, Ultra
+          skybox: true,
           bloom: true,
-          fxaa: true,
           vignette: true,
           grain: false,
-          pixelRatio: window.devicePixelRatio || 1,
-          shadowQuality: 'Medium'
+          antialiasing: 'FXAA', // None, FXAA, SMAA, TAA
+          ssao: false,
+          lightRays: true,
+          shockwave: true,
+          depthOfField: false,
+          pixelRatio: window.devicePixelRatio || 1
         },
 
+        // --- EFFECTS ---
+        shockwaves: [], // { id, position }
+        knockbackCount: 0,
+        knockbackDir: { x: 0, y: 0, z: 0 },
+        isStunned: false,
+        remoteKnockbacks: {}, // { id: timestamp }
+
         // --- ACTIONS ---
+        setIsStunned: (val) => set({ isStunned: val }),
 
         // Game Control
         setGameState: (state) => set((s) => ({ game: { ...s.game, state } })),
         setMatchPhase: (phase) => set((s) => ({ game: { ...s.game, phase } })),
         setCountdown: (val) => set((s) => ({ game: { ...s.game, countdown: val } })),
+        setNetworkStatus: (status) => set((s) => ({ game: { ...s.game, networkStatus: status } })),
+        setLatency: (ms) => set((s) => ({ game: { ...s.game, latency: ms } })),
         
         startMatchSequence: () => {
           Logger.info('Match', 'Starting battle sequence');
@@ -78,7 +97,6 @@ export const useGameStore = create(
           Logger.info('Player', `Skin changed to: ${skinId}`);
           set((s) => ({ player: { ...s.player, selectedSkin: skinId } }));
         },
-        setSelectedWeapon: (weapon) => set((s) => ({ player: { ...s.player, selectedWeapon: weapon } })),
         setNetworkId: (id) => set((s) => ({ player: { ...s.player, networkId: id } })),
         setPlayerAnimations: (anim) => set((s) => ({ player: { ...s.player, playerAnimations: anim } })),
         setUsername: (name) => set((s) => ({ player: { ...s.player, username: name } })),
@@ -109,6 +127,7 @@ export const useGameStore = create(
 
         // Multiplayer Sync
         updateRemotePlayers: (list) => {
+          if (!list || !Array.isArray(list)) return;
           const remotePlayers = {};
           const localId = get().player.networkId;
           list.forEach(p => {
@@ -128,7 +147,26 @@ export const useGameStore = create(
         // System
         triggerWorldReset: () => set({ teleportCount: get().teleportCount + 1 }),
         setMobileInput: (input) => set({ mobileInput: { ...get().mobileInput, ...input } }),
-        setSetting: (key, value) => set((s) => ({ settings: { ...s.settings, [key]: value } })),
+        setSetting: (key, value) => set((s) => ({ 
+          settings: { ...s.settings, [key]: value },
+          performancePreset: 'Custom'
+        })),
+        setPerformancePreset: (preset) => set((s) => {
+          if (preset === 'Custom') return { performancePreset: preset };
+          
+          const PRESETS = {
+            Lowest: { shadowQuality: 'None', skybox: false, bloom: false, vignette: false, grain: false, antialiasing: 'None', ssao: false, lightRays: false, shockwave: false, depthOfField: false },
+            Low: { shadowQuality: 'Medium', skybox: true, bloom: false, vignette: false, grain: false, antialiasing: 'FXAA', ssao: false, lightRays: true, shockwave: true, depthOfField: false },
+            Medium: { shadowQuality: 'Medium', skybox: true, bloom: true, vignette: true, grain: false, antialiasing: 'FXAA', ssao: false, lightRays: true, shockwave: true, depthOfField: false },
+            High: { shadowQuality: 'High', skybox: true, bloom: true, vignette: true, grain: true, antialiasing: 'SMAA', ssao: false, lightRays: true, shockwave: true, depthOfField: true },
+            Ultra: { shadowQuality: 'Ultra', skybox: true, bloom: true, vignette: true, grain: true, antialiasing: 'TAA', ssao: true, lightRays: true, shockwave: true, depthOfField: true }
+          };
+          
+          return {
+            performancePreset: preset,
+            settings: { ...s.settings, ...PRESETS[preset] }
+          };
+        }),
 
         // Persistence (Achievements)
         unlockAchievement: (id) => {
@@ -137,6 +175,33 @@ export const useGameStore = create(
               player: { ...s.player, achievements: [...s.player.achievements, id] } 
             }));
           }
+        },
+
+        // Effects Management
+        addShockwave: (position) => {
+          const id = Math.random().toString(36).substr(2, 9);
+          set((s) => ({ shockwaves: [...s.shockwaves, { id, position }] }));
+          
+          // Auto-remove after 1 second
+          setTimeout(() => {
+            set((s) => ({ shockwaves: s.shockwaves.filter(sw => sw.id !== id) }));
+          }, 1000);
+        },
+
+        triggerKnockback: (direction) => {
+          set((s) => ({ 
+            knockbackCount: s.knockbackCount + 1,
+            knockbackDir: direction
+          }));
+        },
+
+        triggerRemoteKnockback: (id, direction) => {
+          set((s) => ({
+            remoteKnockbacks: { 
+              ...s.remoteKnockbacks, 
+              [id]: { t: Date.now(), dir: direction } 
+            }
+          }));
         }
       }),
       {
@@ -151,7 +216,8 @@ export const useGameStore = create(
             stats: state.player.stats,
             achievements: state.player.achievements
           },
-          settings: state.settings 
+          settings: state.settings,
+          performancePreset: state.performancePreset
         }),
         // When we change the save format, bump `version` above and add
         // a case here to convert old data into the new shape.

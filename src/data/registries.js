@@ -21,28 +21,7 @@ export const SKINS = [
   }
 ];
 
-export const WEAPONS = [
-  {
-    id: 'baguette',
-    name: 'Baguette',
-    type: 'MELEE',
-    model: '/weapons/baguette.glb',
-    icon: '🥖',
-    damage: 20,
-    cooldown: 0.5,
-    sfx: { hit: 'splat.mp3', miss: 'swish.mp3' }
-  },
-  {
-    id: 'tomato_gun',
-    name: 'Tomato Gun',
-    type: 'PROJECTILE',
-    model: '/weapons/tomato_gun.glb',
-    icon: '🍅',
-    damage: 15,
-    cooldown: 0.2,
-    sfx: { shoot: 'pop.mp3' }
-  }
-];
+export const WEAPONS = [];
 
 export const LEVELS = [
   {
