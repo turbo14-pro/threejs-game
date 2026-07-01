@@ -18,7 +18,7 @@ export default function GameCanvas({ sendUpdate }) {
     <>
       <EnvironmentSetup />
       <SoundListener />
-      <Physics gravity={[0, -90, 0]}>
+      <Physics gravity={[0, -90.81, 0]}>
         <Arena />
         {gameState === 'PLAYING' ? (
           <>

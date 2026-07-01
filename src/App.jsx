@@ -6,7 +6,6 @@ import MainMenu from './components/UI/MainMenu.jsx';
 import HUD from './components/UI/HUD.jsx';
 import GameCanvas from './components/GameCanvas.jsx';
 import MCPController from './components/MCPController.jsx';
-import SpeedCheck from './components/World/SpeedCheck.jsx';
 import { useGameStore } from './store/useGameStore.js';
 import { useNetworking } from './hooks/useNetworking.js';
 import NetworkStatus from './components/UI/NetworkStatus.jsx';
@@ -55,7 +54,6 @@ export default function App() {
             {import.meta.env.DEV && (
               <>
                 <MCPController />
-                <SpeedCheck />
               </>
             )}
           </Suspense>

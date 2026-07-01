@@ -427,6 +427,70 @@ h1 {
   z-index: 100;
 }
 
+/* Camera Controls Area (Right Side) */
+.camera-controls-area {
+  position: absolute;
+  bottom: 30px;
+  right: 20px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  z-index: 100;
+  pointer-events: none;
+}
+
+.camera-controls-area > * {
+  pointer-events: auto;
+}
+
+.camera-btn {
+  width: 64px;
+  height: 64px;
+  font-size: 0.65rem;
+}
+
+.camera-mid-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.walk-btn.walk-active {
+  background: rgba(255, 40, 40, 0.7);
+  border-color: rgba(255, 40, 40, 0.9);
+  box-shadow: 0 0 14px rgba(255, 40, 40, 0.5);
+  color: #fff;
+}
+
+.walk-btn.run-active {
+  background: rgba(40, 255, 40, 0.7);
+  border-color: rgba(40, 255, 40, 0.9);
+  box-shadow: 0 0 14px rgba(40, 255, 40, 0.5);
+  color: #fff;
+}
+
+/* Camera Joystick (Right Side) */
+.camera-joystick {
+  position: relative !important;
+  bottom: auto !important;
+  left: auto !important;
+  right: auto !important;
+  width: 130px !important;
+  height: 130px !important;
+}
+
+.camera-joystick-base {
+  border-color: rgba(255, 100, 100, 0.2) !important;
+}
+
+.camera-joystick-knob {
+  background: rgba(255, 100, 100, 0.6) !important;
+  box-shadow: 0 0 15px rgba(255, 100, 100, 0.3) !important;
+  width: 50px !important;
+  height: 50px !important;
+}
+
 .mobile-btn {
   width: 80px;
   height: 80px;
@@ -442,6 +506,43 @@ h1 {
   align-items: center;
   justify-content: center;
   touch-action: none;
+}
+
+/* Hamburger Menu Button */
+.hamburger-btn {
+  position: absolute;
+  top: 20px;
+  left: 20px;
+  z-index: 150;
+  width: 56px;
+  height: 56px;
+  border-radius: 14px;
+  background: var(--glass);
+  border: 2px solid var(--glass-border);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  touch-action: none;
+  cursor: pointer;
+  transition: background 0.2s ease, border-color 0.2s ease;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.hamburger-btn:active {
+  background: rgba(0, 242, 255, 0.15);
+  border-color: var(--primary);
+  transform: scale(0.95);
+}
+
+.hamburger-line {
+  display: block;
+  width: 24px;
+  height: 2px;
+  background: #fff;
+  border-radius: 2px;
+  transition: transform 0.2s ease, opacity 0.2s ease;
 }
 
 .jump-btn { background: rgba(0, 242, 255, 0.1); border-color: var(--primary); }
@@ -605,13 +706,30 @@ h1 {
 /* Character Grid Responsive Fixes */
 @media (max-width: 600px) {
   .menu-content {
-    padding: 2rem 1.5rem;
+    padding: 1.5rem 1.2rem;
     width: 95%;
+    border-radius: 1.5rem;
   }
 
   h1 {
-    font-size: 1.8rem;
-    letter-spacing: 0.3rem;
+    font-size: 1.6rem;
+    letter-spacing: 0.25rem;
+    margin-bottom: 1.5rem;
+  }
+
+  .menu-stack {
+    gap: 1rem;
+    max-width: 100%;
+  }
+
+  .main-btn {
+    padding: 1.2rem !important;
+    font-size: 1rem !important;
+    border-radius: 1rem !important;
+  }
+
+  .btn-name {
+    font-size: 0.95rem;
   }
 
   .character-grid {
@@ -627,6 +745,82 @@ h1 {
 
   .option-name {
     font-size: 0.9rem;
+  }
+
+  .controls-grid {
+    gap: 0.8rem;
+    margin-bottom: 1.5rem !important;
+  }
+
+  .control-row {
+    font-size: 0.75rem;
+    padding: 0.4rem 0.6rem;
+  }
+
+  .hamburger-btn {
+    width: 48px;
+    height: 48px;
+    top: 15px;
+    left: 15px;
+    border-radius: 12px;
+  }
+
+  .hamburger-line {
+    width: 20px;
+  }
+
+  .camera-controls-area {
+    bottom: 20px;
+    right: 10px;
+    gap: 6px;
+  }
+
+  .camera-joystick {
+    width: 110px !important;
+    height: 110px !important;
+  }
+
+  .camera-btn {
+    width: 56px;
+    height: 56px;
+    font-size: 0.6rem;
+  }
+}
+
+@media (max-width: 380px) {
+  .menu-content {
+    padding: 1.2rem 1rem;
+    border-radius: 1rem;
+  }
+
+  h1 {
+    font-size: 1.3rem;
+    letter-spacing: 0.2rem;
+    margin-bottom: 1.2rem;
+  }
+
+  .main-btn {
+    padding: 1rem !important;
+    font-size: 0.9rem !important;
+  }
+
+  .btn-name {
+    font-size: 0.85rem;
+  }
+
+  .menu-stack {
+    gap: 0.8rem;
+  }
+
+  .camera-joystick {
+    width: 95px !important;
+    height: 95px !important;
+  }
+
+  .camera-btn {
+    width: 48px;
+    height: 48px;
+    font-size: 0.55rem;
   }
 }
 /* Leaderboard */

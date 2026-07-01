@@ -41,9 +41,13 @@ export default function Effects() {
         />
       )}
 
-      {settings.shockwave && shockwaves.map((sw) => (
-        <ShockwaveEffect key={sw.id} position={sw.position} />
-      ))}
+      {settings.shockwave && (
+        <>
+          <ShockwaveEffect index={0} />
+          <ShockwaveEffect index={1} />
+          <ShockwaveEffect index={2} />
+        </>
+      )}
 
       {settings.bloom && (
         <Bloom

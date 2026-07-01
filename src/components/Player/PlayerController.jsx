@@ -42,6 +42,50 @@ export default function PlayerController({ sendUpdate }) {
   const targetRotationY = useRef(Math.PI);
   const [hasDoubleJumped, setHasDoubleJumped] = useState(false);
   const netTick = useRef(0);
+  const netAccumulator = useRef(0);
+  const inputHistory = useRef([]); // [{ tick, pos, input, camRot }]
+  const lastProcessedTick = useRef(0);
+
+  // --- RECONCILIATION LISTENER ---
+  useEffect(() => {
+    const unsubscribe = useGameStore.subscribe(
+      state => state.lastServerState,
+      (serverState) => {
+        if (!serverState || !rigidBodyRef.current) return;
+        
+        // Find the history entry for this tick
+        const historyEntry = inputHistory.current.find(e => e.tick === serverState.tick);
+        if (!historyEntry) return;
+
+        const pos = historyEntry.pos;
+        const diff = Math.sqrt(
+          Math.pow(pos.x - serverState.pos[0], 2) +
+          Math.pow(pos.z - serverState.pos[2], 2)
+        );
+
+        // Increase threshold to 0.5m to allow for tick-rate jitter
+        if (diff > 0.5) {
+          console.log(`[Reconciliation] Desync detected at tick ${serverState.tick}! Diff: ${diff.toFixed(2)}m. Snapping...`);
+          
+          // Authoritative Snap
+          rigidBodyRef.current.setTranslation({ 
+            x: serverState.pos[0], 
+            y: serverState.pos[1], 
+            z: serverState.pos[2] 
+          }, true);
+          
+          // Match velocity to prevent post-snap drift
+          if (serverState.vel) {
+            rigidBodyRef.current.setLinvel(serverState.vel, true);
+          }
+        }
+
+        // Cleanup old history
+        inputHistory.current = inputHistory.current.filter(e => e.tick > serverState.tick);
+      }
+    );
+    return unsubscribe;
+  }, []);
 
   // --- REFS / TIMERS ---
   const slideTimer = useRef(0);
@@ -77,6 +121,12 @@ export default function PlayerController({ sendUpdate }) {
   const lastTouch = useRef({ x: 0, y: 0 });
   const lastPinchDist = useRef(0);
 
+  // Touch zoom management
+  const DEFAULT_ZOOM = 12;
+  const intendedZoom = useRef(12);   // What the user actually wants (pre-collision)
+  const lastPinchTime = useRef(0);   // Timestamp of last pinch/scroll for auto-return
+  const isTouchDevice = useRef('ontouchstart' in window || navigator.maxTouchPoints > 0);
+
   useEffect(() => {
     if (gameState !== 'PLAYING') return;
 
@@ -90,38 +140,32 @@ export default function PlayerController({ sendUpdate }) {
 
     const onWheel = (e) => {
       zoomDistance.current = Math.max(2, Math.min(25, zoomDistance.current + e.deltaY * 0.01));
+      intendedZoom.current = zoomDistance.current;
+      lastPinchTime.current = Date.now();
     };
 
+    // Pinch-to-zoom only (camera joystick handles rotation via store)
     const onTouchStart = (e) => {
-      if (e.touches.length === 1) {
-        lastTouch.current = { x: e.touches[0].clientX, y: e.touches[0].clientY };
-      } else if (e.touches.length === 2) {
+      if (e.touches.length === 2) {
         lastPinchDist.current = Math.hypot(
           e.touches[0].clientX - e.touches[1].clientX,
           e.touches[0].clientY - e.touches[1].clientY
         );
+        lastPinchTime.current = Date.now();
       }
     };
 
     const onTouchMove = (e) => {
-      if (e.touches.length === 1) {
-        const touch = e.touches[0];
-        if (touch.clientX > window.innerWidth / 2) {
-          const dx = touch.clientX - lastTouch.current.x;
-          const dy = touch.clientY - lastTouch.current.y;
-          rotationY.current -= dx * 0.005;
-          rotationX.current -= dy * 0.005;
-          rotationX.current = Math.max(-Math.PI / 3, Math.min(Math.PI / 4, rotationX.current));
-        }
-        lastTouch.current = { x: touch.clientX, y: touch.clientY };
-      } else if (e.touches.length === 2) {
+      if (e.touches.length === 2) {
         const dist = Math.hypot(
           e.touches[0].clientX - e.touches[1].clientX,
           e.touches[0].clientY - e.touches[1].clientY
         );
         const delta = (lastPinchDist.current - dist) * 0.05;
         zoomDistance.current = Math.max(2, Math.min(25, zoomDistance.current + delta));
+        intendedZoom.current = zoomDistance.current;
         lastPinchDist.current = dist;
+        lastPinchTime.current = Date.now();
       }
     };
 
@@ -539,28 +583,77 @@ export default function PlayerController({ sendUpdate }) {
 
     if (currentMoveDir !== moveDir) setMoveDir(currentMoveDir);
 
-    // --- NETWORKING: BROADCAST POSITION ---
-    const isStunned = useGameStore.getState().isStunned;
-    netTick.current = (netTick.current || 0) + 1;
-    if (sendUpdate && netTick.current % 2 === 0) {
-      const pos = rigidBodyRef.current.translation();
+    // --- NETWORKING: BROADCAST INPUT & POSITION ---
+    // Increment tick based on 30Hz rate (33.3ms) to match server
+    netAccumulator.current = (netAccumulator.current || 0) + delta;
+    if (netAccumulator.current >= 0.0333) {
+      netTick.current = (netTick.current || 0) + 1;
+      netAccumulator.current -= 0.0333;
+      
+      const currentInput = {
+      w: !!keys.forward,
+      a: !!keys.left,
+      s: !!keys.backward,
+      d: !!keys.right,
+      jump: jumpingInput,
+      walk: walkingInput,
+      slide: slidingInput
+    };
+
+    if (sendUpdate) {
+      // 1. Send INPUT (Authoritative Phase 2)
+      // We send this every frame for maximum responsiveness
       sendUpdate({
-        pos: [pos.x, pos.y, pos.z],
-        rot: targetRotationY.current,
-        // We no longer send the skin every 3 frames. 
-        // It is handled by the dedicated useEffect below.
-        anim: {
-          mv: moving,
-          dir: currentMoveDir,
-          jp: currentPhase, 
-          spr: !walkingInput
-        }
+        type: 'input',
+        tick: netTick.current,
+        input: currentInput,
+        camRot: rotationY.current
       });
+
+      // 2. Send LEGACY POSITION (Phase 1/2 Bridge)
+      const pos = rigidBodyRef.current.translation();
+      
+      if (netTick.current % 3 === 0) {
+        sendUpdate({
+          pos: [pos.x, pos.y, pos.z],
+          rot: targetRotationY.current,
+          anim: {
+            mv: moving,
+            dir: currentMoveDir,
+            jp: currentPhase, 
+            spr: !walkingInput
+          }
+        });
+      }
+      
+      // 3. Record History for Reconciliation
+      inputHistory.current.push({
+        tick: netTick.current,
+        pos: { x: pos.x, y: pos.y, z: pos.z },
+        input: currentInput,
+        camRot: rotationY.current
+      });
+      
+      // Keep history buffer manageable (2 seconds @ 60fps = 120 entries)
+      if (inputHistory.current.length > 120) {
+        inputHistory.current.shift();
+      }
+    }
     }
 
     // ----------------------------------------------------
     // OPTIMIZED 3RD PERSON CAMERA LOGIC (Rubber-banding & Raycast)
     // ----------------------------------------------------
+
+    // Apply camera joystick input from store (touch devices)
+    const camInput = useGameStore.getState().cameraInput;
+    if (camInput.x !== 0 || camInput.y !== 0) {
+      rotationY.current += camInput.x;
+      rotationX.current += camInput.y;
+      rotationX.current = Math.max(-Math.PI / 3, Math.min(Math.PI / 4, rotationX.current));
+      // Reset after applying so it doesn't compound
+      useGameStore.getState().setCameraInput({ x: 0, y: 0 });
+    }
 
     // 1. Smooth the raw inputs
     const rawRotY = isNaN(rotationY.current) ? 0 : rotationY.current;
@@ -646,20 +739,35 @@ export default function PlayerController({ sendUpdate }) {
 
     // 5. Rubber-band interpolation of the ACTUAL zoom distance
     if (camera.userData.currentZoom === undefined || isNaN(camera.userData.currentZoom)) {
-      camera.userData.currentZoom = 12;
+      camera.userData.currentZoom = DEFAULT_ZOOM;
+    }
+
+    // Touch auto-return: after 3s of no pinch/scroll on touch devices, drift back to default
+    if (isTouchDevice.current && Date.now() - lastPinchTime.current > 3000) {
+      intendedZoom.current = THREE.MathUtils.damp(
+        intendedZoom.current, DEFAULT_ZOOM, 2, delta
+      );
+      zoomDistance.current = intendedZoom.current;
     }
 
     if (camera.userData.currentZoom > maxSafeDist) {
-      // Snap/fast-lerp inwards to immediately resolve collisions
-      camera.userData.currentZoom = THREE.MathUtils.damp(camera.userData.currentZoom, maxSafeDist, 30, delta);
+      // Collision detected — snap/fast-lerp inwards immediately
+      camera.userData.currentZoom = THREE.MathUtils.damp(
+        camera.userData.currentZoom, maxSafeDist, 30, delta
+      );
     } else {
-      // Slow-lerp outwards when the path clears
-      camera.userData.currentZoom = THREE.MathUtils.damp(camera.userData.currentZoom, maxSafeDist, 3, delta);
+      // Path is clear — recover toward intended zoom (what the user set)
+      // Fast recovery so camera doesn't stay close after a jump
+      camera.userData.currentZoom = THREE.MathUtils.damp(
+        camera.userData.currentZoom, intendedZoom.current, 8, delta
+      );
+      // Also clamp to maxSafeDist so we never go through geometry
+      camera.userData.currentZoom = Math.min(camera.userData.currentZoom, maxSafeDist);
     }
 
     // Prevent NaN corruption
     if (isNaN(camera.userData.currentZoom) || !isFinite(camera.userData.currentZoom)) {
-      camera.userData.currentZoom = 12;
+      camera.userData.currentZoom = DEFAULT_ZOOM;
     }
 
     // 6. Calculate absolute camera coordinates
@@ -812,6 +920,7 @@ export default function PlayerController({ sendUpdate }) {
       colliders={false} 
       lockRotations={true} 
       mass={1} 
+      linearDamping={0.5}
       ccd={true} // Enable Continuous Collision for sliding
       collisionGroups={0x0002FFFF} 
       friction={0} 

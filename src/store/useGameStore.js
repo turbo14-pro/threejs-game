@@ -47,9 +47,11 @@ export const useGameStore = create(
         // --- TECHNICAL / INPUT ---
         teleportCount: 0, // Used to trigger player position resets
         mobileInput: { x: 0, y: 0, jump: false, sprint: false, slide: false },
+        cameraInput: { x: 0, y: 0 },
         
         // --- MULTIPLAYER ---
         remotePlayers: {}, // { id: { pos, rot, skin, username } }
+        lastServerState: null, // { pos, tick } for local player reconciliation
         
         // --- VISUAL SETTINGS ---
         performancePreset: 'Medium', // Lowest, Low, Medium, High, Ultra, Custom
@@ -68,7 +70,8 @@ export const useGameStore = create(
         },
 
         // --- EFFECTS ---
-        shockwaves: [], // { id, position }
+        shockwaves: [null, null, null], // Fixed pool of 3 shockwaves
+        shockwaveIndex: 0,
         knockbackCount: 0,
         knockbackDir: { x: 0, y: 0, z: 0 },
         isStunned: false,
@@ -130,12 +133,18 @@ export const useGameStore = create(
           if (!list || !Array.isArray(list)) return;
           const remotePlayers = {};
           const localId = get().player.networkId;
+          let lastServerState = null;
+
           list.forEach(p => {
             if (p.id !== localId) {
               remotePlayers[p.id] = p;
+            } else {
+              // Capture our own state for reconciliation
+              lastServerState = { pos: p.pos, tick: p.tick };
             }
           });
-          set({ remotePlayers });
+          
+          set({ remotePlayers, lastServerState });
         },
         removeRemotePlayer: (id) => set((s) => {
           const newPlayers = { ...s.remotePlayers };
@@ -147,6 +156,7 @@ export const useGameStore = create(
         // System
         triggerWorldReset: () => set({ teleportCount: get().teleportCount + 1 }),
         setMobileInput: (input) => set({ mobileInput: { ...get().mobileInput, ...input } }),
+        setCameraInput: (input) => set({ cameraInput: { ...get().cameraInput, ...input } }),
         setSetting: (key, value) => set((s) => ({ 
           settings: { ...s.settings, [key]: value },
           performancePreset: 'Custom'
@@ -180,12 +190,12 @@ export const useGameStore = create(
         // Effects Management
         addShockwave: (position) => {
           const id = Math.random().toString(36).substr(2, 9);
-          set((s) => ({ shockwaves: [...s.shockwaves, { id, position }] }));
-          
-          // Auto-remove after 1 second
-          setTimeout(() => {
-            set((s) => ({ shockwaves: s.shockwaves.filter(sw => sw.id !== id) }));
-          }, 1000);
+          set((s) => {
+            const nextIdx = (s.shockwaveIndex + 1) % 3;
+            const newShockwaves = [...s.shockwaves];
+            newShockwaves[nextIdx] = { id, position };
+            return { shockwaves: newShockwaves, shockwaveIndex: nextIdx };
+          });
         },
 
         triggerKnockback: (direction) => {

@@ -1,12 +1,11 @@
 import React, { useState, useEffect } from 'react';
 import { useGameStore } from '../../store/useGameStore';
 import Joystick from './Joystick.jsx';
+import CameraJoystick from './CameraJoystick.jsx';
 import Options from './Options.jsx';
 import LatencyGraph from './LatencyGraph.jsx';
 
 export default function HUD() {
-  const playerHealth = useGameStore(state => state.player.health);
-  const selectedCharacter = useGameStore(state => state.player.selectedSkin);
   const matchPhase = useGameStore(state => state.game.phase);
   const countdown = useGameStore(state => state.game.countdown);
   const setGameState = useGameStore(state => state.setGameState);
@@ -48,8 +47,12 @@ export default function HUD() {
   }, []);
 
   const handleResume = () => {
-    const canvas = document.querySelector('canvas');
-    if (canvas) canvas.requestPointerLock();
+    if (isTouchDevice) {
+      setIsPaused(false);
+    } else {
+      const canvas = document.querySelector('canvas');
+      if (canvas) canvas.requestPointerLock();
+    }
   };
 
   const handleQuit = () => {
@@ -90,23 +93,6 @@ export default function HUD() {
         </div>
       )}
 
-      {/* Main HUD Stats */}
-      <div className={`hud ${!isPaused ? 'visible' : ''}`} style={{ opacity: isPaused ? 0.2 : 1.0 }}>
-        <div className="status-item">
-          <div className="status-label">CHARACTER</div>
-          <div className="status-value">{selectedCharacter}</div>
-        </div>
-        <div className="status-item">
-          <div className="status-label">HEALTH</div>
-          <div className="health-bar-bg">
-            <div 
-              className="health-bar-fill" 
-              style={{ width: `${playerHealth}%`, background: playerHealth > 20 ? 'linear-gradient(90deg, #00ff88, #00ffcc)' : 'red' }}
-            ></div>
-          </div>
-        </div>
-      </div>
-
       {/* Leaderboard (Top 4) */}
       {!isPaused && (
         <>
@@ -132,28 +118,44 @@ export default function HUD() {
         </div>
       )}
 
+      {/* Hamburger Menu Button (Touch Devices) */}
+      {isTouchDevice && !isPaused && (
+        <button 
+          className="hamburger-btn"
+          onTouchStart={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            setIsPaused(true);
+          }}
+        >
+          <span className="hamburger-line"></span>
+          <span className="hamburger-line"></span>
+          <span className="hamburger-line"></span>
+        </button>
+      )}
+
       {/* Mobile Input UI */}
       {isTouchDevice && !isPaused && (
         <>
           <Joystick />
-          <div className="mobile-action-buttons">
-            <button 
-              className="mobile-btn jump-btn" 
-              onTouchStart={() => setMobileInput({ jump: true })}
-              onTouchEnd={() => setMobileInput({ jump: false })}
+          <div className="camera-controls-area">
+            <button
+              className="mobile-btn camera-btn jump-btn"
+              onTouchStart={(e) => { e.stopPropagation(); setMobileInput({ jump: true }); }}
+              onTouchEnd={(e) => { e.stopPropagation(); setMobileInput({ jump: false }); }}
             >JUMP</button>
-            <button 
-              className={`mobile-btn walk-btn ${mobileInput.walk ? 'active' : ''}`}
-              onTouchStart={(e) => {
-                e.preventDefault();
-                setMobileInput({ walk: !mobileInput.walk });
-              }}
-            >WALK</button>
-            <button 
-              className="mobile-btn slide-btn"
-              onTouchStart={() => setMobileInput({ slide: true })}
-              onTouchEnd={() => setMobileInput({ slide: false })}
-            >SLIDE</button>
+            <div className="camera-mid-row">
+              <button
+                className={`mobile-btn camera-btn walk-btn ${mobileInput.walk ? 'walk-active' : 'run-active'}`}
+                onTouchStart={(e) => { e.stopPropagation(); e.preventDefault(); setMobileInput({ walk: !mobileInput.walk }); }}
+              >{mobileInput.walk ? 'WALK' : 'RUN'}</button>
+              <CameraJoystick />
+              <button
+                className="mobile-btn camera-btn slide-btn"
+                onTouchStart={(e) => { e.stopPropagation(); setMobileInput({ slide: true }); }}
+                onTouchEnd={(e) => { e.stopPropagation(); setMobileInput({ slide: false }); }}
+              >SLIDE</button>
+            </div>
           </div>
         </>
       )}
@@ -241,7 +243,10 @@ export default function HUD() {
       {/* Click-to-resume background */}
       {isPaused && (
         <div 
-          onClick={handleResume} 
+          onClick={handleResume}
+          onTouchEnd={(e) => {
+            if (e.target === e.currentTarget) handleResume();
+          }}
           style={{ position: 'absolute', inset: 0, zIndex: 10 }}
         />
       )}

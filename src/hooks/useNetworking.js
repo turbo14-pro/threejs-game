@@ -20,7 +20,11 @@ export function useNetworking() {
     // Only connect when we are in the game
     if (gameState === 'MENU') {
       if (channelRef.current) {
-        channelRef.current.close();
+        try {
+          channelRef.current.close();
+        } catch (e) {
+          console.warn("Error closing Geckos channel during MENU transition:", e);
+        }
         channelRef.current = null;
         setNetworkStatus('OFFLINE');
       }
@@ -124,16 +128,26 @@ export function useNetworking() {
         const rtt = Date.now() - t;
         useGameStore.getState().setLatency(rtt);
       });
-      // Periodic ping
       const pingInterval = setInterval(() => {
         channel.emit('ping', Date.now());
       }, 2000);
-
-      return () => {
-        clearInterval(pingInterval);
-        channel.close();
-      };
+      
+      // Store interval ID on channel to clean it up later
+      channel._pingInterval = pingInterval;
     });
+
+    return () => {
+      if (channelRef.current) {
+        if (channelRef.current._pingInterval) {
+          clearInterval(channelRef.current._pingInterval);
+        }
+        try {
+          channelRef.current.close();
+        } catch(e) {
+          console.warn("Error closing Geckos channel:", e);
+        }
+      }
+    };
   }, [gameState, updateRemotePlayers, removeRemotePlayer, setNetworkId, setNetworkStatus]);
 
   // Function to send our current position and animation state
