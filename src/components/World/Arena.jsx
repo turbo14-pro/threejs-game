@@ -8,46 +8,8 @@ import * as BufferGeometryUtils from 'three/examples/jsm/utils/BufferGeometryUti
 import { useGameStore } from '../../store/useGameStore';
 import * as SkeletonUtils from 'three/examples/jsm/utils/SkeletonUtils.js';
 import ArenaLightRays from './LightRays';
-
-/**
- * CerealBoxPhysics Component
- * Handles the composite cuboid colliders for a single cereal box obstacle.
- * Includes an entrance "doorway" on the front face.
- * Dimensions: 30 (width) x 36 (height) x 12 (depth)
- */
-function CerealBoxPhysics({ position, rotation, boxSize }) {
-  const { x: w, y: h, z: d } = boxSize;
-  const thickness = 0.5; // Thickness of the "cardboard"
-  const t2 = thickness / 2; // Half-thickness for centering
-  const doorHeight = 16; // Height of the doorway
-
-  return (
-    <RigidBody
-      type="fixed"
-      position={position}
-      rotation={rotation}
-      collisionGroups={0x0001FFFF}
-    >
-      {/* 1. Floor - Inset by half thickness so top surface matches visual bottom */}
-      <CuboidCollider args={[w/2, t2, d/2]} position={[0, -h/2 + t2, 0]} />
-      
-      {/* 2. Side Walls - Inset so outer surface matches visual width */}
-      <CuboidCollider args={[t2, h/2, d/2]} position={[-w/2 + t2, 0, 0]} />
-      <CuboidCollider args={[t2, h/2, d/2]} position={[w/2 - t2, 0, 0]} />
-      
-      {/* 3. Back Wall - Inset so outer surface matches visual depth */}
-      <CuboidCollider args={[w/2, h/2, t2]} position={[0, 0, -d/2 + t2]} />
-      
-      {/* 4. Front Wall with Doorway - Inset so outer surface matches visual depth */}
-      <CuboidCollider 
-        args={[w/2, (h - doorHeight)/2, t2]} 
-        position={[0, h/2 - (h - doorHeight)/2, d/2 - t2]} 
-      />
-      
-      {/* NO TOP: Open for jumping in */}
-    </RigidBody>
-  );
-}
+import { useCerealBoxAssets, CerealBoxMesh, CerealBoxPhysics } from './Obsticles/CerealBox.jsx';
+import { TinCan } from './Obsticles/TinCan.jsx';
 
 /**
  * Helper to calculate the Y offset needed to place a rotated box on the floor.
@@ -219,93 +181,8 @@ export default function Arena() {
     [100, 80, 0], [-100, 80, 0], [0, 80, 100], [0, 80, -100]
   ], []);
 
-  // Load Cereal Box Model (new mesh 30x12x36)
-  const cerealBoxModel = useGLTF('/models/cerealbox.glb');
-  
-  // Load Texture specifically requested
-  const munchiesTexture = useTexture('/textures/cereal-munchies.webp');
-  munchiesTexture.flipY = false;
-  
-  const { cerealBoxGeometry, cerealBoxMaterial, cerealBoxExtent, boxSize } = useMemo(() => {
-    let mergedGeo = new THREE.BoxGeometry(30, 36, 12);
-    let material = new THREE.MeshStandardMaterial({ 
-      map: munchiesTexture,
-      color: 'white', 
-      transparent: false, 
-      side: THREE.DoubleSide 
-    });
-
-    // Custom shader to layer logo WebP over the instance color + handle Two-Sided interior
-    material.onBeforeCompile = (shader) => {
-      // 1. Prevent standard color multiplication by vColor in color_fragment
-      shader.fragmentShader = shader.fragmentShader.replace(
-        '#include <color_fragment>',
-        '// Mixing handled in map_fragment'
-      );
-      
-      // 2. Inject custom two-sided mix logic at map_fragment inclusion point
-      shader.fragmentShader = shader.fragmentShader.replace(
-        '#include <map_fragment>',
-        `
-        #if defined( USE_MAP )
-          // Use vMapUv which is the standard UV for maps in newer Three.js versions
-          vec4 logoTexel = texture2D( map, vMapUv );
-        #else
-          vec4 logoTexel = vec4( 0.0 );
-        #endif
-        
-        vec3 finalBase = diffuseColor.rgb;
-        #if defined( USE_COLOR ) || defined( USE_INSTANCING_COLOR )
-          finalBase = vColor.rgb;
-        #endif
-        
-        if ( gl_FrontFacing ) {
-          // Outside (Front): mix logo overlay with instance brand color
-          diffuseColor.rgb = mix( finalBase, logoTexel.rgb, logoTexel.a );
-        } else {
-          // Inside (Back): Consistent Cardboard Tan
-          diffuseColor.rgb = vec3( 0.76, 0.65, 0.5 ); 
-        }
-        
-        // Force fully opaque result for solid boxes
-        diffuseColor.a = 1.0;
-        `
-      );
-    };
-
-
-
-    
-    if (cerealBoxModel.scene) {
-      const meshes = [];
-      cerealBoxModel.scene.traverse(child => {
-        if (child.isMesh) {
-          child.updateMatrixWorld(true);
-          const clonedGeo = child.geometry.clone();
-          clonedGeo.applyMatrix4(child.matrix);
-          meshes.push(clonedGeo);
-        }
-      });
-
-      if (meshes.length > 0) {
-        mergedGeo = BufferGeometryUtils.mergeGeometries(meshes, false);
-        mergedGeo.center();
-      }
-    }
-
-    // Calculate real extents from geometry for grounding math
-    mergedGeo.computeBoundingBox();
-    const bb = mergedGeo.boundingBox;
-    const extent = new THREE.Vector3().subVectors(bb.max, bb.min).multiplyScalar(0.5);
-
-    return { 
-      cerealBoxGeometry: mergedGeo, 
-      cerealBoxMaterial: material,
-      cerealBoxExtent: extent,
-      boxSize: new THREE.Vector3().subVectors(bb.max, bb.min)
-    };
-  }, [cerealBoxModel, munchiesTexture]);
-
+  // Load Cereal Box assets cleanly using the custom hook
+  const { geometry: cerealBoxGeometry, material: cerealBoxMaterial, texture: munchiesTexture, extent: cerealBoxExtent } = useCerealBoxAssets();
 
   // Helper: generate procedural wood canvas with a given base color
   const makeWoodCanvas = (baseColor) => {
@@ -356,7 +233,6 @@ export default function Arena() {
   const cerealBoxes = useMemo(() => {
     const random = seededRandom(42); // SYNC SEED
     const boxes = [];
-    const w = 30, h = 36, d = 12;
     
     // Possible 90-degree orthogonal orientations (upside down removed)
     const orientations = [
@@ -393,7 +269,6 @@ export default function Arena() {
         // Check for intersection with existing boxes
         let intersects = false;
         // Minimum distance to ensure boxes don't intersect
-        // (Diagonal of 30x36 base is ~46.8, so 42 gives good packing while mostly avoiding overlap)
         const minDistance = 42; 
         for (let j = 0; j < boxes.length; j++) {
           const dx = x - boxes[j].position[0];
@@ -421,13 +296,63 @@ export default function Arena() {
         id: i,
         position: [x, yOffset, z],
         rotation: finalRot,
-        color: boxColors[i % boxColors.length]
+        color: boxColors[i % boxColors.length],
+        size: { x: 30, y: 36, z: 12 }
       });
     }
 
     return boxes;
-  }, []);
+  }, [cerealBoxExtent]);
 
+  // Spawn tin‑can obstacles – similar to cereal boxes but cylinders
+  const tinCans = useMemo(() => {
+    const random = seededRandom(43); // different seed for variety
+    const cans = [];
+    const orientations = [
+      [0, 0, 0],
+      [Math.PI / 2, 0, 0],
+      [0, 0, Math.PI / 2],
+      [0, 0, -Math.PI / 2],
+    ];
+    const colors = [
+      '#9933ff', '#4d4dff', '#ffcc00',
+      '#7700cc', '#3366ff', '#ffdd33',
+      '#aa44ff', '#2244cc', '#ffaa00',
+    ].map(c => new THREE.Color(c));
+
+    for (let i = 0; i < 20; i++) {
+      let valid = false;
+      let x, z;
+      let attempts = 0;
+      while (!valid && attempts < 100) {
+        x = (random() - 0.5) * 520;
+        z = (random() - 0.5) * 520;
+        attempts++;
+        // avoid central platform
+        if (Math.abs(x) < 45 && z > -75 && z < 30) continue;
+        // distance check against existing cans
+        const minDist = 30;
+        let tooClose = false;
+        for (const c of cans) {
+          const dx = x - c.position[0];
+          const dz = z - c.position[2];
+          if (Math.sqrt(dx * dx + dz * dz) < minDist) { tooClose = true; break; }
+        }
+        if (!tooClose) valid = true;
+      }
+      if (!valid) continue;
+      const finalRot = orientations[Math.floor(random() * orientations.length)];
+      const sideColor = colors[i % colors.length];
+      const yOffset = getAdjustmentY({ x: 5, y: 6, z: 5 }, finalRot);
+        cans.push({
+          id: i,
+          position: [x, yOffset, z],
+          rotation: finalRot,
+          color: sideColor,
+        });
+    }
+    return cans;
+  });
 
   return (
     <>
@@ -646,6 +571,201 @@ export default function Arena() {
 
       {/* WEAPON PODIUMS on Platform 2 */}
       <group position={[0, 101, -45]}>
+
+        
+        <mesh position={[296, 0, 0]} receiveShadow>
+          <boxGeometry args={[4, 1000, 596]} />
+          <meshStandardMaterial color="#eeeeee" roughness={1.0} metalness={0} />
+        </mesh>
+      </group>
+
+      {/* 2. Platform 1 (Spawning Area) */}
+      <RigidBody type="fixed" position={[0, 100, 0]} colliders="cuboid">
+        <mesh receiveShadow>
+          <boxGeometry args={[70, 2, 30]} />
+          <meshStandardMaterial transparent opacity={0} />
+        </mesh>
+      </RigidBody>
+      <mesh position={[0, 101.01, 0]} receiveShadow rotation={[-Math.PI / 2, 0, 0]}>
+        <planeGeometry args={[70, 30]} />
+        <meshStandardMaterial map={darkWoodTexture} roughness={0.4} />
+      </mesh>
+      <mesh position={[0, 98.99, 0]} receiveShadow rotation={[Math.PI / 2, 0, 0]}>
+        <planeGeometry args={[70, 30]} />
+        <meshStandardMaterial color="#eeeeee" roughness={1.0} metalness={0} />
+      </mesh>
+      <group position={[0, 100, 0]}>
+        <mesh position={[0, 0, 15]} receiveShadow>
+          <planeGeometry args={[70, 2]} />
+          <meshStandardMaterial map={darkWoodTexture} roughness={0.4} />
+        </mesh>
+        <mesh position={[0, 0, -15]} receiveShadow rotation={[0, Math.PI, 0]}>
+          <planeGeometry args={[70, 2]} />
+          <meshStandardMaterial map={darkWoodTexture} roughness={0.4} />
+        </mesh>
+        <mesh position={[-35, 0, 0]} receiveShadow rotation={[0, Math.PI / 2, 0]}>
+          <planeGeometry args={[30, 2]} />
+          <meshStandardMaterial map={darkWoodTexture} roughness={0.4} />
+        </mesh>
+        <mesh position={[35, 0, 0]} receiveShadow rotation={[0, -Math.PI / 2, 0]}>
+          <planeGeometry args={[30, 2]} />
+          <meshStandardMaterial map={darkWoodTexture} roughness={0.4} />
+        </mesh>
+      </group>
+
+      {/* Platform 1 Carpet Runner */}
+      <mesh position={[0, 101.06, 0]} receiveShadow>
+        <boxGeometry args={[70, 0.12, 4]} />
+        <meshStandardMaterial color="#880000" roughness={0.8} />
+      </mesh>
+
+      <ArenaLightRays />
+      
+      {/* Platform Boundaries */}
+      <group position={[0, 100, 0]}>
+        <RigidBody type="fixed" position={[0, 2, 15]} collisionGroups={0x0002FFFF}> <CuboidCollider args={[35, 2, 0.5]} /> </RigidBody>
+        <RigidBody type="fixed" position={[35, 2, 0]} collisionGroups={0x0002FFFF}> <CuboidCollider args={[0.5, 2, 15]} /> </RigidBody>
+        <RigidBody type="fixed" position={[-35, 2, 0]} collisionGroups={0x0002FFFF}> <CuboidCollider args={[0.5, 2, 15]} /> </RigidBody>
+        <RigidBody type="fixed" position={[21.25, 2, -15]} collisionGroups={0x0002FFFF}> <CuboidCollider args={[13.75, 2, 0.5]} /> </RigidBody>
+        <RigidBody type="fixed" position={[-21.25, 2, -15]} collisionGroups={0x0002FFFF}> <CuboidCollider args={[13.75, 2, 0.5]} /> </RigidBody>
+        <RigidBody type="fixed" position={[7.5, 2, -22.5]} collisionGroups={0x0002FFFF}> <CuboidCollider args={[0.5, 2, 7.5]} /> </RigidBody>
+        <RigidBody type="fixed" position={[-7.5, 2, -22.5]} collisionGroups={0x0002FFFF}> <CuboidCollider args={[0.5, 2, 7.5]} /> </RigidBody>
+        <RigidBody type="fixed" position={[21.25, 2, -30]} collisionGroups={0x0002FFFF}> <CuboidCollider args={[13.75, 2, 0.5]} /> </RigidBody>
+        <RigidBody type="fixed" position={[-21.25, 2, -30]} collisionGroups={0x0002FFFF}> <CuboidCollider args={[13.75, 2, 0.5]} /> </RigidBody>
+        <RigidBody type="fixed" position={[35, 2, -45]} collisionGroups={0x0002FFFF}> <CuboidCollider args={[0.5, 2, 15]} /> </RigidBody>
+        <RigidBody type="fixed" position={[-35, 2, -45]} collisionGroups={0x0002FFFF}> <CuboidCollider args={[0.5, 2, 15]} /> </RigidBody>
+        <RigidBody type="fixed" position={[0, 2, -60]} collisionGroups={0x0002FFFF}> <CuboidCollider args={[35, 2, 0.5]} /> </RigidBody>
+      </group>
+
+      {/* SKIN PODIUMS (These are the "Blue walk on buttons" that switch skin) */}
+      <SkinPodium 
+        character="Avo" 
+        position={[-31.5, 101, 0]} 
+        padOffset={[5, 0, 0]} 
+      />
+      <SkinPodium 
+        character="Egg" 
+        position={[31.5, 101, 0]} 
+        padOffset={[-5, 0, 0]} 
+      />
+
+      {/* START BUTTON (Central on Platform 1) */}
+      {matchPhase !== 'BATTLE' && (
+        <group position={[0, 101, 8]}>
+          <TextDrei
+            position={[0, 5, 0]}
+            rotation={[0, Math.PI, 0]}
+            fontSize={2.5}
+            color="#ffcc00"
+            anchorX="center"
+            anchorY="middle"
+            outlineWidth={0.2}
+            outlineColor="#000000"
+          >
+            JOIN BATTLE
+          </TextDrei>
+          <RigidBody
+            type="fixed"
+            sensor
+            onIntersectionEnter={() => startMatchSequence()}
+            position={[0, 0.5, 0]}
+          >
+            <CuboidCollider args={[2, 0.5, 2]} />
+            <mesh>
+              <boxGeometry args={[4, 0.2, 4]} />
+              <meshStandardMaterial color="#ffcc00" emissive="#ffcc00" emissiveIntensity={2} toneMapped={false} />
+            </mesh>
+          </RigidBody>
+        </group>
+      )}
+
+      {/* DROP PLATFORMS (These vanish when match starts) */}
+      {matchPhase === 'DROP' && countdown > 0 && dropPoints.map((pos, i) => (
+        <RigidBody key={`drop-${i}`} type="fixed" position={pos} colliders="cuboid">
+          <mesh receiveShadow>
+            <boxGeometry args={[4, 1, 4]} />
+            <meshStandardMaterial color="#0088ff" emissive="#0088ff" emissiveIntensity={2} />
+          </mesh>
+        </RigidBody>
+      ))}
+
+      {/* Phase Indicator (In-World) */}
+      {(matchPhase === 'PREMATCH' || (matchPhase === 'DROP' && countdown > 0)) && (
+        <group position={[0, 120, 0]}>
+          <TextDrei
+            fontSize={8}
+            color="#ffffff"
+            position={[0, 0, 0]}
+            outlineWidth={0.5}
+            outlineColor="#000000"
+          >
+            {matchPhase === 'PREMATCH' ? `MATCH STARTING IN ${countdown}...` : `THE DROP: ${countdown}`}
+          </TextDrei>
+        </group>
+      )}
+
+      {/* 3. Platform 2 */}
+      <RigidBody type="fixed" position={[0, 100, -45]} colliders="cuboid">
+        <mesh receiveShadow>
+          <boxGeometry args={[70, 2, 30]} />
+          <meshStandardMaterial transparent opacity={0} />
+        </mesh>
+      </RigidBody>
+      <mesh position={[0, 101.01, -45]} receiveShadow rotation={[-Math.PI / 2, 0, 0]}>
+        <planeGeometry args={[70, 30]} />
+        <meshStandardMaterial map={darkWoodTexture} roughness={0.4} />
+      </mesh>
+      <mesh position={[0, 98.99, -45]} receiveShadow rotation={[Math.PI / 2, 0, 0]}>
+        <planeGeometry args={[70, 30]} />
+        <meshStandardMaterial color="#eeeeee" roughness={1.0} metalness={0} />
+      </mesh>
+      <group position={[0, 100, -45]}>
+        <mesh position={[0, 0, 15]} receiveShadow>
+          <planeGeometry args={[70, 2]} />
+          <meshStandardMaterial map={darkWoodTexture} roughness={0.4} />
+        </mesh>
+        <mesh position={[0, 0, -15]} receiveShadow rotation={[0, Math.PI, 0]}>
+          <planeGeometry args={[70, 2]} />
+          <meshStandardMaterial map={darkWoodTexture} roughness={0.4} />
+        </mesh>
+        <mesh position={[-35, 0, 0]} receiveShadow rotation={[0, Math.PI / 2, 0]}>
+          <planeGeometry args={[30, 2]} />
+          <meshStandardMaterial map={darkWoodTexture} roughness={0.4} />
+        </mesh>
+        <mesh position={[35, 0, 0]} receiveShadow rotation={[0, -Math.PI / 2, 0]}>
+          <planeGeometry args={[30, 2]} />
+          <meshStandardMaterial map={darkWoodTexture} roughness={0.4} />
+        </mesh>
+      </group>
+
+      {/* 4. Connecting Bridge */}
+      <RigidBody type="fixed" position={[0, 100, -22.5]} colliders="cuboid">
+        <mesh receiveShadow>
+          <boxGeometry args={[15, 2.0, 20]} />
+          <meshStandardMaterial transparent opacity={0} />
+        </mesh>
+      </RigidBody>
+      <mesh position={[0, 101.01, -22.5]} receiveShadow rotation={[-Math.PI / 2, 0, 0]}>
+        <planeGeometry args={[15, 20]} />
+        <meshStandardMaterial map={darkWoodTexture} roughness={0.4} />
+      </mesh>
+      <mesh position={[0, 98.99, -22.5]} receiveShadow rotation={[Math.PI / 2, 0, 0]}>
+        <planeGeometry args={[15, 20]} />
+        <meshStandardMaterial color="#eeeeee" roughness={1.0} metalness={0} />
+      </mesh>
+      <group position={[0, 100, -22.5]}>
+        <mesh position={[7.5, 0, 0]} receiveShadow rotation={[0, -Math.PI / 2, 0]}>
+          <planeGeometry args={[20, 2]} />
+          <meshStandardMaterial map={darkWoodTexture} roughness={0.4} />
+        </mesh>
+        <mesh position={[-7.5, 0, 0]} receiveShadow rotation={[0, Math.PI / 2, 0]}>
+          <planeGeometry args={[20, 2]} />
+          <meshStandardMaterial map={darkWoodTexture} roughness={0.4} />
+        </mesh>
+      </group>
+
+      {/* WEAPON PODIUMS on Platform 2 */}
+      <group position={[0, 101, -45]}>
         <WeaponPodium weapon="Baguette" position={[-20, 0, 0]} color="#f1c232" />
         <WeaponPodium weapon="Donut" position={[0, 0, 0]} color="#ea9999" />
         <WeaponPodium weapon="Breadstick" position={[20, 0, 0]} color="#ce7e00" />
@@ -653,38 +773,36 @@ export default function Arena() {
 
       {/* 5. Cereal Box Obstacles (Individual Meshes with Custom Shader) */}
       {cerealBoxes.map((box) => (
-        <mesh
+        <CerealBoxMesh
           key={`mesh-${box.id}`}
           geometry={cerealBoxGeometry}
+          material={cerealBoxMaterial}
+          texture={munchiesTexture}
           position={box.position}
           rotation={box.rotation}
-          castShadow
-          receiveShadow
-          layers={0}
-          frustumCulled={false}
-        >
-          <meshStandardMaterial 
-            map={munchiesTexture}
-            color={box.color}
-            side={THREE.DoubleSide}
-            onBeforeCompile={(shader) => {
-              // Copy the original shader logic to this instance
-              cerealBoxMaterial.onBeforeCompile(shader);
-            }}
-          />
-        </mesh>
+          color={box.color}
+        />
+      ))}
+
+      {/* TinCan Obstacles */}
+      {tinCans.map((can) => (
+        <TinCan
+          key={`tin-${can.id}`}
+          position={can.position}
+          rotation={can.rotation}
+          color={can.color}
+        />
       ))}
 
       {/* 6. Cereal Box Physics */}
       {cerealBoxes.map((box) => (
-        <CerealBoxPhysics 
-          key={box.id} 
-          position={box.position} 
-          rotation={box.rotation} 
-          boxSize={boxSize} 
+        <CerealBoxPhysics
+          key={box.id}
+          position={box.position}
+          rotation={box.rotation}
+          boxSize={box.size}
         />
       ))}
-
     </>
   );
 }
