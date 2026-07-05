@@ -9,7 +9,7 @@ import { useGameStore } from '../../store/useGameStore';
 import * as SkeletonUtils from 'three/examples/jsm/utils/SkeletonUtils.js';
 import ArenaLightRays from './LightRays';
 import { useCerealBoxAssets, CerealBoxMesh, CerealBoxPhysics } from './Obsticles/CerealBox.jsx';
-import { TinCan } from './Obsticles/TinCan.jsx';
+import { TinCanPhysics } from './Obsticles/TinCan.jsx';
 
 /**
  * Helper to calculate the Y offset needed to place a rotated box on the floor.
@@ -784,9 +784,9 @@ export default function Arena() {
         />
       ))}
 
-      {/* TinCan Obstacles */}
+      {/* TinCan Obstacles – visual + physics combined */}
       {tinCans.map((can) => (
-        <TinCan
+        <TinCanPhysics
           key={`tin-${can.id}`}
           position={can.position}
           rotation={can.rotation}

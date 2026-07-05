@@ -1,5 +1,6 @@
 import React, { useMemo } from 'react';
 import * as THREE from 'three';
+import { RigidBody, CylinderCollider } from '@react-three/rapier';
 import { useGLTF, useTexture } from '@react-three/drei';
 
 // Preload assets – the GLB model is only needed for the shape (we'll use geometry directly)
@@ -93,5 +94,44 @@ export function TinCan({ position, rotation, color }) {
         {metalMaterial}
       </mesh>
     </group>
+  );
+}
+
+/**
+ * Physics collider component for a Tin Can.
+ * Kinematic RigidBody with a CylinderCollider – the visual mesh is parented
+ * inside so it follows the physics body. Kinematic bodies stay in place
+ * (no gravity) but still register collisions with dynamic bodies like the
+ * player.
+ *
+ * Props:
+ *   position, rotation, color – same as TinCan visual
+ *   onHit     – callback(collider, other) when something collides with the can
+ *
+ * FUTURE: To make cans knockable, change type to "dynamic" and add
+ * mass/linDamp/angDamp props. Start with gravityScale={0} and flip
+ * to 1 on first collision for a "wake up" effect.
+ */
+export function TinCanPhysics({
+  position,
+  rotation,
+  color,
+  onHit,
+}) {
+  const halfHeight = 6;  // height 12 / 2
+  const radius = 5;
+
+  return (
+    <RigidBody
+      type="kinematic"
+      position={position}
+      rotation={rotation}
+      collisionGroups={0x0001FFFF}
+      onCollisionEnter={onHit}
+    >
+      <CylinderCollider args={[halfHeight, radius]} />
+      {/* Visual mesh – follows the rigid body transform automatically */}
+      <TinCan color={color} />
+    </RigidBody>
   );
 }
