@@ -182,31 +182,69 @@ export default function PlayerController({ sendUpdate }) {
     };
   }, [gameState]);
 
-  // Teleport handler (Moved to component Level)
+  // Teleport: compute target in the subscriber, apply in useFrame (outside physics step)
+  const pendingTeleport = useRef(null); // { x, y, z } or null
+  const pendingRespawn = useRef(false); // true → move to lobby next frame
+
   useEffect(() => {
     const unsubscribe = useGameStore.subscribe(
       state => state.teleportCount,
       (count) => {
-        if (count > 0 && rigidBodyRef.current) {
-          console.log("🚀 Spawning Player into Arena... Selection Event:", count);
+        if (count > 0) {
+          console.log("🚀 Teleport fired, count:", count);
 
-          // Force wake up and translate
-          rigidBodyRef.current.wakeUp();
-
-          // We check the phase to see where to teleport
-          const currentPhase = useGameStore.getState().game.phase;
-
-          if (currentPhase === 'LOBBY') {
-            // Back to platform
-            rigidBodyRef.current.setTranslation({ x: 0, y: 103, z: 0 }, true);
-          } else {
-            // Into random arena spot
-            const x = (Math.random() - 0.5) * 500;
-            const z = (Math.random() - 0.5) * 500;
-            rigidBodyRef.current.setTranslation({ x, y: 5, z }, true);
+          // Replicate cereal box positions (must match Arena.jsx seededRandom(42))
+          const seededRandom = (seed) => {
+            let s = seed;
+            return () => { s = (s * 9301 + 49297) % 233280; return s / 233280; };
+          };
+          const rand = seededRandom(42);
+          const cerealPositions = [];
+          for (let i = 0; i < 20; i++) {
+            let bx, bz, valid = false, attempts = 0;
+            while (!valid && attempts < 100) {
+              bx = (rand() - 0.5) * 520;
+              bz = (rand() - 0.5) * 520;
+              attempts++;
+              if (Math.abs(bx) < 45 && bz > -75 && bz < 30) continue;
+              let ok = true;
+              for (const b of cerealPositions) {
+                if (Math.hypot(bx - b.x, bz - b.z) < 42) { ok = false; break; }
+              }
+              if (ok) valid = true;
+            }
+            if (valid) cerealPositions.push({ x: bx, z: bz });
           }
-          rigidBodyRef.current.setLinvel({ x: 0, y: 0, z: 0 }, true);
-          rigidBodyRef.current.setAngvel({ x: 0, y: 0, z: 0 }, true);
+
+          const TABLE_HALF = 280;
+          const PLATFORM_ZONES = [
+            { cx: 0, cz: 0, rx: 50, rz: 35 },
+            { cx: 0, cz: -45, rx: 40, rz: 20 },
+            { cx: 0, cz: -22.5, rx: 12, rz: 15 },
+          ];
+          const SAFE_DIST = 22;
+
+          let tx, tz, placed = false;
+          for (let attempt = 0; attempt < 200; attempt++) {
+            tx = (Math.random() - 0.5) * TABLE_HALF * 2;
+            tz = (Math.random() - 0.5) * TABLE_HALF * 2;
+            let inZone = false;
+            for (const z of PLATFORM_ZONES) {
+              if (Math.abs(tx - z.cx) < z.rx && Math.abs(tz - z.cz) < z.rz) { inZone = true; break; }
+            }
+            if (inZone) continue;
+            let tooClose = false;
+            for (const b of cerealPositions) {
+              if (Math.hypot(tx - b.x, tz - b.z) < SAFE_DIST) { tooClose = true; break; }
+            }
+            if (tooClose) continue;
+            placed = true;
+            break;
+          }
+          if (!placed) { tx = 0; tz = 80; }
+
+          // Store target — useFrame will apply it outside the physics step
+          pendingTeleport.current = { x: tx, y: 5, z: tz };
 
           // Lock pointer and set game state to playing
           try {
@@ -228,23 +266,7 @@ export default function PlayerController({ sendUpdate }) {
       (count) => {
         if (count > 0 && rigidBodyRef.current) {
           console.log("🔄 Respawning Player to Platform 1", count);
-
-          rigidBodyRef.current.wakeUp();
-          rigidBodyRef.current.setTranslation({ x: 0, y: 103, z: 0 }, true);
-          rigidBodyRef.current.setLinvel({ x: 0, y: 0, z: 0 }, true);
-          rotationY.current = Math.PI;
-          smoothRotY.current = Math.PI;
-          targetRotationY.current = Math.PI;
-
-          if (playerGroupRef.current) {
-            playerGroupRef.current.rotation.y = Math.PI; // Match targetRotationY
-          }
-
-          try {
-            gl.domElement.requestPointerLock();
-          } catch (e) {
-            console.warn("Pointer lock request failed");
-          }
+          pendingRespawn.current = true;
         }
       }
     );
@@ -300,6 +322,42 @@ export default function PlayerController({ sendUpdate }) {
     // SAFETY: If physics returns NaN, ignore this frame to avoid crashing the camera
     if (isNaN(translation.x) || isNaN(translation.y) || isNaN(translation.z)) return;
 
+    // Apply pending teleport OUTSIDE the physics step (setTranslation during step is ignored)
+    if (pendingTeleport.current) {
+      const t = pendingTeleport.current;
+      pendingTeleport.current = null;
+      rigidBodyRef.current.wakeUp();
+      rigidBodyRef.current.setTranslation({ x: t.x, y: t.y, z: t.z }, true);
+      rigidBodyRef.current.setLinvel({ x: 0, y: 0, z: 0 }, true);
+      rigidBodyRef.current.setAngvel({ x: 0, y: 0, z: 0 }, true);
+      console.log(`🚀 Teleport applied: (${t.x.toFixed(1)}, ${t.y}, ${t.z.toFixed(1)})`);
+      if (sendUpdate) sendUpdate({ pos: [t.x, t.y, t.z], force: true });
+      return; // skip this frame — physics will settle next frame
+    }
+
+    // Apply pending respawn (death or restart → lobby Platform 1)
+    if (pendingRespawn.current) {
+      pendingRespawn.current = false;
+      rigidBodyRef.current.wakeUp();
+      rigidBodyRef.current.setTranslation({ x: 0, y: 103, z: 0 }, true);
+      rigidBodyRef.current.setLinvel({ x: 0, y: 0, z: 0 }, true);
+      rigidBodyRef.current.setAngvel({ x: 0, y: 0, z: 0 }, true);
+      rotationY.current = Math.PI;
+      smoothRotY.current = Math.PI;
+      targetRotationY.current = Math.PI;
+      if (playerGroupRef.current) {
+        playerGroupRef.current.rotation.y = Math.PI;
+      }
+      try {
+        gl.domElement.requestPointerLock();
+      } catch (e) {
+        console.warn("Pointer lock request failed");
+      }
+      console.log("🔄 Respawn applied → Platform 1");
+      if (sendUpdate) sendUpdate({ pos: [0, 103, 0], force: true });
+      return;
+    }
+
     const playerPos = translation;
 
     // Kill Plane
@@ -313,6 +371,7 @@ export default function PlayerController({ sendUpdate }) {
       if (playerGroupRef.current) {
         playerGroupRef.current.rotation.y = Math.PI; // Match targetRotationY
       }
+      if (sendUpdate) sendUpdate({ pos: [0, 103, 0], force: true });
       return;
     }
 
@@ -435,8 +494,8 @@ export default function PlayerController({ sendUpdate }) {
 
     if (currentlyGrounded) {
       setHasDoubleJumped(false); // Reset double jump
-      // Only allow landing if moving DOWN and VERY CLOSE to the ground
-      if ((currentPhase === 'air' || currentPhase === 'doublejump') && currentVelocity.y < 0 && veryCloseToGround) {
+      // Only allow landing if moving DOWN (or flat) and VERY CLOSE to the ground
+      if ((currentPhase === 'air' || currentPhase === 'doublejump') && currentVelocity.y <= 0.1 && veryCloseToGround) {
         currentPhase = 'land';
         const landDuration = (animConfig?.jump?.landFrames || 10) / (30 * 1.6);
         jumpTimer.current = landDuration;
@@ -673,7 +732,7 @@ export default function PlayerController({ sendUpdate }) {
     // 3. Define the Ray Origin (Target Point) with smoothing
     // We smooth the anchor point to give a "cinematic" follow feel to the camera's orbit center.
     if (!camera.userData.smoothedTarget) camera.userData.smoothedTarget = new THREE.Vector3().copy(playerPos);
-    const targetYOffset = 2.2;
+    const targetYOffset = 1;
     const shoulderOffset = 2; // Shift camera to the right
 
     // Calculate the right vector for the shoulder offset
@@ -688,37 +747,42 @@ export default function PlayerController({ sendUpdate }) {
     camera.userData.smoothedTarget.lerp(currentTarget, 1 - Math.exp(-15 * delta));
     const rayOrigin = camera.userData.smoothedTarget;
 
-    // 4. RayCast with proper Rapier API parameter ordering.
-    // CRITICAL FIX: 0x00010001 was previously passed as filterFlags (param 4),
-    // which set EXCLUDE_FIXED — silently ignoring ALL arena geometry (floor, walls, platforms).
-    // It must be filterGroups (param 5) to act as collision group filtering.
-    // 4. ShapeCast — sweep a Ball(0.5) from player head outward to find safe camera distance
-    // This gives the camera physical volume, preventing clipping through corners and floors.
+    // 4. ShapeCast — sweep from PLAYER CENTER with a dynamic ball radius.
+    // The camera is offset from the centered sweep line by the shoulder offset.
+    // When the camera is behind the player, the shoulder offset is purely perpendicular
+    // to the sweep line (max offset = shoulderOffset). When the camera is to the side,
+    // the offset is along the sweep line (perp offset ≈ 0).
+    // We grow the ball radius by the perpendicular component so the sweep catches
+    // walls that the offset camera would actually hit.
     let maxSafeDist = smoothZoom.current;
 
     try {
-      // Lazily create and cache the Ball shape and orientation
-      if (!camera.userData._cameraShape) {
-        camera.userData._cameraShape = new rapier.Ball(0.5);
-      }
-
-      const shapeOrigin = { x: rayOrigin.x, y: rayOrigin.y, z: rayOrigin.z };
       const shapeRotation = { w: 1.0, x: 0.0, y: 0.0, z: 0.0 };
       const shapeVelocity = { x: rayDirection.x, y: rayDirection.y, z: rayDirection.z };
 
-      // castShape signature: (pos, rot, vel, shape, targetDist, maxToi, stopAtPenetration, flags, groups, excCollider, excRigidBody)
+      // Calculate how much of the shoulder offset is perpendicular to the sweep line
+      const dotRight = right.dot(rayDirection);
+      const perpOffset = shoulderOffset * Math.sqrt(Math.max(0, 1 - dotRight * dotRight));
+      const sweepRadius = 0.5 + perpOffset;
+
+      // Only recreate the shape when the radius changes noticeably
+      if (!camera.userData._cameraShape || Math.abs((camera.userData._sweepRadius || 0) - sweepRadius) > 0.05) {
+        camera.userData._cameraShape = new rapier.Ball(sweepRadius);
+        camera.userData._sweepRadius = sweepRadius;
+      }
+
+      const collisionOrigin = { x: playerPos.x, y: playerPos.y + targetYOffset, z: playerPos.z };
+
       const hit = world.castShape(
-        shapeOrigin,
-        shapeRotation,
-        shapeVelocity,
-        camera.userData._cameraShape,
-        0.0,                 // targetDistance (0 = traditional sweep)
-        smoothZoom.current,  // maxToi (Distance)
-        true,                // stopAtPenetration
-        null,                // filterFlags
-        0x00010001,          // filterGroups
-        null,                // filterExcludeCollider
-        rigidBodyRef.current // filterExcludeRigidBody (Ignore player)
+        collisionOrigin,                // 1. shapePos
+        shapeRotation,                  // 2. shapeRot
+        shapeVelocity,                  // 3. shapeVel (sweep direction)
+        camera.userData._cameraShape,   // 4. shape
+        smoothZoom.current,             // 5. maxToi (sweep distance — was shifted to stopAtPenetration!)
+        true,                           // 6. stopAtPenetration
+        0x00010001,                     // 7. filterGroups
+        null,                           // 8. filterExcludeCollider
+        rigidBodyRef.current            // 9. filterExcludeRigidBody (player body)
       );
 
       if (hit) {
@@ -728,9 +792,10 @@ export default function PlayerController({ sendUpdate }) {
         }
       }
     } catch (e) {
-      // Fallback
+      // Fallback: single ray from player center
       console.warn('[Camera] castShape error:', e.message);
-      const ray = new rapier.Ray(rayOrigin, rayDirection);
+      const fbOrigin = { x: playerPos.x, y: playerPos.y + targetYOffset, z: playerPos.z };
+      const ray = new rapier.Ray(fbOrigin, rayDirection);
       const backupHit = world.castRay(ray, smoothZoom.current, false, null, 0x00010001, null, rigidBodyRef.current);
       if (backupHit) maxSafeDist = Math.max(0.5, backupHit.toi - 0.5);
     }
@@ -751,15 +816,14 @@ export default function PlayerController({ sendUpdate }) {
     }
 
     if (camera.userData.currentZoom > maxSafeDist) {
-      // Collision detected — snap/fast-lerp inwards immediately
+      // Collision detected — ease inward gradually to avoid the "jump" effect
       camera.userData.currentZoom = THREE.MathUtils.damp(
-        camera.userData.currentZoom, maxSafeDist, 30, delta
+        camera.userData.currentZoom, maxSafeDist, 10, delta
       );
     } else {
       // Path is clear — recover toward intended zoom (what the user set)
-      // Fast recovery so camera doesn't stay close after a jump
       camera.userData.currentZoom = THREE.MathUtils.damp(
-        camera.userData.currentZoom, intendedZoom.current, 8, delta
+        camera.userData.currentZoom, intendedZoom.current, 12, delta
       );
       // Also clamp to maxSafeDist so we never go through geometry
       camera.userData.currentZoom = Math.min(camera.userData.currentZoom, maxSafeDist);
@@ -916,7 +980,7 @@ export default function PlayerController({ sendUpdate }) {
   return (
     <RigidBody 
       ref={rigidBodyRef} 
-      position={[0, 105, 0]} 
+      position={[0, 110, 0]} 
       colliders={false} 
       lockRotations={true} 
       mass={1} 

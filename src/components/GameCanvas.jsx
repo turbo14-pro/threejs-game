@@ -13,12 +13,13 @@ import { SKINS } from '../data/registries';
 export default function GameCanvas({ sendUpdate }) {
 
   const gameState = useGameStore(state => state.game.state);
+  const physicsDebug = useGameStore(state => state.settings.physicsDebug);
 
   return (
     <>
       <EnvironmentSetup />
       <SoundListener />
-      <Physics gravity={[0, -90.81, 0]}>
+      <Physics gravity={[0, -90.81, 0]} debug={physicsDebug}>
         <Arena />
         {gameState === 'PLAYING' ? (
           <>

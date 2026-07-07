@@ -149,6 +149,15 @@ export default function Options({ onBack }) {
               <div className={`premium-toggle ${settings.grain ? 'active' : ''}`}><div className="toggle-knob" /></div>
             </div>
 
+            {/* PHYSICS DEBUG */}
+            <div className="option-item" onClick={() => toggleSetting('physicsDebug')}>
+              <div className="option-info">
+                <span className="option-name">Physics Debug</span>
+                <span className="option-desc">Show collision wireframes</span>
+              </div>
+              <div className={`premium-toggle ${settings.physicsDebug ? 'active' : ''}`}><div className="toggle-knob" /></div>
+            </div>
+
           </div>
         )}
       </div>

@@ -5,7 +5,6 @@ import { KeyboardControls } from '@react-three/drei';
 import MainMenu from './components/UI/MainMenu.jsx';
 import HUD from './components/UI/HUD.jsx';
 import GameCanvas from './components/GameCanvas.jsx';
-import MCPController from './components/MCPController.jsx';
 import { useGameStore } from './store/useGameStore.js';
 import { useNetworking } from './hooks/useNetworking.js';
 import NetworkStatus from './components/UI/NetworkStatus.jsx';
@@ -51,11 +50,7 @@ export default function App() {
             <color attach="background" args={['#958164']} />
             <fogExp2 attach="fog" args={['#958164', 0.004]} />
             <GameCanvas sendUpdate={sendUpdate} />
-            {import.meta.env.DEV && (
-              <>
-                <MCPController />
-              </>
-            )}
+
           </Suspense>
         </Canvas>
       </div>

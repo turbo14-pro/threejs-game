@@ -193,9 +193,12 @@ io.onConnection(channel => {
     p.skin = data.skin || p.skin;
     p.anim = data.anim || p.anim;
     
-    // In Phase 2, we ONLY teleport if we don't have active inputs (e.g., initial join)
-    if (data.pos && !p.input) {
+    // In Phase 2, we ONLY teleport if we don't have active inputs (e.g., initial join) or if forced
+    if (data.pos && (!p.input || data.force)) {
       p.body.setTranslation({ x: data.pos[0], y: data.pos[1], z: data.pos[2] }, true);
+      if (data.force) {
+        p.body.setLinvel({ x: 0, y: 0, z: 0 }, true);
+      }
     }
   });
 

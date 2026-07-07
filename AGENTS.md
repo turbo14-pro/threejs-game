@@ -87,6 +87,46 @@ To work on the game, you usually need both the game screen and the server runnin
 
 ---
 
+## Oracle Server Connection
+
+Agents can connect to the Oracle server using the following information:
+
+- **Server IP**: 192.9.188.215
+- **Username**: ubuntu
+- **SSH Key**: `u:\My Games\three.js\ssh-key-2026-04-22.key`
+- **Local Development URL**: http://192.9.188.215
+- **Production URL**: https://ff-server-9208.duckdns.org
+
+Environment variables are stored in `.env`:
+- `VITE_SERVER_URL_LOCAL` - Local development server URL
+- `VITE_SERVER_URL_PRODUCTION` - Production server URL
+- `IP_ADDRESS` - Server IP address
+- `USERNAME` - SSH username
+
+To connect via SSH:
+```bash
+ssh -i "u:\My Games\three.js\ssh-key-2026-04-22.key" ubuntu@192.9.188.215
+```
+
+Once connected, navigate to the project directory:
+```bash
+cd /home/ubuntu/three.js
+```
+
+To start the server:
+```bash
+node server/index.js
+```
+
+To run the frontend:
+```bash
+npm run dev
+```
+
+---
+
+## Testing Instructions
+
 ## Troubleshooting
 
 - **Server Connection**: If the game doesn't connect, make sure you ran `npm run server`.

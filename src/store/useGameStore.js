@@ -46,6 +46,7 @@ export const useGameStore = create(
 
         // --- TECHNICAL / INPUT ---
         teleportCount: 0, // Used to trigger player position resets
+        respawnCount: 0, // Used to trigger lobby respawn
         mobileInput: { x: 0, y: 0, jump: false, sprint: false, slide: false },
         cameraInput: { x: 0, y: 0 },
         
@@ -66,7 +67,8 @@ export const useGameStore = create(
           lightRays: true,
           shockwave: true,
           depthOfField: false,
-          pixelRatio: window.devicePixelRatio || 1
+          pixelRatio: window.devicePixelRatio || 1,
+          physicsDebug: false
         },
 
         // --- EFFECTS ---
@@ -118,7 +120,7 @@ export const useGameStore = create(
                 health: 100, 
                 stats: { ...s.player.stats, deaths: s.player.stats.deaths + 1 } 
               },
-              teleportCount: s.teleportCount + 1
+              respawnCount: s.respawnCount + 1
             }));
           }
         },
@@ -155,6 +157,11 @@ export const useGameStore = create(
         
         // System
         triggerWorldReset: () => set({ teleportCount: get().teleportCount + 1 }),
+        respawnToLobby: () => set((s) => ({ 
+          game: { ...s.game, phase: 'LOBBY' },
+          player: { ...s.player, health: 100 },
+          respawnCount: s.respawnCount + 1 
+        })),
         setMobileInput: (input) => set({ mobileInput: { ...get().mobileInput, ...input } }),
         setCameraInput: (input) => set({ cameraInput: { ...get().cameraInput, ...input } }),
         setSetting: (key, value) => set((s) => ({ 
@@ -165,11 +172,11 @@ export const useGameStore = create(
           if (preset === 'Custom') return { performancePreset: preset };
           
           const PRESETS = {
-            Lowest: { shadowQuality: 'None', skybox: false, bloom: false, vignette: false, grain: false, antialiasing: 'None', ssao: false, lightRays: false, shockwave: false, depthOfField: false },
-            Low: { shadowQuality: 'Medium', skybox: true, bloom: false, vignette: false, grain: false, antialiasing: 'FXAA', ssao: false, lightRays: true, shockwave: true, depthOfField: false },
-            Medium: { shadowQuality: 'Medium', skybox: true, bloom: true, vignette: true, grain: false, antialiasing: 'FXAA', ssao: false, lightRays: true, shockwave: true, depthOfField: false },
-            High: { shadowQuality: 'High', skybox: true, bloom: true, vignette: true, grain: true, antialiasing: 'SMAA', ssao: false, lightRays: true, shockwave: true, depthOfField: true },
-            Ultra: { shadowQuality: 'Ultra', skybox: true, bloom: true, vignette: true, grain: true, antialiasing: 'TAA', ssao: true, lightRays: true, shockwave: true, depthOfField: true }
+            Lowest: { shadowQuality: 'None', skybox: false, bloom: false, vignette: false, grain: false, antialiasing: 'None', ssao: false, lightRays: false, shockwave: false, depthOfField: false, physicsDebug: false },
+            Low: { shadowQuality: 'Medium', skybox: true, bloom: false, vignette: false, grain: false, antialiasing: 'FXAA', ssao: false, lightRays: true, shockwave: true, depthOfField: false, physicsDebug: false },
+            Medium: { shadowQuality: 'Medium', skybox: true, bloom: true, vignette: true, grain: false, antialiasing: 'FXAA', ssao: false, lightRays: true, shockwave: true, depthOfField: false, physicsDebug: false },
+            High: { shadowQuality: 'High', skybox: true, bloom: true, vignette: true, grain: true, antialiasing: 'SMAA', ssao: false, lightRays: true, shockwave: true, depthOfField: true, physicsDebug: false },
+            Ultra: { shadowQuality: 'Ultra', skybox: true, bloom: true, vignette: true, grain: true, antialiasing: 'TAA', ssao: true, lightRays: true, shockwave: true, depthOfField: true, physicsDebug: false }
           };
           
           return {

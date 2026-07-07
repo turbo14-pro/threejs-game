@@ -61,9 +61,7 @@ export default function HUD() {
   };
 
   const handleRespawn = () => {
-    // We can use a custom action here if we want, but for now we'll just reset health
-    useGameStore.getState().damagePlayer(-100); 
-    useGameStore.getState().triggerWorldReset();
+    useGameStore.getState().respawnToLobby();
   };
 
   return (

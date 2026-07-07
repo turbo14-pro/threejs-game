@@ -1,7 +1,8 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useRef } from 'react';
 import * as THREE from 'three';
-import { RigidBody, CylinderCollider } from '@react-three/rapier';
+import { RigidBody, CylinderCollider, useRapier } from '@react-three/rapier';
 import { useGLTF, useTexture } from '@react-three/drei';
+import { useFrame } from '@react-three/fiber';
 
 // Preload assets – the GLB model is only needed for the shape (we'll use geometry directly)
 useGLTF.preload('/models/tincan.glb');
@@ -27,7 +28,7 @@ export function TinCan({ position, rotation, color }) {
       <meshStandardMaterial
         color={sideColor}
         map={labelTex}
-        metalness={0.0}
+        metalness={0.2}
         roughness={0.5}
         onBeforeCompile={(shader) => {
           // Prevent standard colour multiplication by vColor in colour_fragment
@@ -68,16 +69,16 @@ export function TinCan({ position, rotation, color }) {
     () => (
       <meshStandardMaterial
         color="#c0c0c0"
-        metalness={1.0}
-        roughness={0.2}
+        metalness={0.3}
+        roughness={0.0}
       />
     ),
     []
   );
 
   // Approximate tin‑can dimensions.
-  const radius = 5; // half‑width
-  const height = 12;
+  const radius = 4; // half‑width
+  const height = 10;
 
   return (
     <group position={position} rotation={rotation}>
@@ -99,39 +100,54 @@ export function TinCan({ position, rotation, color }) {
 
 /**
  * Physics collider component for a Tin Can.
- * Kinematic RigidBody with a CylinderCollider – the visual mesh is parented
- * inside so it follows the physics body. Kinematic bodies stay in place
- * (no gravity) but still register collisions with dynamic bodies like the
- * player.
- *
- * Props:
- *   position, rotation, color – same as TinCan visual
- *   onHit     – callback(collider, other) when something collides with the can
- *
- * FUTURE: To make cans knockable, change type to "dynamic" and add
- * mass/linDamp/angDamp props. Start with gravityScale={0} and flip
- * to 1 on first collision for a "wake up" effect.
+ * Dynamic RigidBody with a CylinderCollider matching the visual dimensions.
+ * The visual TinCan mesh is parented inside so it follows physics.
+ * Falls from spawn height (y=30) onto the table. Respawns if it falls below y=-100.
  */
-export function TinCanPhysics({
-  position,
-  rotation,
-  color,
-  onHit,
-}) {
-  const halfHeight = 6;  // height 12 / 2
-  const radius = 5;
+export function TinCanPhysics({ position, rotation, color, mass = 1, linearDamping = 0.1, angularDamping = 0.05 }) {
+  const halfHeight = 5;  // height 12 / 2
+  const radius = 4;
+  const rigidRef = useRef();
+  const colliderRef = useRef();
+
+  // Debug: log actual collider shape type after creation
+  const logged = useRef(false);
+  const { world } = useRapier();
+  useFrame(() => {
+    if (logged.current || !colliderRef.current) return;
+    logged.current = true;
+    const c = world.getCollider(colliderRef.current.handle);
+    console.log('[TinCan] Shape type:', c.shapeType());
+    console.log('[TinCan] Has _shape:', !!c._shape, 'keys:', Object.keys(c._shape || {}));
+    console.log('[TinCan] RigidBody translation:', rigidRef.current?.translation());
+  });
+
+  // Respawn if the can falls below the arena
+  useFrame(() => {
+    if (!rigidRef.current) return;
+    const y = rigidRef.current.translation().y;
+    if (y < -100) {
+      // Reset to spawn position (same x/z, y=30) with zero velocity
+      rigidRef.current.setTranslation({ x: position[0], y: 30, z: position[2] }, true);
+      rigidRef.current.setLinvel({ x: 0, y: 0, z: 0 }, true);
+      rigidRef.current.setAngvel({ x: 0, y: 0, z: 0 }, true);
+    }
+  });
 
   return (
-    <RigidBody
-      type="kinematic"
-      position={position}
-      rotation={rotation}
-      collisionGroups={0x0001FFFF}
-      onCollisionEnter={onHit}
-    >
-      <CylinderCollider args={[halfHeight, radius]} />
-      {/* Visual mesh – follows the rigid body transform automatically */}
-      <TinCan color={color} />
+      <RigidBody
+        ref={rigidRef}
+        type="dynamic"
+        position={position}
+        rotation={rotation}
+        colliders={false}
+        collisionGroups={0x0001FFFF}
+        mass={mass}
+        linearDamping={linearDamping}
+        angularDamping={angularDamping}
+      >
+      <CylinderCollider args={[halfHeight, radius]} ref={colliderRef} />
+      <TinCan position={[0, 0, 0]} rotation={[0, 0, 0]} color={color} />
     </RigidBody>
   );
 }
