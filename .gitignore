@@ -28,6 +28,11 @@ dist-ssr
 
 src/models/*.blend
 
+# Large binary assets (track locally, not in git)
+*.blend
+*.blend1
+*.glb
+
 # Secrets
 *.key
 *.key.pub
