@@ -1,11 +1,9 @@
-import React, { useMemo, useRef } from 'react';
+import React, { useMemo, useRef, useCallback } from 'react';
 import * as THREE from 'three';
-import { RigidBody, CylinderCollider, useRapier } from '@react-three/rapier';
-import { useGLTF, useTexture } from '@react-three/drei';
+import { RigidBody, CylinderCollider } from '@react-three/rapier';
+import { useTexture } from '@react-three/drei';
 import { useFrame } from '@react-three/fiber';
 
-// Preload assets – the GLB model is only needed for the shape (we'll use geometry directly)
-useGLTF.preload('/models/tincan.glb');
 useTexture.preload('/materials/sonicboom-beans.webp');
 
 /**
@@ -68,32 +66,62 @@ export function TinCan({ position, rotation, color }) {
   const metalMaterial = useMemo(
     () => (
       <meshStandardMaterial
-        color="#c0c0c0"
-        metalness={0.3}
-        roughness={0.0}
+        color="#e0e0e0"
+        metalness={0.9}
+        roughness={0.15}
+        envMapIntensity={2}
       />
     ),
     []
   );
 
   // Approximate tin‑can dimensions.
-  const radius = 4; // half‑width
+  const radius = 3.6; // half‑width
   const height = 10;
+
+  // Concave dome cap – real tin lids press inward with a raised lip around the edge.
+  const capGeometry = useMemo(() => {
+    // Sphere section → flattened → flipped Y → concave
+    const geo = new THREE.SphereGeometry(radius, 32, 8, 0, Math.PI * 2, 0, Math.PI / 2);
+    const pos = geo.attributes.position;
+    for (let i = 0; i < pos.count; i++) {
+      // Flatten to 6% and negate Y so dome goes inward (concave)
+      pos.setY(i, -pos.getY(i) * 0.06);
+    }
+    pos.needsUpdate = true;
+    geo.computeVertexNormals();
+    return geo;
+  }, [radius]);
+
+  // Raised lip ring around the cap edge
+  const lipGeometry = useMemo(() => {
+    return new THREE.TorusGeometry(radius, 0.1, 8, 32);
+  }, [radius]);
 
   return (
     <group position={position} rotation={rotation}>
       {/* Side surface */}
-      <mesh geometry={new THREE.CylinderGeometry(radius, radius, height, 32, 1, true)}>
+      <mesh geometry={new THREE.CylinderGeometry(radius, radius, height, 32, 1, true)} castShadow receiveShadow>
         {sideMaterial}
       </mesh>
-      {/* Top metallic cap */}
-      <mesh geometry={new THREE.CircleGeometry(radius, 32)} rotation={[-Math.PI / 2, 0, 0]} position={[0, height / 2, 0]}>
-        {metalMaterial}
-      </mesh>
-      {/* Bottom metallic cap */}
-      <mesh geometry={new THREE.CircleGeometry(radius, 32)} rotation={[Math.PI / 2, 0, 0]} position={[0, -height / 2, 0]}>
-        {metalMaterial}
-      </mesh>
+      {/* Top cap – concave dome + lip ring */}
+      <group position={[0, height / 2, 0]}>
+        <mesh geometry={capGeometry} castShadow receiveShadow>
+          {metalMaterial}
+        </mesh>
+        <mesh geometry={lipGeometry} rotation={[Math.PI / 2, 0, 0]} castShadow receiveShadow>
+          {metalMaterial}
+        </mesh>
+      </group>
+      {/* Bottom cap – concave dome flipped + lip ring */}
+      <group position={[0, -height / 2, 0]}>
+        <mesh geometry={capGeometry} rotation={[Math.PI, 0, 0]} castShadow receiveShadow>
+          {metalMaterial}
+        </mesh>
+        <mesh geometry={lipGeometry} rotation={[Math.PI / 2, 0, 0]} castShadow receiveShadow>
+          {metalMaterial}
+        </mesh>
+      </group>
     </group>
   );
 }
@@ -104,35 +132,58 @@ export function TinCan({ position, rotation, color }) {
  * The visual TinCan mesh is parented inside so it follows physics.
  * Falls from spawn height (y=30) onto the table. Respawns if it falls below y=-100.
  */
-export function TinCanPhysics({ position, rotation, color, mass = 1, linearDamping = 0.1, angularDamping = 0.05 }) {
+export function TinCanPhysics({ position, rotation, color, mass = 1, linearDamping = 0.2, angularDamping = 0.0 }) {
   const halfHeight = 5;  // height 12 / 2
   const radius = 4;
   const rigidRef = useRef();
-  const colliderRef = useRef();
-
-  // Debug: log actual collider shape type after creation
-  const logged = useRef(false);
-  const { world } = useRapier();
-  useFrame(() => {
-    if (logged.current || !colliderRef.current) return;
-    logged.current = true;
-    const c = world.getCollider(colliderRef.current.handle);
-    console.log('[TinCan] Shape type:', c.shapeType());
-    console.log('[TinCan] Has _shape:', !!c._shape, 'keys:', Object.keys(c._shape || {}));
-    console.log('[TinCan] RigidBody translation:', rigidRef.current?.translation());
-  });
 
   // Respawn if the can falls below the arena
   useFrame(() => {
     if (!rigidRef.current) return;
     const y = rigidRef.current.translation().y;
     if (y < -100) {
-      // Reset to spawn position (same x/z, y=30) with zero velocity
       rigidRef.current.setTranslation({ x: position[0], y: 30, z: position[2] }, true);
       rigidRef.current.setLinvel({ x: 0, y: 0, z: 0 }, true);
       rigidRef.current.setAngvel({ x: 0, y: 0, z: 0 }, true);
     }
   });
+
+  // Push the can away when the player slides into it
+  const handleCollision = useCallback((e) => {
+    if (!rigidRef.current) return;
+    const other = e.other.rigidBody;
+    if (!other || other.userData?.type !== 'player' || !other.userData?.isSliding) return;
+
+    const canPos = rigidRef.current.translation();
+    const playerPos = other.translation();
+
+    // Direction from player to can
+    const dir = new THREE.Vector3(
+      canPos.x - playerPos.x,
+      0,
+      canPos.z - playerPos.z
+    ).normalize();
+
+    // Player velocity contributes to the push direction
+    const playerVel = other.linvel();
+    const velDir = new THREE.Vector3(playerVel.x, 0, playerVel.z);
+    const speed = velDir.length();
+
+    // Blend: 70% direction-away + 30% player velocity direction
+    const finalDir = new THREE.Vector3()
+      .copy(dir).multiplyScalar(0.7)
+      .addScaledVector(velDir.normalize(), 0.3)
+      .normalize();
+
+    // Scale force by player speed (min threshold so even slow hits move the can)
+    const force = Math.max(speed * 800, 25);
+
+    rigidRef.current.applyImpulse({
+      x: finalDir.x * force,
+      y: force,  // slight upward pop
+      z: finalDir.z * force
+    }, true);
+  }, []);
 
   return (
       <RigidBody
@@ -145,8 +196,9 @@ export function TinCanPhysics({ position, rotation, color, mass = 1, linearDampi
         mass={mass}
         linearDamping={linearDamping}
         angularDamping={angularDamping}
+        onCollisionEnter={handleCollision}
       >
-      <CylinderCollider args={[halfHeight, radius]} ref={colliderRef} />
+      <CylinderCollider args={[halfHeight, radius]} />
       <TinCan position={[0, 0, 0]} rotation={[0, 0, 0]} color={color} />
     </RigidBody>
   );
