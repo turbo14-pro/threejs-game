@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState, useCallback } from 'react';
 import { PowerUpCoin } from './PowerUpCoin.jsx';
 import { useGameStore } from '../../../store/useGameStore';
 
@@ -83,26 +83,25 @@ function randomSpawnInterval() {
 // ---------------------------------------------------------------------------
 
 export function PowerUpManager() {
-  const coinsRef = useRef([]);     // { id, position, category, rarity, alive }
-  const timerRef = useRef(null);
-  const nextSpawnRef = useRef(randomSpawnInterval());
+  const [coins, setCoins] = useState([]);
   const elapsedRef = useRef(0);
+  const nextSpawnRef = useRef(randomSpawnInterval());
   const idCounterRef = useRef(0);
 
   // ---- spawn logic --------------------------------------------------------
 
-  const spawnCoin = () => {
+  const spawnCoin = useCallback(() => {
     const state = useGameStore.getState();
     if (state.coinCount >= MAX_COINS) return;
 
-    const position = getRandomSpawnPosition(coinsRef.current.filter((c) => c.alive));
+    const id = ++idCounterRef.current;
+    const position = getRandomSpawnPosition(coins);
     const category = getRandomCategory();
     const rarity = getRandomRarity();
-    const id = ++idCounterRef.current;
 
-    coinsRef.current.push({ id, position, category, rarity, alive: true });
+    setCoins((prev) => [...prev, { id, position, category, rarity, alive: true }]);
     useGameStore.getState().incrementCoinCount();
-  };
+  }, [coins]);
 
   // ---- timer loop ---------------------------------------------------------
 
@@ -116,28 +115,27 @@ export function PowerUpManager() {
       }
     }, 1000);
     return () => clearInterval(interval);
-  }, []);
+  }, [spawnCoin]);
 
   // ---- initial spawn (1s after mount) -------------------------------------
 
   useEffect(() => {
     const t = setTimeout(spawnCoin, 1000);
     return () => clearTimeout(t);
-  }, []);
+  }, [spawnCoin]);
 
   // ---- coin collected callback --------------------------------------------
 
-  const handleCollected = (id) => {
-    const coin = coinsRef.current.find((c) => c.id === id);
-    if (coin) coin.alive = false;
+  const handleCollected = useCallback((id) => {
+    setCoins((prev) => prev.map((c) => (c.id === id ? { ...c, alive: false } : c)));
     useGameStore.getState().decrementCoinCount();
-  };
+  }, []);
 
   // ---- render -------------------------------------------------------------
 
   return (
     <group>
-      {coinsRef.current
+      {coins
         .filter((c) => c.alive)
         .map((coin) => (
           <PowerUpCoin
