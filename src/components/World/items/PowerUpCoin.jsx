@@ -16,17 +16,17 @@ export const setLocalPlayerWorldPos = (v) => _playerPos.copy(v);
 // ---------------------------------------------------------------------------
 
 const CATEGORY_CONFIG = {
-  jump:  { color: '#00ff88', emissiveIntensity: 0.6, label: 'Jump' },
-  speed: { color: '#ff8800', emissiveIntensity: 0.6, label: 'Speed' },
-  dash:  { color: '#4488ff', emissiveIntensity: 0.6, label: 'Dash' },
-  slide: { color: '#ff44ff', emissiveIntensity: 0.6, label: 'Slide' },
+  jump:  { color: '#00ff88', emissiveIntensity: 2.0, label: 'Jump' },
+  speed: { color: '#ff8800', emissiveIntensity: 2.0, label: 'Speed' },
+  dash:  { color: '#4488ff', emissiveIntensity: 2.0, label: 'Dash' },
+  slide: { color: '#ff44ff', emissiveIntensity: 2.0, label: 'Slide' },
 };
 
 const RARITY_SCALE = {
-  bronze:  { scale: 1.0, emissiveMul: 0.5, metalness: 0.4, roughness: 0.6, emissiveColor: '#ffaa44' },
-  silver:  { scale: 1.1, emissiveMul: 0.7, metalness: 0.7, roughness: 0.3, emissiveColor: '#aaddff' },
-  gold:    { scale: 1.2, emissiveMul: 1.0, metalness: 0.8, roughness: 0.2, emissiveColor: '#ffcc00' },
-  diamond: { scale: 1.3, emissiveMul: 1.3, metalness: 0.9, roughness: 0.1, emissiveColor: '#44ccff' },
+  bronze:  { scale: 1.0, emissiveMul: 0.8,  metalness: 0.4, roughness: 0.6, emissiveColor: '#ffaa44' },
+  silver:  { scale: 1.1, emissiveMul: 1.0,  metalness: 0.7, roughness: 0.3, emissiveColor: '#aaddff' },
+  gold:    { scale: 1.2, emissiveMul: 1.2,  metalness: 0.8, roughness: 0.2, emissiveColor: '#ffcc00' },
+  diamond: { scale: 1.3, emissiveMul: 1.5,  metalness: 0.9, roughness: 0.1, emissiveColor: '#44ccff' },
 };
 
 const COLLECT_DISTANCE = 2.5;

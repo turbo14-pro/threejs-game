@@ -5,6 +5,7 @@ import { RigidBody, CylinderCollider, CapsuleCollider, CuboidCollider, useRapier
 import * as THREE from 'three';
 import PlayerModel from './PlayerModel.jsx';
 import { useGameStore, POWERUP_EFFECTS } from '../../store/useGameStore';
+import { setLocalPlayerWorldPos } from '../World/items/PowerUpCoin.jsx';
 import { soundManager } from '../../utils/SoundManager';
 
 const direction = new THREE.Vector3();
@@ -322,6 +323,9 @@ export default function PlayerController({ sendUpdate }) {
 
     const keys = getKeys();
     const translation = rigidBodyRef.current.translation();
+
+    // Update shared player position for power-up distance pickup
+    setLocalPlayerWorldPos(translation);
 
     // SAFETY: If physics returns NaN, ignore this frame to avoid crashing the camera
     if (isNaN(translation.x) || isNaN(translation.y) || isNaN(translation.z)) return;
@@ -801,42 +805,34 @@ export default function PlayerController({ sendUpdate }) {
     camera.userData.smoothedTarget.lerp(currentTarget, 1 - Math.exp(-15 * delta));
     const rayOrigin = camera.userData.smoothedTarget;
 
-    // 4. ShapeCast — sweep from PLAYER CENTER with a dynamic ball radius.
-    // The camera is offset from the centered sweep line by the shoulder offset.
-    // When the camera is behind the player, the shoulder offset is purely perpendicular
-    // to the sweep line (max offset = shoulderOffset). When the camera is to the side,
-    // the offset is along the sweep line (perp offset ≈ 0).
-    // We grow the ball radius by the perpendicular component so the sweep catches
-    // walls that the offset camera would actually hit.
+    // 4. ShapeCast — sweep from PLAYER CENTER with a fixed ball.
+    // The collision is always centered on the player, symmetric in all directions.
+    // The shoulder offset only affects the final camera position, NOT the sweep.
+    // This ensures collision sensitivity is the same regardless of pan direction.
     let maxSafeDist = smoothZoom.current;
 
     try {
-      const shapeRotation = { w: 1.0, x: 0.0, y: 0.0, z: 0.0 };
-      const shapeVelocity = { x: rayDirection.x, y: rayDirection.y, z: rayDirection.z };
-
-      // Calculate how much of the shoulder offset is perpendicular to the sweep line
-      const dotRight = right.dot(rayDirection);
-      const perpOffset = shoulderOffset * Math.sqrt(Math.max(0, 1 - dotRight * dotRight));
-      const sweepRadius = 0.5 + perpOffset;
-
-      // Only recreate the shape when the radius changes noticeably
-      if (!camera.userData._cameraShape || Math.abs((camera.userData._sweepRadius || 0) - sweepRadius) > 0.05) {
-        camera.userData._cameraShape = new rapier.Ball(sweepRadius);
-        camera.userData._sweepRadius = sweepRadius;
+      if (!camera.userData._cameraShape) {
+        camera.userData._cameraShape = new rapier.Ball(0.5);
       }
 
+      const shapeRotation = { w: 1.0, x: 0.0, y: 0.0, z: 0.0 };
+      const shapeVelocity = { x: rayDirection.x, y: rayDirection.y, z: rayDirection.z };
       const collisionOrigin = { x: playerPos.x, y: playerPos.y + targetYOffset, z: playerPos.z };
 
+      // castShape(shapePos, shapeRot, shapeVel, shape, targetDistance, maxToi, stopAtPenetration, filterFlags, filterGroups, filterExcludeCollider, filterExcludeRigidBody)
       const hit = world.castShape(
-        collisionOrigin,                // 1. shapePos
-        shapeRotation,                  // 2. shapeRot
-        shapeVelocity,                  // 3. shapeVel (sweep direction)
-        camera.userData._cameraShape,   // 4. shape
-        smoothZoom.current,             // 5. maxToi (sweep distance — was shifted to stopAtPenetration!)
-        true,                           // 6. stopAtPenetration
-        0x00010001,                     // 7. filterGroups
-        null,                           // 8. filterExcludeCollider
-        rigidBodyRef.current            // 9. filterExcludeRigidBody (player body)
+        collisionOrigin,
+        shapeRotation,
+        shapeVelocity,
+        camera.userData._cameraShape,
+        0.0,                            // targetDistance (0 = detect all hits)
+        smoothZoom.current,             // maxToi (max sweep distance)
+        false,                          // stopAtPenetration (false = only detect obstacles the sweep REACHES, not overlaps)
+        null,                           // filterFlags
+        0x00010001,                     // filterGroups
+        null,                           // filterExcludeCollider
+        rigidBodyRef.current            // filterExcludeRigidBody (player body)
       );
 
       if (hit) {
