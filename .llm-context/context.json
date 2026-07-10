@@ -1,0 +1,188 @@
+{
+  "version": 1,
+  "updatedAt": "2026-07-10T23:50:00Z",
+  "sessionGoal": "Add 16 power-up coin types (4 categories × 4 rarities) with animated drop, random spawning, hover/spin, and gameplay effects to the three.js multiplayer arena game",
+  "progress": {
+    "completed": [
+      "Brainstorm phase 1 — initial design (16 coin types, duration ladder, single slot)",
+      "Codebase architecture research — all integration points identified",
+      "Planning files v1 created (decision.md, plan.md, findings.md, progress.md, task_plan.md)",
+      "User feedback — new requirements: items folder, animated drop, random spawns, rarity tints",
+      "Brainstorm phase 2 — 24 decisions total, all design questions answered",
+      "Planning files v2 updated with new requirements",
+      "LLM prompt optimization — added CoT, few-shot examples, error handling to plan.md",
+      "LLM context persistence — created .llm-context/context.json for session handoff",
+      "PowerUpCoin.jsx rarity color tints added (emissiveColor per rarity)",
+      "RecallMax — compressed session memory, fact-verified claims, created recallmax-summary.md",
+      "Task plan enhanced with RecallMax/LLM context protocols, redundancy checkpoints, auto-linting/testing",
+      "Batch 1 complete — Store cleanup: deleted dead code, added POWERUP_DURATIONS/POWERUP_EFFECTS, updated collectPowerUp, added coinCount state"
+    ],
+    "inProgress": [],
+    "blocked": []
+  },
+  "decisions": [
+    {
+      "date": "2026-07-10",
+      "decision": "16 coin types (4 categories × 4 rarities)",
+      "rationale": "Full rarity depth creates progression feel",
+      "files": ["src/components/World/items/PowerUpCoin.jsx"]
+    },
+    {
+      "date": "2026-07-10",
+      "decision": "Animated drop (type='fixed') instead of real Rapier physics",
+      "rationale": "Avoids sensor/physics conflict — sensors detect overlaps but have no physical response, so coin would fall through floor",
+      "files": ["src/components/World/items/PowerUpCoin.jsx"]
+    },
+    {
+      "date": "2026-07-10",
+      "decision": "Distance-based pickup instead of Rapier collision events",
+      "rationale": "Works with type='fixed' — check player distance each frame, collect when < 2.5 units",
+      "files": ["src/components/World/items/PowerUpCoin.jsx"]
+    },
+    {
+      "date": "2026-07-10",
+      "decision": "Random spawn positions on full 600×600 table",
+      "rationale": "Maximum variety and unpredictability",
+      "files": ["src/components/World/items/PowerUpManager.jsx"]
+    },
+    {
+      "date": "2026-07-10",
+      "decision": "Exclude platforms + bridge from spawn zone",
+      "rationale": "Prevents coins landing on elevated surfaces where players can't reach them",
+      "files": ["src/components/World/items/PowerUpManager.jsx"]
+    },
+    {
+      "date": "2026-07-10",
+      "decision": "8 coins max, 1-3 minute spawn interval",
+      "rationale": "More opportunities than 5, faster pacing than 3-7 minutes",
+      "files": ["src/components/World/items/PowerUpManager.jsx"]
+    },
+    {
+      "date": "2026-07-10",
+      "decision": "y=50 drop → y=1.5 hover",
+      "rationale": "Dramatic visual drop, clean hover above table surface",
+      "files": ["src/components/World/items/PowerUpCoin.jsx"]
+    },
+    {
+      "date": "2026-07-10",
+      "decision": "Rarity color tints (emissive color shift)",
+      "rationale": "Visual rarity distinction — bronze=warm gold, silver=cool white, gold=bright gold, diamond=ice blue",
+      "files": ["src/components/World/items/PowerUpCoin.jsx"]
+    },
+    {
+      "date": "2026-07-10",
+      "decision": "Duration ladder: 120/140/160/180s",
+      "rationale": "Strictly increasing +20s per rarity, 15× original base values",
+      "files": ["src/store/useGameStore.js"]
+    },
+    {
+      "date": "2026-07-10",
+      "decision": "Refactor hasDoubleJumped → jumpCount",
+      "rationale": "Supports arbitrary jump counts (3-6) cleanly with single integer",
+      "files": ["src/components/Player/PlayerController.jsx"]
+    },
+    {
+      "date": "2026-07-10",
+      "decision": "Dash system: Q key, blue orb, invincibility, 3s cooldown",
+      "rationale": "Clear visual feedback, prevents spam, tactical decision-making",
+      "files": ["src/components/Player/PlayerController.jsx", "src/App.jsx"]
+    },
+    {
+      "date": "2026-07-10",
+      "decision": "Items folder: src/components/World/items/",
+      "rationale": "Cleaner organization than Obsticles/",
+      "files": ["src/components/World/items/PowerUpCoin.jsx"]
+    }
+  ],
+  "fileState": {
+    "modified": [
+      "src/components/World/items/PowerUpCoin.jsx",
+      "src/store/useGameStore.js"
+    ],
+    "created": [
+      "planning/powerups/decision.md",
+      "planning/powerups/plan.md",
+      "planning/powerups/findings.md",
+      "planning/powerups/progress.md",
+      "planning/powerups/task_plan.md",
+      ".llm-context/context.json"
+    ],
+    "deleted": []
+  },
+  "nextSteps": [
+    "Begin Batch 2: PowerUpCoin rewrite — animated drop, distance pickup, rarity tints",
+    "Begin Batch 3: PowerUpManager — random spawning, 1-3 min interval, 8 max",
+    "Begin Batch 4: Expiration timer & speed/slide effects in PlayerController",
+    "Begin Batch 5: Jump refactor — hasDoubleJumped → jumpCount",
+    "Begin Batch 6: Dash system — Q key, blue orb, invincibility",
+    "Begin Batch 7: HUD PowerUpIndicator component",
+    "Begin Batch 8: Polish & integration testing"
+  ],
+  "blockers": [],
+  "factVerification": [
+    { "claim": "PowerUpCoin.jsx exists in items/", "status": "SUPPORTED", "evidence": "Read file, 107 lines" },
+    { "claim": "Store has dead code (lines 86-97)", "status": "SUPPORTED", "evidence": "collectPowerup/removePowerup reference undefined getPowerUpDuration()" },
+    { "claim": "PlayerController has hardcoded speed", "status": "SUPPORTED", "evidence": "Line 481: const speed = isSliding ? 45 : (walkingInput ? 8 : 30)" },
+    { "claim": "hasDoubleJumped is boolean", "status": "SUPPORTED", "evidence": "Line 496: setHasDoubleJumped(false)" },
+    { "claim": "Arena imports PowerUpCoin but never renders", "status": "SUPPORTED", "evidence": "Line 13 imports, JSX return never uses it" },
+    { "claim": "Existing bloom in Effects.jsx", "status": "ASSUMED", "evidence": "Effects.jsx exists but bloom not directly verified" },
+    { "claim": "Rapier setBodyType() available", "status": "UNSUPPORTED", "evidence": "Not directly tested, documented in Rapier docs" }
+  ],
+  "recallmaxSummary": ".llm-context/recallmax-summary.md",
+  "keyFiles": {
+    "src/components/World/items/PowerUpCoin.jsx": "Power-up coin component — needs rewrite for animated drop + distance pickup",
+    "src/components/World/items/PowerUpManager.jsx": "Spawn manager — needs creation for random positions",
+    "src/store/useGameStore.js": "Game store — has dead code to delete, needs duration config",
+    "src/components/Player/PlayerController.jsx": "Player controller — needs power-up effect injection points",
+    "src/components/World/Arena.jsx": "Arena — needs PowerUpManager mounted, import path updated",
+    "src/App.jsx": "App — needs Q key added to keyboard controls",
+    "src/components/UI/HUD.jsx": "HUD — needs PowerUpHUD mounted",
+    "planning/powerups/plan.md": "Implementation plan — 8 batches, 47 tasks with code examples",
+    "planning/powerups/decision.md": "Decision tree — 24 decisions, constraints, assumptions",
+    "planning/powerups/findings.md": "Architecture research — injection points, patterns, risks"
+  },
+  "architecture": {
+    "spawnSystem": "PowerUpManager → spawns PowerUpCoin × 8 max at random positions",
+    "coinBehavior": "Animated drop (y=50→y=1.5) → hover (spin+bob) → distance pickup",
+    "effectApplication": "PlayerController reads powerUp from store each frame, applies speed/jump/dash/slide",
+    "expiration": "useFrame checks powerUp.expiresAt, calls clearPowerUp() when expired",
+    "bloom": "Existing post-processing pipeline — emissive colors create glow per rarity"
+  },
+  "powerUpEffects": {
+    "speed": { "bronze": 2, "silver": 3, "gold": 4, "diamond": 5 },
+    "jump": { "bronze": 3, "silver": 4, "gold": 5, "diamond": 6 },
+    "dash": { "bronze": 0.3, "silver": 0.5, "gold": 0.7, "diamond": 1.0 },
+    "slide": { "bronze": 1.5, "silver": 2.0, "gold": 2.5, "diamond": 3.0 }
+  },
+  "durations": {
+    "bronze": 120,
+    "silver": 140,
+    "gold": 160,
+    "diamond": 180
+  },
+  "rarityVisuals": {
+    "bronze": { "scale": 1.0, "emissiveColor": "#ffaa44", "metalness": 0.4, "roughness": 0.6 },
+    "silver": { "scale": 1.1, "emissiveColor": "#aaddff", "metalness": 0.7, "roughness": 0.3 },
+    "gold": { "scale": 1.2, "emissiveColor": "#ffcc00", "metalness": 0.8, "roughness": 0.2 },
+    "diamond": { "scale": 1.3, "emissiveColor": "#44ccff", "metalness": 0.9, "roughness": 0.1 }
+  },
+  "spawnConfig": {
+    "maxCoins": 8,
+    "spawnInterval": { "min": 60, "max": 180 },
+    "dropHeight": 50,
+    "hoverHeight": 1.5,
+    "collectDistance": 2.5,
+    "tableBounds": { "minX": -290, "maxX": 290, "minZ": -290, "maxZ": 290 },
+    "exclusionZones": [
+      { "name": "Platform 1", "minX": -35, "maxX": 35, "minZ": -15, "maxZ": 15 },
+      { "name": "Platform 2", "minX": -35, "maxX": 35, "minZ": -60, "maxZ": -30 },
+      { "name": "Bridge", "minX": -7.5, "maxX": 7.5, "minZ": -32.5, "maxZ": -12.5 }
+    ],
+    "rarityWeights": [
+      { "rarity": "bronze", "weight": 0.4 },
+      { "rarity": "silver", "weight": 0.3 },
+      { "rarity": "gold", "weight": 0.2 },
+      { "rarity": "diamond", "weight": 0.1 }
+    ]
+  }
+}

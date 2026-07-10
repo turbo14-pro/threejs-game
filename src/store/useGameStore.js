@@ -3,6 +3,21 @@ import { subscribeWithSelector, persist } from 'zustand/middleware';
 import { SKINS, WEAPONS, LEVELS } from '../data/registries';
 import { Logger } from '../utils/Logger';
 
+// --- POWER-UP CONFIGURATION ---
+export const POWERUP_DURATIONS = {
+  bronze: 120,   // 2 min
+  silver: 140,   // 2 min 20s
+  gold: 160,     // 2 min 40s
+  diamond: 180,  // 3 min
+};
+
+export const POWERUP_EFFECTS = {
+  speed: { bronze: 2, silver: 3, gold: 4, diamond: 5 },      // multiplier
+  jump:  { bronze: 3, silver: 4, gold: 5, diamond: 6 },      // total jumps
+  dash:  { bronze: 0.3, silver: 0.5, gold: 0.7, diamond: 1.0 }, // seconds
+  slide: { bronze: 1.5, silver: 2.0, gold: 2.5, diamond: 3.0 }, // BLAST_POWER multiplier
+};
+
 /**
  * THE MAIN BRAIN (Game Store)
  * Organized into logical sections for clean scaling.
@@ -78,6 +93,10 @@ export const useGameStore = create(
         knockbackDir: { x: 0, y: 0, z: 0 },
         isStunned: false,
         remoteKnockbacks: {}, // { id: timestamp }
+
+        // --- POWER-UP STATE ---
+        powerUp: null, // { category: 'jump'|'speed'|'dash'|'slide', rarity: 'bronze'|'silver'|'gold'|'diamond', expiresAt: number } or null
+        coinCount: 0, // Number of active power-up coins on map
 
         // --- ACTIONS ---
         setIsStunned: (val) => set({ isStunned: val }),
@@ -219,7 +238,22 @@ export const useGameStore = create(
               [id]: { t: Date.now(), dir: direction } 
             }
           }));
-        }
+        },
+
+        // --- POWER-UP ACTIONS ---
+        collectPowerUp: (category, rarity) => set({
+          powerUp: {
+            category, // 'jump' | 'speed' | 'dash' | 'slide'
+            rarity,   // 'bronze' | 'silver' | 'gold' | 'diamond'
+            expiresAt: Date.now() + (POWERUP_DURATIONS[rarity] || 120) * 1000
+          }
+        }),
+
+        clearPowerUp: () => set({ powerUp: null }),
+        
+        // Coin count management
+        incrementCoinCount: () => set((s) => ({ coinCount: s.coinCount + 1 })),
+        decrementCoinCount: () => set((s) => ({ coinCount: Math.max(0, s.coinCount - 1) }))
       }),
       {
         name: 'food-frenzy-data',
