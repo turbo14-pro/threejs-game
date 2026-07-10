@@ -4,7 +4,7 @@ import { useKeyboardControls } from '@react-three/drei';
 import { RigidBody, CylinderCollider, CapsuleCollider, CuboidCollider, useRapier } from '@react-three/rapier';
 import * as THREE from 'three';
 import PlayerModel from './PlayerModel.jsx';
-import { useGameStore } from '../../store/useGameStore';
+import { useGameStore, POWERUP_EFFECTS } from '../../store/useGameStore';
 import { soundManager } from '../../utils/SoundManager';
 
 const direction = new THREE.Vector3();
@@ -40,7 +40,11 @@ export default function PlayerController({ sendUpdate }) {
   const animConfig = useGameStore(state => state.player.playerAnimations);
   const setPlayerAnimations = useGameStore(state => state.setPlayerAnimations);
   const targetRotationY = useRef(Math.PI);
-  const [hasDoubleJumped, setHasDoubleJumped] = useState(false);
+  const [jumpCount, setJumpCount] = useState(0);
+  const isDashing = useRef(false);
+  const dashTimer = useRef(0);
+  const dashCooldown = useRef(0);
+  const prevDashInput = useRef(false);
   const netTick = useRef(0);
   const netAccumulator = useRef(0);
   const inputHistory = useRef([]); // [{ tick, pos, input, camRot }]
@@ -335,9 +339,16 @@ export default function PlayerController({ sendUpdate }) {
       return; // skip this frame — physics will settle next frame
     }
 
+    // Check power-up expiration
+    const powerUp = useGameStore.getState().powerUp;
+    if (powerUp && Date.now() >= powerUp.expiresAt) {
+      useGameStore.getState().clearPowerUp();
+    }
+
     // Apply pending respawn (death or restart → lobby Platform 1)
     if (pendingRespawn.current) {
       pendingRespawn.current = false;
+      useGameStore.getState().clearPowerUp();
       rigidBodyRef.current.wakeUp();
       rigidBodyRef.current.setTranslation({ x: 0, y: 103, z: 0 }, true);
       rigidBodyRef.current.setLinvel({ x: 0, y: 0, z: 0 }, true);
@@ -381,6 +392,38 @@ export default function PlayerController({ sendUpdate }) {
     const walkingInput = !!(keys.walk || mobileInput.walk);
     const jumpingInput = !!(keys.jump || mobileInput.jump);
     const slidingInput = !!(keys.slide || mobileInput.slide);
+    const dashInput = !!(keys.dash);
+
+    // Dash cooldown
+    if (dashCooldown.current > 0) dashCooldown.current -= delta;
+
+    // Dash activation
+    if (dashInput && !prevDashInput.current && !isDashing.current && dashCooldown.current <= 0) {
+      const dashPowerUp = useGameStore.getState().powerUp;
+      if (dashPowerUp?.category === 'dash') {
+        isDashing.current = true;
+        dashTimer.current = POWERUP_EFFECTS.dash[dashPowerUp.rarity] || 0.3;
+        // Apply velocity burst in camera forward direction
+        const cameraDir = new THREE.Vector3(0, 0, -1).applyAxisAngle(
+          new THREE.Vector3(0, 1, 0),
+          rotationY.current,
+        );
+        rigidBodyRef.current.setLinvel({
+          x: cameraDir.x * 25,
+          y: rigidBodyRef.current.linvel().y,
+          z: cameraDir.z * 25,
+        }, true);
+      }
+    }
+
+    // Dash timer
+    if (isDashing.current) {
+      dashTimer.current -= delta;
+      if (dashTimer.current <= 0) {
+        isDashing.current = false;
+        dashCooldown.current = 3; // 3s cooldown
+      }
+    }
 
     // Reliable ground detection via ShapeCast (SphereCast)
     // Replaces the single thin RayCast so that standing on edges works correctly
@@ -478,7 +521,11 @@ export default function PlayerController({ sendUpdate }) {
       healPlayer(10 * delta); // Heal 10 HP per second
     }
 
-    const speed = isSliding ? 45 : (walkingInput ? 8 : 30);
+    const currentPowerUp = useGameStore.getState().powerUp;
+    const speedMultiplier = currentPowerUp?.category === 'speed'
+      ? (POWERUP_EFFECTS.speed[currentPowerUp.rarity] || 1)
+      : 1;
+    const speed = isSliding ? 45 : (walkingInput ? 8 : 30) * speedMultiplier;
 
     // apply speed and rotation to direction
     if (direction.lengthSq() > 0) {
@@ -489,11 +536,18 @@ export default function PlayerController({ sendUpdate }) {
 
     // Ground detection already calculated above
 
+    // Calculate max jumps from power-up
+    const jumpPowerUp = useGameStore.getState().powerUp;
+    const jumpBonus = jumpPowerUp?.category === 'jump'
+      ? (POWERUP_EFFECTS.jump[jumpPowerUp.rarity] - 2)
+      : 0;
+    const maxJumps = 2 + jumpBonus;
+
     // Jump State Machine
     let currentPhase = jumpPhase;
 
     if (currentlyGrounded) {
-      setHasDoubleJumped(false); // Reset double jump
+      setJumpCount(0); // Reset jump count on grounded
       // Only allow landing if moving DOWN (or flat) and VERY CLOSE to the ground
       if ((currentPhase === 'air' || currentPhase === 'doublejump') && currentVelocity.y <= 0.1 && veryCloseToGround) {
         currentPhase = 'land';
@@ -540,9 +594,9 @@ export default function PlayerController({ sendUpdate }) {
       }
 
       // DOUBLE JUMP LOGIC
-      if (currentPhase === 'air' && jumpingInput && !prevJumpingInput.current && !hasDoubleJumped) {
+      if (currentPhase === 'air' && jumpingInput && !prevJumpingInput.current && jumpCount < maxJumps - 1) {
         rigidBodyRef.current.setLinvel({ x: currentVelocity.x, y: 35, z: currentVelocity.z }, true);
-        setHasDoubleJumped(true);
+        setJumpCount(jumpCount + 1);
         currentPhase = 'doublejump';
         
         const isBack = jumpLock.current.dir === 'bac';
@@ -866,6 +920,7 @@ export default function PlayerController({ sendUpdate }) {
     }
 
     prevJumpingInput.current = jumpingInput;
+    prevDashInput.current = dashInput;
 
     // --- VICTIM AUTHORITY ---
     // If we were recently hit, we need to send our position more frequently 
@@ -901,6 +956,9 @@ export default function PlayerController({ sendUpdate }) {
   const handleCollision = (e) => {
     if (!rigidBodyRef.current) return;
 
+    // Invincible during dash
+    if (isDashing.current) return;
+
     const other = e.other.rigidBody;
     if (!other || other.userData?.type !== 'remote-player') return;
 
@@ -925,7 +983,11 @@ export default function PlayerController({ sendUpdate }) {
       ).normalize();
 
       // Apply a massive impulse to launch them!
-      const BLAST_POWER = 250;
+      const slidePowerUp = useGameStore.getState().powerUp;
+      const slideMultiplier = slidePowerUp?.category === 'slide'
+        ? (POWERUP_EFFECTS.slide[slidePowerUp.rarity] || 1)
+        : 1;
+      const BLAST_POWER = 250 * slideMultiplier;
       console.log("🚀 BLASTING Victim with Force:", BLAST_POWER);
       
       other.applyImpulse({
@@ -1007,14 +1069,27 @@ export default function PlayerController({ sendUpdate }) {
 
 
       <group ref={playerGroupRef} name="localPlayer" position={[0, isSliding ? -2.8 : -2.5, 0]}>
-        <PlayerModel
-          isMoving={jumpPhase === 'none' ? isMoving : true}
-          moveDir={jumpPhase === 'none' ? moveDir : jumpLock.current.dir}
-          jumpPhase={jumpPhase}
-          isSprinting={jumpPhase === 'none' ? !isWalking : jumpLock.current.sprint}
-          isSliding={isSliding}
-          config={animConfig}
-        />
+        {isDashing.current ? (
+          <mesh>
+            <sphereGeometry args={[1.5, 16, 16]} />
+            <meshStandardMaterial
+              color="#4488ff"
+              emissive="#4488ff"
+              emissiveIntensity={2}
+              transparent
+              opacity={0.8}
+            />
+          </mesh>
+        ) : (
+          <PlayerModel
+            isMoving={jumpPhase === 'none' ? isMoving : true}
+            moveDir={jumpPhase === 'none' ? moveDir : jumpLock.current.dir}
+            jumpPhase={jumpPhase}
+            isSprinting={jumpPhase === 'none' ? !isWalking : jumpLock.current.sprint}
+            isSliding={isSliding}
+            config={animConfig}
+          />
+        )}
       </group>
     </RigidBody>
   );

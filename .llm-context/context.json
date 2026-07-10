@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "updatedAt": "2026-07-10T23:50:00Z",
+  "updatedAt": "2026-07-11T00:10:00Z",
   "sessionGoal": "Add 16 power-up coin types (4 categories × 4 rarities) with animated drop, random spawning, hover/spin, and gameplay effects to the three.js multiplayer arena game",
   "progress": {
     "completed": [
@@ -15,7 +15,14 @@
       "PowerUpCoin.jsx rarity color tints added (emissiveColor per rarity)",
       "RecallMax — compressed session memory, fact-verified claims, created recallmax-summary.md",
       "Task plan enhanced with RecallMax/LLM context protocols, redundancy checkpoints, auto-linting/testing",
-      "Batch 1 complete — Store cleanup: deleted dead code, added POWERUP_DURATIONS/POWERUP_EFFECTS, updated collectPowerUp, added coinCount state"
+      "Batch 1 complete — Store cleanup: deleted dead code, added POWERUP_DURATIONS/POWERUP_EFFECTS, updated collectPowerUp, added coinCount state",
+      "Batch 2 complete — PowerUpCoin rewrite: animated drop (y=50→y=1.5), distance pickup, hover mode, rarity tints",
+      "Batch 3 complete — PowerUpManager: random spawns 60-180s, max 8 coins, exclusion zones, wired into Arena.jsx",
+      "Batch 4 complete — Expiration timer, speed multiplier, slide knockback scaling, clear on death/respawn",
+      "Batch 5 complete — Jump count refactor: jumpCount replaces hasDoubleJumped, supports N jumps via POWERUP_EFFECTS",
+      "Batch 6 complete — Dash system: Q key, blue orb, velocity burst, invincibility, 3s cooldown",
+      "Batch 7 complete — PowerUpHUD: category, rarity, countdown timer, wired into HUD.jsx",
+      "Batch 8 complete — Integration test: build passes, all 47 tasks completed across 8 batches"
     ],
     "inProgress": [],
     "blocked": []

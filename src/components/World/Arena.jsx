@@ -10,6 +10,8 @@ import * as SkeletonUtils from 'three/examples/jsm/utils/SkeletonUtils.js';
 import ArenaLightRays from './LightRays';
 import { useCerealBoxAssets, CerealBoxMesh, CerealBoxPhysics } from './Obsticles/CerealBox.jsx';
 import { TinCanPhysics } from './Obsticles/TinCan.jsx';
+import { PowerUpCoin } from './items/PowerUpCoin.jsx';
+import { PowerUpManager } from './items/PowerUpManager.jsx';
 
 /**
  * Helper to calculate the Y offset needed to place a rotated box on the floor.
@@ -607,6 +609,9 @@ export default function Arena() {
           boxSize={box.size}
         />
       ))}
+
+      {/* 7. Power-Up Coins */}
+      <PowerUpManager />
     </>
   );
 }

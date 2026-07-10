@@ -4,6 +4,7 @@ import Joystick from './Joystick.jsx';
 import CameraJoystick from './CameraJoystick.jsx';
 import Options from './Options.jsx';
 import LatencyGraph from './LatencyGraph.jsx';
+import { PowerUpHUD } from './PowerUpHUD.jsx';
 
 export default function HUD() {
   const matchPhase = useGameStore(state => state.game.phase);
@@ -248,6 +249,9 @@ export default function HUD() {
           style={{ position: 'absolute', inset: 0, zIndex: 10 }}
         />
       )}
+
+      {/* Power-Up HUD */}
+      <PowerUpHUD />
     </div>
   );
 }

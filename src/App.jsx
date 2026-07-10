@@ -36,6 +36,7 @@ export default function App() {
     { name: "jump", keys: ["Space"] },
     { name: "walk", keys: ["ShiftLeft", "ShiftRight"] },
     { name: "slide", keys: ["KeyC"] },
+    { name: "dash", keys: ["KeyQ"] },
   ], []);
 
   return (
