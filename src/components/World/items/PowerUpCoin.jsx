@@ -16,17 +16,17 @@ export const setLocalPlayerWorldPos = (v) => _playerPos.copy(v);
 // ---------------------------------------------------------------------------
 
 const CATEGORY_CONFIG = {
-  jump:  { color: '#00ff88', label: 'Jump' },
-  speed: { color: '#ff8800', label: 'Speed' },
-  dash:  { color: '#4488ff', label: 'Dash' },
-  slide: { color: '#ff44ff', label: 'Slide' },
+  jump:  { iconColor: '#00ff88', label: 'Jump' },
+  speed: { iconColor: '#ff8800', label: 'Speed' },
+  dash:  { iconColor: '#4488ff', label: 'Dash' },
+  slide: { iconColor: '#ff44ff', label: 'Slide' },
 };
 
-const RARITY_SCALE = {
-  bronze:  { scale: 1.0, metalness: 0.95, roughness: 0.08 },
-  silver:  { scale: 1.1, metalness: 0.95, roughness: 0.05 },
-  gold:    { scale: 1.2, metalness: 0.98, roughness: 0.03 },
-  diamond: { scale: 1.3, metalness: 1.0,  roughness: 0.01 },
+const RARITY_CONFIG = {
+  bronze:  { color: '#8B5E3C', scale: 1.0, metalness: 0.95, roughness: 0.08 },
+  silver:  { color: '#C0C0C0', scale: 1.1, metalness: 0.95, roughness: 0.05 },
+  gold:    { color: '#FFD700', scale: 1.2, metalness: 0.98, roughness: 0.03 },
+  diamond: { color: '#B9F2FF', scale: 1.3, metalness: 1.0,  roughness: 0.01 },
 };
 
 const COLLECT_DISTANCE = 2.5;
@@ -36,27 +36,47 @@ const ICON_SIZE = 512;
 const ROTATION_DEG = -90;
 
 // ---------------------------------------------------------------------------
-// SVG → two canvas textures: colorMap (coin tint + icon) + bumpMap (height)
+// SVG → three canvas textures: colorMap + emissiveMap + bumpMap
 // ---------------------------------------------------------------------------
 
-function renderIconTextures(svgUrl, baseColor) {
+function renderIconTextures(svgUrl, rarityColor, iconColor) {
   return new Promise((resolve) => {
     const img = new Image();
     img.onload = () => {
       const drawSize = ICON_SIZE * 0.75;
-      // ---- Color map: coin base color with lighter icon tint ----------------
+
+      // ---- Color map: rarity color as solid background ---------------------
       const colorCanvas = document.createElement('canvas');
       colorCanvas.width = ICON_SIZE;
       colorCanvas.height = ICON_SIZE;
       const cCtx = colorCanvas.getContext('2d');
-
-      // Fill with coin base color
-      cCtx.fillStyle = baseColor;
+      cCtx.fillStyle = rarityColor;
       cCtx.fillRect(0, 0, ICON_SIZE, ICON_SIZE);
 
       const colorTex = new THREE.CanvasTexture(colorCanvas);
       colorTex.colorSpace = THREE.SRGBColorSpace;
       colorTex.needsUpdate = true;
+
+      // ---- Emissive map: icon in category color on black (for bloom) ------
+      const emissiveCanvas = document.createElement('canvas');
+      emissiveCanvas.width = ICON_SIZE;
+      emissiveCanvas.height = ICON_SIZE;
+      const eCtx = emissiveCanvas.getContext('2d');
+
+      // Black background (no glow)
+      eCtx.fillStyle = '#000000';
+      eCtx.fillRect(0, 0, ICON_SIZE, ICON_SIZE);
+
+      // Draw icon in category color (glows with bloom)
+      eCtx.save();
+      eCtx.translate(ICON_SIZE / 2, ICON_SIZE / 2);
+      eCtx.rotate((ROTATION_DEG * Math.PI) / 180);
+      eCtx.drawImage(img, -drawSize / 2, -drawSize / 2, drawSize, drawSize);
+      eCtx.restore();
+
+      const emissiveTex = new THREE.CanvasTexture(emissiveCanvas);
+      emissiveTex.colorSpace = THREE.SRGBColorSpace;
+      emissiveTex.needsUpdate = true;
 
       // ---- Bump map: white icon on black background ------------------------
       const bumpCanvas = document.createElement('canvas');
@@ -64,11 +84,10 @@ function renderIconTextures(svgUrl, baseColor) {
       bumpCanvas.height = ICON_SIZE;
       const bCtx = bumpCanvas.getContext('2d');
 
-      // Black background (low)
       bCtx.fillStyle = '#000000';
       bCtx.fillRect(0, 0, ICON_SIZE, ICON_SIZE);
 
-      // Draw icon in white (high) with drop shadow
+      // Drop shadow for depth
       bCtx.save();
       bCtx.shadowColor = 'rgba(0,0,0,0.8)';
       bCtx.shadowBlur = 8;
@@ -79,7 +98,7 @@ function renderIconTextures(svgUrl, baseColor) {
       bCtx.drawImage(img, -drawSize / 2, -drawSize / 2, drawSize, drawSize);
       bCtx.restore();
 
-      // Sharpen: re-draw icon on top without shadow for crisp edges
+      // Sharp icon on top
       bCtx.save();
       bCtx.translate(ICON_SIZE / 2, ICON_SIZE / 2);
       bCtx.rotate((ROTATION_DEG * Math.PI) / 180);
@@ -90,24 +109,32 @@ function renderIconTextures(svgUrl, baseColor) {
       bumpTex.colorSpace = THREE.NoColorSpace;
       bumpTex.needsUpdate = true;
 
-      resolve({ colorTex, bumpTex });
+      resolve({ colorTex, emissiveTex, bumpTex });
     };
     img.src = svgUrl;
   });
 }
 
-// Pre-built icon textures per category (loaded once at module init)
-const iconData = {};  // { category: { colorTex, bumpTex } }
-const iconPromises = Object.entries({
-  jump:  { url: '/materials/items/powerup.jump.svg', color: '#00ff88' },
-  speed: { url: '/materials/items/powerup.run.svg',  color: '#ff8800' },
-  dash:  { url: '/materials/items/powerup.dash.svg', color: '#4488ff' },
-  slide: { url: '/materials/items/powerup.slide.svg', color: '#ff44ff' },
-}).map(([cat, { url, color }]) =>
-  renderIconTextures(url, color).then((data) => {
-    iconData[cat] = data;
-  })
-);
+// Pre-built icon textures: keyed by category, but each category needs all 4 rarities
+// Since rarity is a prop, we build a combined key: `${category}_${rarity}`
+const iconData = {};
+const svgMap = {
+  jump:  '/materials/items/powerup.jump.svg',
+  speed: '/materials/items/powerup.run.svg',
+  dash:  '/materials/items/powerup.dash.svg',
+  slide: '/materials/items/powerup.slide.svg',
+};
+
+const iconPromises = [];
+for (const [cat, url] of Object.entries(svgMap)) {
+  for (const [rarity, rarityCfg] of Object.entries(RARITY_CONFIG)) {
+    const key = `${cat}_${rarity}`;
+    const p = renderIconTextures(url, rarityCfg.color, CATEGORY_CONFIG[cat].iconColor).then((data) => {
+      iconData[key] = data;
+    });
+    iconPromises.push(p);
+  }
+}
 
 export function waitForIcons() {
   return Promise.all(iconPromises);
@@ -132,9 +159,8 @@ export function PowerUpCoin({
   const floatPhase = useRef(Math.random() * Math.PI * 2);
   const targetY = 1.5;
 
-  const catCfg = CATEGORY_CONFIG[category] ?? CATEGORY_CONFIG.speed;
-  const rarityCfg = RARITY_SCALE[rarity] ?? RARITY_SCALE.bronze;
-  const icon = iconData[category] ?? iconData.speed;
+  const rarityCfg = RARITY_CONFIG[rarity] ?? RARITY_CONFIG.bronze;
+  const icon = iconData[`${category}_${rarity}`] ?? iconData[`${category}_bronze`];
 
   // ---- animation + pickup -------------------------------------------------
 
@@ -184,6 +210,8 @@ export function PowerUpCoin({
 
   if (phase === 'collected') return null;
 
+  const emissiveColor = CATEGORY_CONFIG[category]?.iconColor ?? '#ffffff';
+
   return (
     <RigidBody
       ref={rigidRef}
@@ -202,6 +230,9 @@ export function PowerUpCoin({
             <cylinderGeometry args={[0.5, 0.5, 0.12, 32]} />
             <meshPhysicalMaterial
               map={icon.colorTex}
+              emissiveMap={icon.emissiveTex}
+              emissive={emissiveColor}
+              emissiveIntensity={1.5}
               bumpMap={icon.bumpTex}
               bumpScale={2.4}
               metalness={rarityCfg.metalness}
