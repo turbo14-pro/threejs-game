@@ -1,7 +1,5 @@
-import { useEffect, useRef, useState, useCallback, useMemo } from 'react';
-import { useFrame, useLoader } from '@react-three/fiber';
-import * as THREE from 'three';
-import { PowerUpCoin } from './PowerUpCoin.jsx';
+import { useEffect, useRef, useState, useCallback } from 'react';
+import { PowerUpCoin, waitForIcons } from './PowerUpCoin.jsx';
 import { useGameStore } from '../../../store/useGameStore';
 
 // ---------------------------------------------------------------------------
@@ -16,8 +14,8 @@ const EXCLUSION_ZONES = [
 ];
 
 const MAX_COINS = 8;
-const MIN_SPAWN_INTERVAL = 60;   // 1 min
-const MAX_SPAWN_INTERVAL = 180;  // 3 min
+const MIN_SPAWN_INTERVAL = 60;
+const MAX_SPAWN_INTERVAL = 180;
 const MIN_DISTANCE_BETWEEN = 10;
 
 // ---------------------------------------------------------------------------
@@ -79,39 +77,20 @@ function randomSpawnInterval() {
 }
 
 // ---------------------------------------------------------------------------
-// Bump map loader (loads all 4 SVGs once, passes to children)
-// ---------------------------------------------------------------------------
-
-function BumpMapLoader({ children }) {
-  const [dash, jump, run, slide] = useLoader(THREE.TextureLoader, [
-    '/materials/items/powerup.dash.svg',
-    '/materials/items/powerup.jump.svg',
-    '/materials/items/powerup.run.svg',
-    '/materials/items/powerup.slide.svg',
-  ]);
-
-  const bumpMaps = useMemo(() => {
-    const map = { dash, speed: run, jump, slide };
-    Object.values(map).forEach((tex) => {
-      tex.colorSpace = THREE.NoColorSpace;
-      tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
-      tex.center.set(0.5, 0.5);
-    });
-    return map;
-  }, [dash, jump, run, slide]);
-
-  return children(bumpMaps);
-}
-
-// ---------------------------------------------------------------------------
 // PowerUpManager — spawns coins at random intervals + positions
 // ---------------------------------------------------------------------------
 
 export function PowerUpManager() {
   const [coins, setCoins] = useState([]);
+  const [iconsReady, setIconsReady] = useState(false);
   const elapsedRef = useRef(0);
   const nextSpawnRef = useRef(randomSpawnInterval());
   const idCounterRef = useRef(0);
+
+  // Wait for high-res icon textures to render
+  useEffect(() => {
+    waitForIcons().then(() => setIconsReady(true));
+  }, []);
 
   const spawnCoin = useCallback(() => {
     const state = useGameStore.getState();
@@ -148,26 +127,21 @@ export function PowerUpManager() {
     useGameStore.getState().decrementCoinCount();
   }, []);
 
-  // ---- render with bump maps loaded once ---------------------------------
+  if (!iconsReady) return null;
 
   return (
-    <BumpMapLoader>
-      {(bumpMaps) => (
-        <group>
-          {coins
-            .filter((c) => c.alive)
-            .map((coin) => (
-              <PowerUpCoin
-                key={coin.id}
-                spawnPosition={coin.position}
-                category={coin.category}
-                rarity={coin.rarity}
-                bumpTex={bumpMaps[coin.category] ?? bumpMaps.speed}
-                onCollected={() => handleCollected(coin.id)}
-              />
-            ))}
-        </group>
-      )}
-    </BumpMapLoader>
+    <group>
+      {coins
+        .filter((c) => c.alive)
+        .map((coin) => (
+          <PowerUpCoin
+            key={coin.id}
+            spawnPosition={coin.position}
+            category={coin.category}
+            rarity={coin.rarity}
+            onCollected={() => handleCollected(coin.id)}
+          />
+        ))}
+    </group>
   );
 }
