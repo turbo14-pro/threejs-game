@@ -43,6 +43,7 @@ function renderIconTextures(svgUrl, baseColor) {
   return new Promise((resolve) => {
     const img = new Image();
     img.onload = () => {
+      const drawSize = ICON_SIZE * 0.75;
       // ---- Color map: coin base color with lighter icon tint ----------------
       const colorCanvas = document.createElement('canvas');
       colorCanvas.width = ICON_SIZE;
