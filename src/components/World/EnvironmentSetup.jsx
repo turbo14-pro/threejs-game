@@ -24,6 +24,8 @@ export default function EnvironmentSetup() {
   useLayoutEffect(() => {
     if (!settings.skybox) {
       scene.background = cabinetColor;
+      // Re-apply fog since setting scene.background can reset it
+      scene.fog = new THREE.FogExp2('#958164', 0.004);
     } else {
       scene.background = null;
     }
@@ -49,7 +51,7 @@ export default function EnvironmentSetup() {
 
   return (
     <>
-      <ambientLight intensity={0.05} />
+      <ambientLight intensity={0.01} />
       <hemisphereLight args={[0xffffff, 0x444444, 0.4]} />
 
       {/* Single shadow-casting directional light. */}
