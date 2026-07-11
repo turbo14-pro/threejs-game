@@ -38,7 +38,21 @@ export default function EnvironmentSetup() {
     const pmremGenerator = new THREE.PMREMGenerator(gl);
     pmremGenerator.compileEquirectangularShader();
 
-    const envMap = pmremGenerator.fromEquirectangular(texture).texture;
+    // Dim the environment texture before processing to reduce IBL brightness
+    const dimmedTexture = texture.clone();
+    dimmedTexture.colorSpace = THREE.NoColorSpace;
+    const canvas = document.createElement('canvas');
+    const ctx = canvas.getContext('2d');
+    canvas.width = texture.image.width;
+    canvas.height = texture.image.height;
+    ctx.drawImage(texture.image, 0, 0);
+    ctx.globalCompositeOperation = 'multiply';
+    ctx.fillStyle = 'rgba(80,80,80,1)'; // dim to ~30%
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    dimmedTexture.image = canvas;
+    dimmedTexture.needsUpdate = true;
+
+    const envMap = pmremGenerator.fromEquirectangular(dimmedTexture).texture;
     scene.environment = envMap;
 
     pmremGenerator.dispose();
@@ -51,8 +65,8 @@ export default function EnvironmentSetup() {
 
   return (
     <>
-      <ambientLight intensity={0.01} />
-      <hemisphereLight args={[0xffffff, 0x444444, 0.4]} />
+      <ambientLight intensity={0.0} />
+      <hemisphereLight args={[0xffffff, 0x444444, 0.15]} />
 
       {/* Single shadow-casting directional light. */}
       <directionalLight
@@ -75,7 +89,7 @@ export default function EnvironmentSetup() {
       {/* Fill light - no shadows */}
       <directionalLight
         position={[100, 800, 100]}
-        intensity={0.4}
+        intensity={0.1}
       />
 
       {/* Skybox background — only visible when enabled */}
