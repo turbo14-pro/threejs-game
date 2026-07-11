@@ -39,51 +39,43 @@ export default function EnvironmentSetup() {
 
   return (
     <>
-      <ambientLight intensity={0.001} />
+      <ambientLight intensity={0.05} />
       <hemisphereLight args={[0xffffff, 0x444444, 0.4]} />
-      {/* Existing angled light - moved higher for a tighter angle */}
+
+      {/* Single shadow-casting directional light.
+          Normal bias set to 0 to eliminate the contact-point gap.
+          Bias of -0.001 prevents shadow acne without visible offset. */}
       <directionalLight 
-        key={`angled-${settings.shadowQuality}`}
         position={[200, 800, 200]} 
-        intensity={0.8} 
-        castShadow={settings.shadowQuality !== 'None'}
-        shadow-mapSize={[shadowMapSize, shadowMapSize]}
-        shadow-camera-left={-200}
-        shadow-camera-right={200}
-        shadow-camera-top={200}
-        shadow-camera-bottom={-200}
-        shadow-camera-near={0.5}
+        intensity={0.8}
+        castShadow
+        shadow-mapSize-width={shadowMapSize}
+        shadow-mapSize-height={shadowMapSize}
+        shadow-camera-left={-250}
+        shadow-camera-right={250}
+        shadow-camera-top={250}
+        shadow-camera-bottom={-250}
+        shadow-camera-near={100}
         shadow-camera-far={2000}
-        shadow-bias={-0.0001}
-        shadow-normalBias={0.4}
-        shadow-radius={4}
-      />
-      {/* Top-down light for feet shadows - also tighter */}
-      <directionalLight 
-        key={`top-${settings.shadowQuality}`}
-        position={[100, 800, 100]} 
-        intensity={0.4} 
-        castShadow={['High', 'Ultra'].includes(settings.shadowQuality)}
-        shadow-mapSize={[shadowMapSize, shadowMapSize]}
-        shadow-camera-left={-200}
-        shadow-camera-right={200}
-        shadow-camera-top={200}
-        shadow-camera-bottom={-200}
-        shadow-camera-near={0.5}
-        shadow-camera-far={2000}
-        shadow-bias={-0.0001}
-        shadow-normalBias={0.4}
-        shadow-radius={6}
+        shadow-bias={-0.001}
+        shadow-normalBias={0}
+        shadow-radius={3}
       />
 
+      {/* Fill light - no shadows, eliminates the two-light shadow splay */}
+      <directionalLight 
+        position={[100, 800, 100]} 
+        intensity={0.4} 
+      />
+
+      {/* Environment map for reflections — always active, even without skybox background */}
+      <Environment map={texture} resolution={512} background={false} />
+
       {settings.skybox && (
-        <>
-          <Environment map={texture} resolution={512} />
-          <mesh position={[0, 150, 0]} scale={[1, 0.5, 1]}>
-            <sphereGeometry args={[900, 64, 32]} />
-            <meshBasicMaterial map={texture} side={THREE.BackSide} toneMapped={false} depthWrite={true} fog={false} />
-          </mesh>
-        </>
+        <mesh position={[0, 150, 0]} scale={[1, 0.5, 1]}>
+          <sphereGeometry args={[900, 64, 32]} />
+          <meshBasicMaterial map={texture} side={THREE.BackSide} toneMapped={false} depthWrite={true} fog={false} />
+        </mesh>
       )}
     </>
   );
