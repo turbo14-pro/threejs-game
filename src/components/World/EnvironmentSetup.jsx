@@ -1,11 +1,11 @@
-import React, { useLayoutEffect, useMemo } from 'react';
+import React, { useLayoutEffect, useMemo, useEffect } from 'react';
 import * as THREE from 'three';
 import { useTexture, Environment } from '@react-three/drei';
 import { useThree } from '@react-three/fiber';
 import { useGameStore } from '../../store/useGameStore';
 
 export default function EnvironmentSetup() {
-  const { scene } = useThree();
+  const { scene, gl } = useThree();
   const texture = useTexture('/skybox/skybox-kitchen.webp');
   const settings = useGameStore(state => state.settings);
 
@@ -20,7 +20,7 @@ export default function EnvironmentSetup() {
       default: return 1024;
     }
   }, [settings.shadowQuality]);
-  
+
   useLayoutEffect(() => {
     if (!settings.skybox) {
       scene.background = cabinetColor;
@@ -29,24 +29,32 @@ export default function EnvironmentSetup() {
     }
   }, [settings.skybox, scene, cabinetColor]);
 
-  useLayoutEffect(() => {
-    texture.colorSpace = THREE.SRGBColorSpace;
-    texture.wrapS = THREE.RepeatWrapping;
-    texture.wrapT = THREE.RepeatWrapping;
-    texture.repeat.set(2, 1);
-    texture.needsUpdate = true;
-  }, [texture]);
+  // Process equirectangular texture into a proper environment cubemap
+  useEffect(() => {
+    if (!texture) return;
+
+    const pmremGenerator = new THREE.PMREMGenerator(gl);
+    pmremGenerator.compileEquirectangularShader();
+
+    const envMap = pmremGenerator.fromEquirectangular(texture).texture;
+    scene.environment = envMap;
+
+    pmremGenerator.dispose();
+
+    return () => {
+      scene.environment = null;
+      envMap.dispose();
+    };
+  }, [texture, scene, gl]);
 
   return (
     <>
       <ambientLight intensity={0.05} />
       <hemisphereLight args={[0xffffff, 0x444444, 0.4]} />
 
-      {/* Single shadow-casting directional light.
-          Normal bias set to 0 to eliminate the contact-point gap.
-          Bias of -0.001 prevents shadow acne without visible offset. */}
-      <directionalLight 
-        position={[200, 800, 200]} 
+      {/* Single shadow-casting directional light. */}
+      <directionalLight
+        position={[200, 800, 200]}
         intensity={0.8}
         castShadow
         shadow-mapSize-width={shadowMapSize}
@@ -62,15 +70,13 @@ export default function EnvironmentSetup() {
         shadow-radius={3}
       />
 
-      {/* Fill light - no shadows, eliminates the two-light shadow splay */}
-      <directionalLight 
-        position={[100, 800, 100]} 
-        intensity={0.4} 
+      {/* Fill light - no shadows */}
+      <directionalLight
+        position={[100, 800, 100]}
+        intensity={0.4}
       />
 
-      {/* Environment map for reflections — always active, even without skybox background */}
-      <Environment map={texture} resolution={512} background={false} />
-
+      {/* Skybox background — only visible when enabled */}
       {settings.skybox && (
         <mesh position={[0, 150, 0]} scale={[1, 0.5, 1]}>
           <sphereGeometry args={[900, 64, 32]} />
