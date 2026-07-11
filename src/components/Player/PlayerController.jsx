@@ -765,7 +765,7 @@ export default function PlayerController({ sendUpdate }) {
     // Apply camera joystick input from store (touch devices)
     const camInput = useGameStore.getState().cameraInput;
     if (camInput.x !== 0 || camInput.y !== 0) {
-      rotationY.current += camInput.x;
+      rotationY.current += camInput.x + 0.2; // Add a small auto-rotation to keep the camera moving
       rotationX.current += camInput.y;
       rotationX.current = Math.max(-Math.PI / 3, Math.min(Math.PI / 4, rotationX.current));
       // Reset after applying so it doesn't compound
@@ -791,15 +791,15 @@ export default function PlayerController({ sendUpdate }) {
     // We smooth the anchor point to give a "cinematic" follow feel to the camera's orbit center.
     if (!camera.userData.smoothedTarget) camera.userData.smoothedTarget = new THREE.Vector3().copy(playerPos);
     const targetYOffset = 1;
-    const shoulderOffset = 2; // Shift camera to the right
+    const shoulderOffset = 0; // No translation offset — shoulder effect is now a Z-roll on the camera
 
-    // Calculate the right vector for the shoulder offset
+    // Calculate the right vector (kept for potential future use)
     const right = new THREE.Vector3().set(1, 0, 0).applyAxisAngle(new THREE.Vector3(0, 1, 0), smoothRotY.current);
 
     const currentTarget = new THREE.Vector3(
-      playerPos.x + right.x * shoulderOffset,
+      playerPos.x,
       playerPos.y + targetYOffset,
-      playerPos.z + right.z * shoulderOffset
+      playerPos.z
     );
 
     camera.userData.smoothedTarget.lerp(currentTarget, 1 - Math.exp(-15 * delta));
@@ -812,8 +812,10 @@ export default function PlayerController({ sendUpdate }) {
     let maxSafeDist = smoothZoom.current;
 
     try {
-      if (!camera.userData._cameraShape) {
-        camera.userData._cameraShape = new rapier.Ball(0.5);
+      const sweepRadius = 0.5;
+      if (!camera.userData._cameraShape || camera.userData._sweepRadius !== sweepRadius) {
+        camera.userData._cameraShape = new rapier.Ball(sweepRadius);
+        camera.userData._sweepRadius = sweepRadius;
       }
 
       const shapeRotation = { w: 1.0, x: 0.0, y: 0.0, z: 0.0 };
@@ -826,7 +828,7 @@ export default function PlayerController({ sendUpdate }) {
         shapeRotation,
         shapeVelocity,
         camera.userData._cameraShape,
-        0.0,                            // targetDistance (0 = detect all hits)
+        1.0,                            // targetDistance (0 = detect all hits)
         smoothZoom.current,             // maxToi (max sweep distance)
         false,                          // stopAtPenetration (false = only detect obstacles the sweep REACHES, not overlaps)
         null,                           // filterFlags
@@ -901,7 +903,10 @@ export default function PlayerController({ sendUpdate }) {
 
     // Look past the shoulder into the distance so the crosshair points at the world
     const lookDistance = 100;
-    const lookTarget = new THREE.Vector3().copy(rayOrigin).addScaledVector(rayDirection, -lookDistance);
+    // Rotate the look direction 5° to the right (Y-axis) for an over-the-shoulder feel.
+    // This shifts the VIEW right without moving the camera position, keeping collision perfectly centered.
+    const lookDir = new THREE.Vector3().copy(rayDirection).applyAxisAngle(new THREE.Vector3(0, 1, 0), -10 * (Math.PI / 180));
+    const lookTarget = new THREE.Vector3().copy(rayOrigin).addScaledVector(lookDir, -lookDistance);
     camera.lookAt(lookTarget);
 
     // Track World Velocity for Newtonian Prediction
