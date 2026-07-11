@@ -23,10 +23,10 @@ const CATEGORY_CONFIG = {
 };
 
 const RARITY_SCALE = {
-  bronze:  { scale: 1.0, emissiveMul: 0.8,  metalness: 0.4, roughness: 0.6, emissiveColor: '#ffaa44', bumpScale: 0.15 },
-  silver:  { scale: 1.1, emissiveMul: 1.0,  metalness: 0.7, roughness: 0.3, emissiveColor: '#aaddff', bumpScale: 0.20 },
-  gold:    { scale: 1.2, emissiveMul: 1.2,  metalness: 0.8, roughness: 0.2, emissiveColor: '#ffcc00', bumpScale: 0.25 },
-  diamond: { scale: 1.3, emissiveMul: 1.5,  metalness: 0.9, roughness: 0.1, emissiveColor: '#44ccff', bumpScale: 0.30 },
+  bronze:  { scale: 1.0, emissiveMul: 0.8,  metalness: 0.95, roughness: 0.08, emissiveColor: '#ffaa44', bumpScale: 0.25 },
+  silver:  { scale: 1.1, emissiveMul: 1.0,  metalness: 0.95, roughness: 0.05, emissiveColor: '#aaddff', bumpScale: 0.30 },
+  gold:    { scale: 1.2, emissiveMul: 1.2,  metalness: 0.98, roughness: 0.03, emissiveColor: '#ffcc00', bumpScale: 0.35 },
+  diamond: { scale: 1.3, emissiveMul: 1.5,  metalness: 1.0,  roughness: 0.01, emissiveColor: '#44ccff', bumpScale: 0.40 },
 };
 
 const COLLECT_DISTANCE = 2.5;
@@ -116,8 +116,8 @@ export function PowerUpCoin({
       type="fixed"
       position={spawnPosition}
     >
-      {/* Wrapper group for bobbing + wobble. Rotated -90° on Z to stand coin on edge */}
-      <group ref={groupRef} rotation={[0, 0, -Math.PI / 2]}>
+      {/* Wrapper group for bobbing + wobble. Rotated on X to stand coin on edge */}
+      <group ref={groupRef} rotation={[Math.PI / 2, 0, 0]}>
         {/* Coin mesh — spins on its own Y axis (which is the coin face normal) */}
         <mesh
           ref={coinRef}
@@ -133,6 +133,7 @@ export function PowerUpCoin({
             roughness={rarityCfg.roughness}
             bumpMap={bumpTex}
             bumpScale={rarityCfg.bumpScale}
+            envMapIntensity={3}
             side={THREE.DoubleSide}
           />
         </mesh>
