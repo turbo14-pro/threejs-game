@@ -1,4 +1,6 @@
-import { useEffect, useRef, useState, useCallback } from 'react';
+import { useEffect, useRef, useState, useCallback, useMemo } from 'react';
+import { useFrame, useLoader } from '@react-three/fiber';
+import * as THREE from 'three';
 import { PowerUpCoin } from './PowerUpCoin.jsx';
 import { useGameStore } from '../../../store/useGameStore';
 
@@ -46,7 +48,6 @@ function getRandomSpawnPosition(existingCoins) {
       );
     } while (insideExclusion);
 
-    // Check minimum distance from existing coins
     const tooClose = existingCoins.some((coin) => {
       const dx = coin.position[0] - x;
       const dz = coin.position[2] - z;
@@ -54,7 +55,6 @@ function getRandomSpawnPosition(existingCoins) {
     });
     if (!tooClose) return [x, 50, z];
   }
-  // Fallback: just return a random valid position
   const x = TABLE_BOUNDS.minX + Math.random() * (TABLE_BOUNDS.maxX - TABLE_BOUNDS.minX);
   const z = TABLE_BOUNDS.minZ + Math.random() * (TABLE_BOUNDS.maxZ - TABLE_BOUNDS.minZ);
   return [x, 50, z];
@@ -79,6 +79,31 @@ function randomSpawnInterval() {
 }
 
 // ---------------------------------------------------------------------------
+// Bump map loader (loads all 4 SVGs once, passes to children)
+// ---------------------------------------------------------------------------
+
+function BumpMapLoader({ children }) {
+  const [dash, jump, run, slide] = useLoader(THREE.TextureLoader, [
+    '/materials/items/powerup.dash.svg',
+    '/materials/items/powerup.jump.svg',
+    '/materials/items/powerup.run.svg',
+    '/materials/items/powerup.slide.svg',
+  ]);
+
+  const bumpMaps = useMemo(() => {
+    const map = { dash, speed: run, jump, slide };
+    Object.values(map).forEach((tex) => {
+      tex.colorSpace = THREE.NoColorSpace;
+      tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+      tex.center.set(0.5, 0.5);
+    });
+    return map;
+  }, [dash, jump, run, slide]);
+
+  return children(bumpMaps);
+}
+
+// ---------------------------------------------------------------------------
 // PowerUpManager — spawns coins at random intervals + positions
 // ---------------------------------------------------------------------------
 
@@ -87,8 +112,6 @@ export function PowerUpManager() {
   const elapsedRef = useRef(0);
   const nextSpawnRef = useRef(randomSpawnInterval());
   const idCounterRef = useRef(0);
-
-  // ---- spawn logic --------------------------------------------------------
 
   const spawnCoin = useCallback(() => {
     const state = useGameStore.getState();
@@ -103,8 +126,6 @@ export function PowerUpManager() {
     useGameStore.getState().incrementCoinCount();
   }, [coins]);
 
-  // ---- timer loop ---------------------------------------------------------
-
   useEffect(() => {
     const interval = setInterval(() => {
       elapsedRef.current += 1;
@@ -117,35 +138,36 @@ export function PowerUpManager() {
     return () => clearInterval(interval);
   }, [spawnCoin]);
 
-  // ---- initial spawn (1s after mount) -------------------------------------
-
   useEffect(() => {
     const t = setTimeout(spawnCoin, 1000);
     return () => clearTimeout(t);
   }, [spawnCoin]);
-
-  // ---- coin collected callback --------------------------------------------
 
   const handleCollected = useCallback((id) => {
     setCoins((prev) => prev.map((c) => (c.id === id ? { ...c, alive: false } : c)));
     useGameStore.getState().decrementCoinCount();
   }, []);
 
-  // ---- render -------------------------------------------------------------
+  // ---- render with bump maps loaded once ---------------------------------
 
   return (
-    <group>
-      {coins
-        .filter((c) => c.alive)
-        .map((coin) => (
-          <PowerUpCoin
-            key={coin.id}
-            spawnPosition={coin.position}
-            category={coin.category}
-            rarity={coin.rarity}
-            onCollected={() => handleCollected(coin.id)}
-          />
-        ))}
-    </group>
+    <BumpMapLoader>
+      {(bumpMaps) => (
+        <group>
+          {coins
+            .filter((c) => c.alive)
+            .map((coin) => (
+              <PowerUpCoin
+                key={coin.id}
+                spawnPosition={coin.position}
+                category={coin.category}
+                rarity={coin.rarity}
+                bumpTex={bumpMaps[coin.category] ?? bumpMaps.speed}
+                onCollected={() => handleCollected(coin.id)}
+              />
+            ))}
+        </group>
+      )}
+    </BumpMapLoader>
   );
 }
