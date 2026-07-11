@@ -203,7 +203,7 @@ export function PowerUpCoin({
             <meshPhysicalMaterial
               map={icon.colorTex}
               bumpMap={icon.bumpTex}
-              bumpScale={1.2}
+              bumpScale={2.4}
               metalness={rarityCfg.metalness}
               roughness={rarityCfg.roughness}
               envMapIntensity={3}
