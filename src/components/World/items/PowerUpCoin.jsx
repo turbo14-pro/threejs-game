@@ -23,10 +23,10 @@ const CATEGORY_CONFIG = {
 };
 
 const RARITY_SCALE = {
-  bronze:  { scale: 1.0, metalness: 0.95, roughness: 0.08, emissiveColor: '#ffaa44', emissiveMul: 0.4, bumpScale: 0.5 },
-  silver:  { scale: 1.1, metalness: 0.95, roughness: 0.05, emissiveColor: '#aaddff', emissiveMul: 0.5, bumpScale: 0.6 },
-  gold:    { scale: 1.2, metalness: 0.98, roughness: 0.03, emissiveColor: '#ffcc00', emissiveMul: 0.6, bumpScale: 0.7 },
-  diamond: { scale: 1.3, metalness: 1.0,  roughness: 0.01, emissiveColor: '#44ccff', emissiveMul: 0.7, bumpScale: 0.8 },
+  bronze:  { scale: 1.0, metalness: 0.95, roughness: 0.08, bumpScale: 0.5 },
+  silver:  { scale: 1.1, metalness: 0.95, roughness: 0.05, bumpScale: 0.6 },
+  gold:    { scale: 1.2, metalness: 0.98, roughness: 0.03, bumpScale: 0.7 },
+  diamond: { scale: 1.3, metalness: 1.0,  roughness: 0.01, bumpScale: 0.8 },
 };
 
 const COLLECT_DISTANCE = 2.5;
@@ -136,8 +136,6 @@ export function PowerUpCoin({
             <cylinderGeometry args={[0.5, 0.5, 0.12, 32]} />
             <meshPhysicalMaterial
               color={catCfg.color}
-              emissive={rarityCfg.emissiveColor}
-              emissiveIntensity={rarityCfg.emissiveMul}
               metalness={rarityCfg.metalness}
               roughness={rarityCfg.roughness}
               bumpMap={bumpTex}
