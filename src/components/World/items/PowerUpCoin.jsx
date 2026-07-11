@@ -131,9 +131,10 @@ export function PowerUpCoin({
             ref={coinRef}
             scale={rarityCfg.scale}
             castShadow
+            receiveShadow
           >
             <cylinderGeometry args={[0.5, 0.5, 0.12, 32]} />
-            <meshStandardMaterial
+            <meshPhysicalMaterial
               color={catCfg.color}
               emissive={rarityCfg.emissiveColor}
               emissiveIntensity={rarityCfg.emissiveMul}
@@ -142,6 +143,8 @@ export function PowerUpCoin({
               bumpMap={bumpTex}
               bumpScale={rarityCfg.bumpScale}
               envMapIntensity={3}
+              clearcoat={1.0}
+              clearcoatRoughness={0.05}
               side={THREE.DoubleSide}
             />
           </mesh>
