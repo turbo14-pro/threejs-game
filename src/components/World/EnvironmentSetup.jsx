@@ -66,11 +66,11 @@ export default function EnvironmentSetup() {
   return (
     <>
       <ambientLight intensity={0.0} />
-      <hemisphereLight args={[0xffffff, 0x444444, 0.15]} />
+      <hemisphereLight args={[0xffffff, 0x444444, 0.0]} />
 
       {/* Single shadow-casting directional light. */}
       <directionalLight
-        position={[200, 800, 200]}
+        position={[200, 500, 50]}
         intensity={0.8}
         castShadow
         shadow-mapSize-width={shadowMapSize}
