@@ -1,5 +1,5 @@
-import { useRef, useState, useMemo } from 'react';
-import { useFrame, useLoader } from '@react-three/fiber';
+import { useRef, useState } from 'react';
+import { useFrame } from '@react-three/fiber';
 import { RigidBody } from '@react-three/rapier';
 import * as THREE from 'three';
 import { useGameStore } from '../../../store/useGameStore';
@@ -16,10 +16,10 @@ export const setLocalPlayerWorldPos = (v) => _playerPos.copy(v);
 // ---------------------------------------------------------------------------
 
 const CATEGORY_CONFIG = {
-  jump:  { color: '#00ff88', iconColor: '#ffffff', label: 'Jump' },
-  speed: { color: '#ff8800', iconColor: '#ffffff', label: 'Speed' },
-  dash:  { color: '#4488ff', iconColor: '#ffffff', label: 'Dash' },
-  slide: { color: '#ff44ff', iconColor: '#ffffff', label: 'Slide' },
+  jump:  { color: '#00ff88', label: 'Jump' },
+  speed: { color: '#ff8800', label: 'Speed' },
+  dash:  { color: '#4488ff', label: 'Dash' },
+  slide: { color: '#ff44ff', label: 'Slide' },
 };
 
 const RARITY_SCALE = {
@@ -32,75 +32,92 @@ const RARITY_SCALE = {
 const COLLECT_DISTANCE = 2.5;
 const COIN_COLLISION_GROUPS = 0x00000002;
 
-// Icon render resolution
 const ICON_SIZE = 512;
+const ROTATION_DEG = -90;
 
 // ---------------------------------------------------------------------------
-// SVG → high-res canvas texture with effects
+// SVG → two canvas textures: colorMap (coin tint + icon) + bumpMap (height)
 // ---------------------------------------------------------------------------
 
-function renderIconToCanvas(svgUrl, color, rotationDeg = 0) {
+function renderIconTextures(svgUrl, baseColor) {
   return new Promise((resolve) => {
     const img = new Image();
     img.onload = () => {
-      const canvas = document.createElement('canvas');
-      canvas.width = ICON_SIZE;
-      canvas.height = ICON_SIZE;
-      const ctx = canvas.getContext('2d');
+      // ---- Color map: coin base color with lighter icon tint ----------------
+      const colorCanvas = document.createElement('canvas');
+      colorCanvas.width = ICON_SIZE;
+      colorCanvas.height = ICON_SIZE;
+      const cCtx = colorCanvas.getContext('2d');
 
-      // Transparent background
-      ctx.clearRect(0, 0, ICON_SIZE, ICON_SIZE);
+      // Fill with coin base color
+      cCtx.fillStyle = baseColor;
+      cCtx.fillRect(0, 0, ICON_SIZE, ICON_SIZE);
 
-      // Rotate and draw centered
-      ctx.save();
-      ctx.translate(ICON_SIZE / 2, ICON_SIZE / 2);
-      ctx.rotate((rotationDeg * Math.PI) / 180);
-      // Scale SVG up to fill canvas with padding
+      // Draw icon in a lighter tint (additive blend)
+      cCtx.save();
+      cCtx.translate(ICON_SIZE / 2, ICON_SIZE / 2);
+      cCtx.rotate((ROTATION_DEG * Math.PI) / 180);
+      cCtx.globalCompositeOperation = 'lighter';
+      cCtx.globalAlpha = 0.35;
       const drawSize = ICON_SIZE * 0.75;
-      ctx.drawImage(img, -drawSize / 2, -drawSize / 2, drawSize, drawSize);
-      ctx.restore();
+      cCtx.drawImage(img, -drawSize / 2, -drawSize / 2, drawSize, drawSize);
+      cCtx.restore();
 
-      // Drop shadow (dark offset shadow for depth)
-      ctx.save();
-      ctx.globalCompositeOperation = 'source-atop';
-      ctx.shadowColor = 'rgba(0,0,0,0.6)';
-      ctx.shadowBlur = 12;
-      ctx.shadowOffsetX = 4;
-      ctx.shadowOffsetY = 4;
-      ctx.fillStyle = 'rgba(0,0,0,0)';
-      ctx.fillRect(0, 0, ICON_SIZE, ICON_SIZE);
-      ctx.restore();
+      const colorTex = new THREE.CanvasTexture(colorCanvas);
+      colorTex.colorSpace = THREE.SRGBColorSpace;
+      colorTex.needsUpdate = true;
 
-      // Re-draw icon on top for sharpness (overlay pass)
-      ctx.save();
-      ctx.translate(ICON_SIZE / 2, ICON_SIZE / 2);
-      ctx.rotate((rotationDeg * Math.PI) / 180);
-      ctx.drawImage(img, -drawSize / 2, -drawSize / 2, drawSize, drawSize);
-      ctx.restore();
+      // ---- Bump map: white icon on black background ------------------------
+      const bumpCanvas = document.createElement('canvas');
+      bumpCanvas.width = ICON_SIZE;
+      bumpCanvas.height = ICON_SIZE;
+      const bCtx = bumpCanvas.getContext('2d');
 
-      const tex = new THREE.CanvasTexture(canvas);
-      tex.colorSpace = THREE.SRGBColorSpace;
-      tex.needsUpdate = true;
-      resolve(tex);
+      // Black background (low)
+      bCtx.fillStyle = '#000000';
+      bCtx.fillRect(0, 0, ICON_SIZE, ICON_SIZE);
+
+      // Draw icon in white (high) with drop shadow
+      bCtx.save();
+      bCtx.shadowColor = 'rgba(0,0,0,0.8)';
+      bCtx.shadowBlur = 8;
+      bCtx.shadowOffsetX = 3;
+      bCtx.shadowOffsetY = 3;
+      bCtx.translate(ICON_SIZE / 2, ICON_SIZE / 2);
+      bCtx.rotate((ROTATION_DEG * Math.PI) / 180);
+      bCtx.drawImage(img, -drawSize / 2, -drawSize / 2, drawSize, drawSize);
+      bCtx.restore();
+
+      // Sharpen: re-draw icon on top without shadow for crisp edges
+      bCtx.save();
+      bCtx.translate(ICON_SIZE / 2, ICON_SIZE / 2);
+      bCtx.rotate((ROTATION_DEG * Math.PI) / 180);
+      bCtx.drawImage(img, -drawSize / 2, -drawSize / 2, drawSize, drawSize);
+      bCtx.restore();
+
+      const bumpTex = new THREE.CanvasTexture(bumpCanvas);
+      bumpTex.colorSpace = THREE.NoColorSpace;
+      bumpTex.needsUpdate = true;
+
+      resolve({ colorTex, bumpTex });
     };
     img.src = svgUrl;
   });
 }
 
 // Pre-built icon textures per category (loaded once at module init)
-const iconTextures = {};
+const iconData = {};  // { category: { colorTex, bumpTex } }
 const iconPromises = Object.entries({
-  jump:  '/materials/items/powerup.jump.svg',
-  speed: '/materials/items/powerup.run.svg',
-  dash:  '/materials/items/powerup.dash.svg',
-  slide: '/materials/items/powerup.slide.svg',
-}).map(([cat, url]) =>
-  renderIconToCanvas(url, '#ffffff', 90).then((tex) => {
-    iconTextures[cat] = tex;
+  jump:  { url: '/materials/items/powerup.jump.svg', color: '#00ff88' },
+  speed: { url: '/materials/items/powerup.run.svg',  color: '#ff8800' },
+  dash:  { url: '/materials/items/powerup.dash.svg', color: '#4488ff' },
+  slide: { url: '/materials/items/powerup.slide.svg', color: '#ff44ff' },
+}).map(([cat, { url, color }]) =>
+  renderIconTextures(url, color).then((data) => {
+    iconData[cat] = data;
   })
 );
 
-// Wait for all icons to load (called once by PowerUpManager)
 export function waitForIcons() {
   return Promise.all(iconPromises);
 }
@@ -126,7 +143,7 @@ export function PowerUpCoin({
 
   const catCfg = CATEGORY_CONFIG[category] ?? CATEGORY_CONFIG.speed;
   const rarityCfg = RARITY_SCALE[rarity] ?? RARITY_SCALE.bronze;
-  const iconTex = iconTextures[category] ?? iconTextures.speed;
+  const icon = iconData[category] ?? iconData.speed;
 
   // ---- animation + pickup -------------------------------------------------
 
@@ -193,13 +210,11 @@ export function PowerUpCoin({
           >
             <cylinderGeometry args={[0.5, 0.5, 0.12, 32]} />
             <meshPhysicalMaterial
-              color={catCfg.color}
+              map={icon.colorTex}
+              bumpMap={icon.bumpTex}
+              bumpScale={0.4}
               metalness={rarityCfg.metalness}
               roughness={rarityCfg.roughness}
-              map={iconTex}
-              emissiveMap={iconTex}
-              emissive={new THREE.Color('#444444')}
-              emissiveIntensity={0.3}
               envMapIntensity={3}
               clearcoat={1.0}
               clearcoatRoughness={0.05}
