@@ -47,7 +47,7 @@ export default function EnvironmentSetup() {
     canvas.height = texture.image.height;
     ctx.drawImage(texture.image, 0, 0);
     ctx.globalCompositeOperation = 'multiply';
-    ctx.fillStyle = 'rgba(80,80,80,1)'; // dim to ~30%
+    ctx.fillStyle = 'rgba(50,50,50,1)'; // dim to ~20%
     ctx.fillRect(0, 0, canvas.width, canvas.height);
     dimmedTexture.image = canvas;
     dimmedTexture.needsUpdate = true;
@@ -66,11 +66,11 @@ export default function EnvironmentSetup() {
   return (
     <>
       <ambientLight intensity={0.0} />
-      <hemisphereLight args={[0xffffff, 0x444444, 0.0]} />
+      <hemisphereLight args={[0xccffff, 0x000000, 0.15]} />
 
       {/* Single shadow-casting directional light. */}
       <directionalLight
-        position={[200, 500, 50]}
+        position={[200, 400, 500]}
         intensity={0.8}
         castShadow
         shadow-mapSize-width={shadowMapSize}
@@ -86,11 +86,12 @@ export default function EnvironmentSetup() {
         shadow-radius={3}
       />
 
-      {/* Fill light - no shadows */}
+      {/* Fill light - no shadows 
       <directionalLight
         position={[100, 800, 100]}
-        intensity={0.1}
+        intensity={0.0}
       />
+      */}
 
       {/* Skybox background — only visible when enabled */}
       {settings.skybox && (
