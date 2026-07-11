@@ -53,16 +53,6 @@ function renderIconTextures(svgUrl, baseColor) {
       cCtx.fillStyle = baseColor;
       cCtx.fillRect(0, 0, ICON_SIZE, ICON_SIZE);
 
-      // Draw icon in a lighter tint (additive blend)
-      cCtx.save();
-      cCtx.translate(ICON_SIZE / 2, ICON_SIZE / 2);
-      cCtx.rotate((ROTATION_DEG * Math.PI) / 180);
-      cCtx.globalCompositeOperation = 'lighter';
-      cCtx.globalAlpha = 0.35;
-      const drawSize = ICON_SIZE * 0.75;
-      cCtx.drawImage(img, -drawSize / 2, -drawSize / 2, drawSize, drawSize);
-      cCtx.restore();
-
       const colorTex = new THREE.CanvasTexture(colorCanvas);
       colorTex.colorSpace = THREE.SRGBColorSpace;
       colorTex.needsUpdate = true;
@@ -212,7 +202,7 @@ export function PowerUpCoin({
             <meshPhysicalMaterial
               map={icon.colorTex}
               bumpMap={icon.bumpTex}
-              bumpScale={0.4}
+              bumpScale={1.2}
               metalness={rarityCfg.metalness}
               roughness={rarityCfg.roughness}
               envMapIntensity={3}
