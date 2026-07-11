@@ -145,7 +145,6 @@ export function PowerUpCoin({
               envMapIntensity={3}
               clearcoat={1.0}
               clearcoatRoughness={0.05}
-              side={THREE.DoubleSide}
             />
           </mesh>
         </group>
