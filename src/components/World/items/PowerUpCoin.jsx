@@ -15,10 +15,10 @@ const CATEGORY_CONFIG = {
 };
 
 const RARITY_CONFIG = {
-  bronze:  { color: '#8B5E3C', scale: 1.0, metalness: 0.95, roughness: 0.08 },
-  silver:  { color: '#C0C0C0', scale: 1.1, metalness: 0.95, roughness: 0.05 },
-  gold:    { color: '#FFD700', scale: 1.2, metalness: 0.98, roughness: 0.03 },
-  diamond: { color: '#B9F2FF', scale: 1.3, metalness: 1.0,  roughness: 0.01 },
+  bronze:  { color: '#A37750', scale: 1.0, metalness: 0.95, roughness: 0.08 },
+  silver:  { color: '#D0D0D0', scale: 1.1, metalness: 0.95, roughness: 0.05 },
+  gold:    { color: '#FFE040', scale: 1.2, metalness: 0.98, roughness: 0.03 },
+  diamond: { color: '#CBF4FF', scale: 1.3, metalness: 1.0,  roughness: 0.01 },
 };
 
 const COLLECT_DISTANCE = 2.5;
