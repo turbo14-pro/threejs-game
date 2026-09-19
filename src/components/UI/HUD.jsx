@@ -1,10 +1,11 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useGameStore } from '../../store/useGameStore';
 import Joystick from './Joystick.jsx';
 import CameraJoystick from './CameraJoystick.jsx';
 import Options from './Options.jsx';
 import LatencyGraph from './LatencyGraph.jsx';
 import { PowerUpHUD } from './PowerUpHUD.jsx';
+import { PowerUpNotification } from './PowerUpNotification.jsx';
 
 export default function HUD() {
   const matchPhase = useGameStore(state => state.game.phase);
@@ -12,6 +13,8 @@ export default function HUD() {
   const setGameState = useGameStore(state => state.setGameState);
   const setMobileInput = useGameStore(state => state.setMobileInput);
   const mobileInput = useGameStore(state => state.mobileInput);
+  const powerUp = useGameStore(state => state.powerUp);
+  const rippleDebug = useGameStore(state => state.debugRipple);
   
   const [isPaused, setIsPaused] = useState(false);
   const [showOptions, setShowOptions] = useState(false);
@@ -65,6 +68,38 @@ export default function HUD() {
     useGameStore.getState().respawnToLobby();
   };
 
+  const rippleDebugLabel = useMemo(() => {
+    const pos = rippleDebug?.worldPosition;
+    if (!pos) return 'Ripple debug: n/a';
+    return `Ripple debug: ${pos.x.toFixed(1)}, ${pos.y.toFixed(1)}, ${pos.z.toFixed(1)} | screen ${rippleDebug.screenPosition?.x?.toFixed(0) ?? '0'}, ${rippleDebug.screenPosition?.y?.toFixed(0) ?? '0'}`;
+  }, [rippleDebug]);
+
+  const rippleRingStyles = useMemo(() => {
+    const x = rippleDebug?.screenPosition?.x ?? 0;
+    const y = rippleDebug?.screenPosition?.y ?? 0;
+    const left = `${Math.max(12, Math.min(window.innerWidth - 12, x))}px`;
+    const top = `${Math.max(12, Math.min(window.innerHeight - 12, y))}px`;
+
+    return Array.from({ length: 3 }, (_, index) => ({
+      position: 'absolute',
+      left,
+      top,
+      transform: 'translate(-50%, -50%)',
+      width: 140 + index * 100,
+      height: 140 + index * 100,
+      borderRadius: '50%',
+      border: `${index === 0 ? 10 : 8}px solid rgba(125, 231, 255, 0.22)`,
+      background: 'rgba(125, 231, 255, 0.015)',
+      boxShadow: '0 0 24px rgba(125, 231, 255, 0.12)',
+      backdropFilter: 'blur(6px)',
+      zIndex: 22,
+      pointerEvents: 'none',
+      animation: 'ripple-debug-pulse 1.4s ease-out infinite',
+      animationDelay: `${index * 0.35}s`,
+      opacity: 0.25,
+    }));
+  }, [rippleDebug?.screenPosition]);
+
   return (
     <div className="game-hud-root">
       {/* Dynamic Tutorial Overlay */}
@@ -92,21 +127,18 @@ export default function HUD() {
         </div>
       )}
 
-      {/* Leaderboard (Top 4) */}
-      {!isPaused && (
+      {/* Latency/FPS Display */}
+      {!isPaused && <LatencyGraph />}
+
+      {!isPaused && rippleDebug?.enabled && (
         <>
-          <div className="leaderboard">
-            {[1,2,3,4].map(rank => (
-              <div key={rank} className="leader-card">
-                <div className="leader-icon">{rank === 1 ? '🥇' : rank}</div>
-                <div className="leader-info">
-                  <div className="leader-name">{rank === 1 ? 'PLAYER' : 'CPU BOT'}</div>
-                  <div className="leader-kills">{rank === 1 ? '0' : Math.floor(Math.random() * 5)} KILLS</div>
-                </div>
-              </div>
-            ))}
+          <div style={{ position: 'absolute', left: 16, top: 16, zIndex: 20, background: 'rgba(0,0,0,0.55)', color: '#fff', padding: '8px 10px', borderRadius: 6, fontSize: 12, fontFamily: 'monospace', pointerEvents: 'none', maxWidth: 'min(92vw, 420px)' }}>
+            <div>{rippleDebugLabel}</div>
+            <div style={{ marginTop: 4, color: '#7de7ff' }}>Ripple debug overlay enabled</div>
           </div>
-          <LatencyGraph />
+          {rippleRingStyles.map((style, index) => (
+            <div key={index} style={style} />
+          ))}
         </>
       )}
 
@@ -154,6 +186,13 @@ export default function HUD() {
                 onTouchStart={(e) => { e.stopPropagation(); setMobileInput({ slide: true }); }}
                 onTouchEnd={(e) => { e.stopPropagation(); setMobileInput({ slide: false }); }}
               >SLIDE</button>
+              {powerUp?.category === 'dash' && (
+                <button
+                  className="mobile-btn camera-btn dash-btn"
+                  onTouchStart={(e) => { e.stopPropagation(); setMobileInput({ dash: true }); }}
+                  onTouchEnd={(e) => { e.stopPropagation(); setMobileInput({ dash: false }); }}
+                >DASH</button>
+              )}
             </div>
           </div>
         </>
@@ -252,6 +291,7 @@ export default function HUD() {
 
       {/* Power-Up HUD */}
       <PowerUpHUD />
+      <PowerUpNotification />
     </div>
   );
 }

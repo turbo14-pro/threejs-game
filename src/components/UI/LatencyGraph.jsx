@@ -114,11 +114,11 @@ export default function LatencyGraph() {
   return (
     <div style={{
       position: 'absolute',
-      top: '1rem',
-      right: '1rem',
+      top: '5rem',
+      left: '1rem',
       display: 'flex',
       flexDirection: 'column',
-      alignItems: 'flex-end',
+      alignItems: 'flex-start',
       gap: '0.4rem',
       pointerEvents: 'none',
       zIndex: 100,

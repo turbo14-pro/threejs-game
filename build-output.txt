@@ -1,0 +1,9 @@
+﻿[36mvite v8.0.3 [32mbuilding client environment for production...[36m[39m
+[2K
+node.exe : [31mÔ£ù[39m Build failed in 26.43s
+At line:1 char:1
++ & "C:\Program Files\nodejs/node.exe" "C:\Program Files\nodejs/node_mo ...
++ ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: ([31mÔ£ù[39m Build failed in 26.43s:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 

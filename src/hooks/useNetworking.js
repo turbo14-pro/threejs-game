@@ -15,6 +15,7 @@ export function useNetworking() {
   const setNetworkStatus = useGameStore(state => state.setNetworkStatus);
   const triggerKnockback = useGameStore(state => state.triggerKnockback);
   const addShockwave = useGameStore(state => state.addShockwave);
+  const triggerRipple = useGameStore(state => state.triggerRipple);
 
   useEffect(() => {
     // Only connect when we are in the game
@@ -69,7 +70,14 @@ export function useNetworking() {
       if (error) {
         console.error('%c ❌ [Network Trace] Handshake Failed!', 'color: #ff4444; font-weight: bold;');
         console.error('   > Error Message:', error.message);
+        console.error('   > Error Type:', error.name || 'Unknown');
+        console.error('   > Target URL:', baseAddress);
+        console.error('   > Target Port:', targetPort);
+        console.error('   > Is Dev Mode:', isDev);
+        console.error('   > Raw Env URL:', rawEnvUrl);
         console.error('   > Check if the browser is blocking HTTP to an IP address (Mixed Content).');
+        console.error('   > Check if your system clock is correct (SSL certificate validation depends on accurate time).');
+        console.error('   > Try accessing https://ff-server-9208.duckdns.org in your browser to see if you get a certificate warning.');
         setNetworkStatus('ERROR');
         return;
       }
@@ -112,7 +120,8 @@ export function useNetworking() {
         // 1. If it's me, trigger local knockback
         if (data.victimId === localId) {
           console.log("🛡️ Received IMPACT! Applying knockback.");
-          triggerKnockback({ x: data.dir[0], y: data.dir[1], z: data.dir[2] });
+          triggerKnockback({ x: data.dir[0], y: data.dir[1], z: data.dir[2] }, 250 * (data.slideMultiplier || 1));
+          triggerRipple();
           if (data.position) {
             addShockwave(data.position);
           }

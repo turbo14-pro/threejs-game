@@ -1,0 +1,22 @@
+{/* 6. Cereal Box Physics */}
+      {cerealBoxes.map((box) => (
+        <CerealBoxPhysics 
+          key={box.id} 
+          position={box.position} 
+          rotation={box.rotation} 
+          boxSize={boxSize} 
+        />
+      ))}
+
+      {/* 7. Tin Can Obstacles */}
+      {tinCans.map((can) => (
+        <TinCanObstacle
+          key={can.id}
+          position={can.position}
+          rotation={can.rotation}
+        />
+      ))}
+
+    </>
+  );
+}

@@ -1,13 +1,32 @@
 import React, { Suspense, useMemo, useEffect } from 'react';
-import { Canvas } from '@react-three/fiber';
+import { Canvas, useThree } from '@react-three/fiber';
 import * as THREE from 'three';
 import { KeyboardControls } from '@react-three/drei';
 import MainMenu from './components/UI/MainMenu.jsx';
 import HUD from './components/UI/HUD.jsx';
 import GameCanvas from './components/GameCanvas.jsx';
-import { useGameStore } from './store/useGameStore.js';
+import { useGameStore, getShadowMapType } from './store/useGameStore.js';
 import { useNetworking } from './hooks/useNetworking.js';
 import NetworkStatus from './components/UI/NetworkStatus.jsx';
+
+function ShadowUpdater() {
+  const { gl } = useThree();
+  const shadowQuality = useGameStore(state => state.settings.shadowQuality);
+  const shadowType = getShadowMapType(shadowQuality);
+
+  useEffect(() => {
+    if (shadowType != null) {
+      gl.shadowMap.enabled = true;
+      gl.shadowMap.type = shadowType;
+    } else {
+      gl.shadowMap.enabled = false;
+    }
+    // Force materials to recompile with new shadow settings
+    gl.shadowMap.needsUpdate = true;
+  }, [shadowType, gl]);
+
+  return null;
+}
 
 export default function App() {
   const gameState = useGameStore(state => state.game.state);
@@ -46,8 +65,9 @@ export default function App() {
         {gameState === 'PLAYING' && <HUD />}
         <NetworkStatus />
         
-        <Canvas shadows={{ type: THREE.PCFSoftShadowMap }} gl={{ antialias: false, toneMapping: THREE.NoToneMapping }} camera={{ position: [0, 50, 100], fov: 75, near: 0.5, far: 2000 }} style={{ position: 'absolute', top: 0, left: 0, zIndex: 0 }}>
+        <Canvas shadows gl={{ antialias: false, toneMapping: THREE.NoToneMapping }} camera={{ position: [0, 50, 100], fov: 75, near: 0.5, far: 2000 }} style={{ position: 'absolute', top: 0, left: 0, zIndex: 0 }}>
           <Suspense fallback={null}>
+            <ShadowUpdater />
             <color attach="background" args={['#958164']} />
             <fogExp2 attach="fog" args={['#958164', 0.004]} />
             <GameCanvas sendUpdate={sendUpdate} />

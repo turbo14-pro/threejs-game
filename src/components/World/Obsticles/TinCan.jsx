@@ -176,7 +176,9 @@ export function TinCanPhysics({ position, rotation, color, mass = 1, linearDampi
       .normalize();
 
     // Scale force by player speed (min threshold so even slow hits move the can)
-    const force = Math.max(speed * 800, 25);
+    const slideMultiplier = other.userData?.slideMultiplier || 1;
+    const force = Math.max(speed * 800 * slideMultiplier, 25);
+    console.log("🥫 TinCan hit! speed:", speed, "multiplier:", slideMultiplier, "force:", force);
 
     rigidRef.current.applyImpulse({
       x: finalDir.x * force,
@@ -197,6 +199,7 @@ export function TinCanPhysics({ position, rotation, color, mass = 1, linearDampi
         linearDamping={linearDamping}
         angularDamping={angularDamping}
         onCollisionEnter={handleCollision}
+        userData={{ type: 'tinCan' }}
       >
       <CylinderCollider args={[halfHeight, radius]} />
       <TinCan position={[0, 0, 0]} rotation={[0, 0, 0]} color={color} />

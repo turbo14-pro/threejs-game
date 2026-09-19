@@ -1,151 +1,143 @@
-# Decision: Power-Up Coin Token System
+# Decision: Power-Up Multiplier System Extension
 
 ## What & Why
-Add 16 power-up coin types (4 categories × 4 rarities) to the multiplayer arena game. Players collect floating coins for temporary buffs during battle. Coins spawn randomly across the map, drop in with animated physics, hover/spin above ground, and grant temporary buffs on collection. Only one power-up can be active at a time — collecting a new coin replaces the current effect.
+Extend the power-up coin system with a multiplier table supporting multiple named multipliers per category, a central player config file, a post-effects activation system, fix the shockwave effect, and add speed knockback compensation.
 
 ## Who
-All multiplayer players in the arena. Local-only effects (no server sync for power-up state).
+Game players (multiplayer arena)
 
----
+## Constraints
+- Must NOT create god files — config is centralized but consumers import specific values
+- Must preserve all existing behavior until explicitly changed
+- ShockwaveEffect must be fixed (it never worked properly)
+- All hardcoded baseline values must be extracted into config
 
-## Constraints (Hard Rules)
+## Non-Goals
+- Not changing the coin pickup/detection logic
+- Not changing the PowerUpCoin visual or animation system
+- Not modifying the network/multiplayer protocol
+- Not adding new power-up categories (keep jump/speed/dash/slide)
 
-| # | Constraint | Value | Rationale |
-|---|-----------|-------|-----------|
-| C1 | Active slot limit | 1 (single) | Prevents OP combos, simpler balance |
-| C2 | Max coins on map | 8 | Controlled scarcity without frustration |
-| C3 | Drop mechanism | Animated (type="fixed") | Avoids Rapier sensor/physics conflict |
-| C4 | Spawn zone | Full 600×600 table | Maximum variety |
-| C5 | Exclusion zones | Platforms + bridge | Prevents unreachable coins |
-| C6 | Drop height | y=50 | Dramatic visual, visible from distance |
-| C7 | Hover height | y=1.5 | Clean float above table surface |
-| C8 | Duration ladder | 120/140/160/180s | Strictly increasing +20s per rarity |
-| C9 | Spawn interval | 1-3 minutes | Faster pacing than 3-7 min |
-| C10 | Effect scope | Local-only | No network sync needed |
-| C11 | Movement safety | No regressions | Must not break existing controls |
-| C12 | Dash availability | Dash power-up only | Q key does nothing without dash coin |
-| C13 | Bloom | Existing post-processing | No custom shaders needed |
-| C14 | Rarity visuals | Color tint per rarity | Emissive color shift, not just scale |
-
----
-
-## Non-Goals (Explicitly Out of Scope)
-
-1. Server-side power-up authority
-2. Player visual effects (glowing model, trails) during power-up
-3. Sound effects for collection or power-up active state
-4. Multiple stacking power-up slots
-5. Power-up trading or sharing between players
-6. Real Rapier physics for coins (using animated drop instead)
-
----
-
-## Assumptions (Marked ⚠️ if Uncertain)
-
-| # | Assumption | Confidence |
-|---|-----------|------------|
-| A1 | Dash direction = camera forward | ⚠️ Medium — could be movement direction |
-| A2 | Collecting dash coin replaces any active power-up | High — single slot design |
-| A3 | Categories equally likely (25% each) | High — user confirmed |
-| A4 | Rarity weights: 40/30/20/10 | High — user confirmed |
-| A5 | Instanced meshes only if >8 coins | High — current cap is 8 |
-| A6 | Coins always available (no phases) | High — user confirmed |
-
----
+## Assumptions
+- ⚠️ ShockwaveEffect uses `@react-three/postprocessing` ShockWave component correctly — issue may be with parameters or pipeline ordering
+- RadialBlurEffect can be extended with multiplier support without breaking existing dash behavior
 
 ## Decision Log
-
-### Core Design Decisions
-
 | # | Decision | Alternatives | Rationale |
 |---|----------|-------------|-----------|
-| 1 | 16 coin types (4×4) | 4-type system | Full rarity depth creates progression feel |
-| 2 | Duration: 120/140/160/180s | Flat 120s | Higher rarity = longer feels rewarding |
-| 3 | Single active slot | Multiple stacking | Simpler balance, no OP combos |
-| 4 | Random spawn positions | Hardcoded positions | Variety, unpredictability |
-| 5 | 8 coins max | 5 or unlimited | More opportunities, still controlled |
-| 6 | Local-only effects | Server-authoritative | Simpler, no network changes |
-
-### Technical Decisions
-
-| # | Decision | Alternatives | Rationale |
-|---|----------|-------------|-----------|
-| 7 | Animated drop (type="fixed") | Real Rapier physics | Avoids sensor/physics conflict |
-| 8 | Distance-based pickup | Rapier sensor collision | Works with type="fixed" |
-| 9 | 1-3 min spawn interval | 3-7 minutes | Faster pacing |
-| 10 | Exclude platforms+bridge | No exclusion | Prevents unreachable coins |
-| 11 | y=50 drop → y=1.5 hover | y=67 drop | Dramatic visual, clean hover |
-| 12 | Bloom via existing pipeline | Custom glow shader | Already built, no extra work |
-
-### Gameplay Decisions
-
-| # | Decision | Alternatives | Rationale |
-|---|----------|-------------|-----------|
-| 13 | Refactor hasDoubleJumped → jumpCount | Keep boolean | Supports 3-6 jumps cleanly |
-| 14 | Dash uses Q key | Double-tap direction | Explicit, avoids accidents |
-| 15 | Blue orb during dash | Player model stays | Clear visual feedback |
-| 16 | 3s dash cooldown | No cooldown | Prevents spam |
-| 17 | Dash duration scales | Fixed duration | Rarity matters |
-| 18 | Coins always available | BATTLE-only | Continuous gameplay |
-
-### Visual Decisions
-
-| # | Decision | Alternatives | Rationale |
-|---|----------|-------------|-----------|
-| 19 | Rarity color tints | Same emissive all | Visual rarity distinction |
-| 20 | Instant disappear | Scale-out animation | Instant feedback |
-| 21 | Spin + bob while hovering | Spin only | Gentle floating feel |
-| 22 | ~1.5s drop with gravity curve | Instant or slow | Snappy but visible |
-| 23 | Items folder: items/ | Obsticles/ | Cleaner organization |
-| 24 | Weighted rarity: 40/30/20/10 | Equal 25% | Common items more frequent |
-
----
+| 1 | Create `src/config/playerConfig.js` | Keep values in PlayerController | Centralized config avoids scattered magic numbers |
+| 2 | Multiplier table: each category has object with named multipliers | Flat single values | Supports multiple effects per coin (e.g. speed + knockbackReduction) |
+| 3 | PostEffects system as separate module | Inline in PlayerController | Clean separation, testable, follows existing architecture |
+| 4 | ShockwaveEffect: fix parameters + add intensity multiplier | Rewrite from scratch | Existing component is correct pattern, just needs correct tuning |
+| 5 | Speed knockbackReduction reduces *dealt* knockback | Reduce *received* knockback | Knockback is based on velocity — higher speed = more knockback, so compensation reduces dealt knockback |
+| 6 | Use existing POWERUP_EFFECTS values as base for multiplier table | New magic numbers | Preserves existing game balance, just restructures |
+| 7 | Radial blur: each category specifies intensity (0-1) | Keep binary | Allows speed to have small blur, dash to have big blur |
 
 ## Approaches Considered
 
-### Recommended: Animated Drop + Distance Pickup
-PowerUpCoin is `type="fixed"` with position animated in `useFrame` (gravity curve). Pickup triggers by checking player distance each frame — no Rapier collision events needed.
+### Recommended: Config + Multiplier Table + PostEffects System
+- Single `src/config/playerConfig.js` with all baseline values
+- `POWERUP_EFFECTS` becomes nested multiplier objects
+- PostEffects activation module reads current power-up state and drives effect intensity
+- PlayerController imports config values instead of hardcoding
 
-**Why:** Avoids the sensor/physics conflict entirely. Simple, reliable, performant.
+### Alternative: Keep everything inline
+- Simple to implement but creates maintenance burden and scattered magic numbers
+- Rejected because user specifically requested central config
 
-**Trade-off:** Less "real" physics feel, but visually identical.
+### Alternative: Store config in Zustand store
+- Feasible but mixing static config with dynamic state is messy
+- Config belongs in a plain JS export, not reactive store state
 
-### Alternative: Real Rapier Physics (type="dynamic")
-Coin falls with real gravity, then switches to `type="fixed"` when settled via `setBodyType()`.
+## Multiplier Table Design
 
-**Trade-off:** More realistic but requires managing body type transitions, collision groups, and sensor toggle. Complex for minimal visual benefit.
-
-**Rejected because:** Rapier's `setBodyType()` can be unreliable, and the sensor/physics conflict makes clean pickup difficult.
-
-### Alternative: Server-Authoritative Spawning
-Server tracks coin state, broadcasts spawn/despawn events to all clients.
-
-**Trade-off:** More consistent multiplayer experience but requires new network protocol, server state, and conflict resolution.
-
-**Rejected because:** Out of scope for initial implementation. Local-only is simpler and sufficient.
-
----
-
-## Architecture
-
+```js
+// Category → rarity → { effectName: value }
+POWERUP_EFFECTS: {
+  jump: {
+    bronze: { jumpCount: 3 },
+    silver: { jumpCount: 4 },
+    gold:   { jumpCount: 5 },
+    diamond:{ jumpCount: 6 },
+  },
+  speed: {
+    bronze: { speedMultiplier: 2, knockbackReduction: 0.5 },
+    silver: { speedMultiplier: 3, knockbackReduction: 0.33 },
+    gold:   { speedMultiplier: 4, knockbackReduction: 0.25 },
+    diamond:{ speedMultiplier: 5, knockbackReduction: 0.2 },
+  },
+  dash: {
+    bronze: { dashDuration: 0.5, radialBlurIntensity: 0.8 },
+    silver: { dashDuration: 0.8, radialBlurIntensity: 0.9 },
+    gold:   { dashDuration: 1.0, radialBlurIntensity: 1.0 },
+    diamond:{ dashDuration: 1.3, radialBlurIntensity: 1.2 },
+  },
+  slide: {
+    bronze: { blastPowerMultiplier: 1.5, knockbackMultiplier: 1.0 },
+    silver: { blastPowerMultiplier: 2.0, knockbackMultiplier: 1.2 },
+    gold:   { blastPowerMultiplier: 2.5, knockbackMultiplier: 1.5 },
+    diamond:{ blastPowerMultiplier: 3.0, knockbackMultiplier: 2.0 },
+  },
+}
 ```
-PowerUpManager (spawns coins, tracks count, random positions)
-  └─ PowerUpCoin × 8 max (animated drop + hover + distance pickup)
-       └─ on collect → store.collectPowerUp(category, rarity)
-            └─ PlayerController reads powerUp, applies effects
-                 └─ Expiration timer → store.clearPowerUp()
+
+## PostEffects Activation Design
+
+```js
+// Controls post-processing effects triggered by player actions
+PLAYER_ACTIONS: {
+  slideImpact: {
+    effect: 'shockwave',
+    intensity: { none: 0, bronze: 0.5, silver: 0.7, gold: 1.0, diamond: 1.5 },
+    duration: 0.8,
+  },
+  speedBoost: {
+    effect: 'radialBlur',
+    intensity: { none: 0, bronze: 0.2, silver: 0.3, gold: 0.5, diamond: 0.7 },
+  },
+  dashBoost: {
+    effect: 'radialBlur',
+    intensity: { none: 0, bronze: 0.6, silver: 0.7, gold: 0.8, diamond: 1.0 },
+  },
+}
 ```
 
-## State Flow
+## Baseline Config Design
 
-1. PowerUpManager spawns coin → coin appears at y=50, animated drop to y=1.5 over ~1.5s
-2. Coin hovers: spins on Y axis, bobs up/down 0.25 units
-3. Player walks within 2.5 units → `collectPowerUp()` called, coin disappears instantly
-4. Store sets `powerUp: { category, rarity, expiresAt }`
-5. PlayerController reads `powerUp` each frame:
-   - Speed: multiply movement speed by rarity multiplier
-   - Jump: allow N total jumps based on rarity
-   - Slide: multiply BLAST_POWER by rarity multiplier
-   - Dash: enable Q key, apply velocity burst + invincibility
-6. `useFrame` checks `expiresAt` → calls `clearPowerUp()` when expired
-7. New coin spawns after 1-3 minute random interval (if < 8 on map)
+```js
+PLAYER_BASELINE: {
+  movement: {
+    walkSpeed: 8,
+    sprintSpeed: 30,
+    slideSpeed: 45,
+    slideBurstMultiplier: 1.5,
+    slideDuration: 0.6,
+    jumpVelocity: 38,
+    airJumpVelocity: 35,
+    maxJumps: 2,
+  },
+  knockback: {
+    baseBlastPower: 250,
+    baseUpwardPop: 45,
+    speedUpwardPop: 4,       // Override when speed power-up active
+    victimKnockbackForce: 3,
+    externalKnockbackForce: 250,
+    externalVerticalPop: 55,
+    knockbackDecayRate: 8,
+    stunDuration: 1.2,
+  },
+  dash: {
+    cooldown: 3,
+    defaultDuration: 0.3,
+    dashSpeed: 90,
+  },
+  radialBlur: {
+    defaultIntensity: 0.8,
+    lerpSpeed: 0.15,
+  },
+  shockwave: {
+    baseSize: 100,
+    baseAmplitude: 0.5,
+    duration: 0.8,
+  },
+}

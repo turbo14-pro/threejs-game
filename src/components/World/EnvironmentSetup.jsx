@@ -9,7 +9,7 @@ export default function EnvironmentSetup() {
   const texture = useTexture('/skybox/skybox-kitchen.webp');
   const settings = useGameStore(state => state.settings);
 
-  const cabinetColor = useMemo(() => new THREE.Color('#3b2d26'), []);
+  const cabinetColor = useMemo(() => new THREE.Color('#cfc1ad'), []);
 
   const shadowMapSize = useMemo(() => {
     switch (settings.shadowQuality) {
@@ -25,7 +25,7 @@ export default function EnvironmentSetup() {
     if (!settings.skybox) {
       scene.background = cabinetColor;
       // Re-apply fog since setting scene.background can reset it
-      scene.fog = new THREE.FogExp2('#958164', 0.004);
+      scene.fog = new THREE.FogExp2('#ac9b82', 0.004);
     } else {
       scene.background = null;
     }
@@ -75,15 +75,14 @@ export default function EnvironmentSetup() {
         castShadow
         shadow-mapSize-width={shadowMapSize}
         shadow-mapSize-height={shadowMapSize}
-        shadow-camera-left={-250}
-        shadow-camera-right={250}
-        shadow-camera-top={250}
-        shadow-camera-bottom={-250}
+        shadow-camera-left={-500}
+        shadow-camera-right={500}
+        shadow-camera-top={500}
+        shadow-camera-bottom={-500}
         shadow-camera-near={100}
-        shadow-camera-far={2000}
-        shadow-bias={-0.001}
-        shadow-normalBias={0}
-        shadow-radius={3}
+        shadow-camera-far={1200}
+        shadow-bias={-0.0005}
+        shadow-normalBias={0.02}
       />
 
       {/* Fill light - no shadows 

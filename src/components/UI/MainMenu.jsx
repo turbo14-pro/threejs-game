@@ -38,7 +38,7 @@ export default function MainMenu() {
                 <span className="btn-name">OPTIONS</span>
               </button>
               <a 
-                href="https://docs.google.com/forms/d/e/1FAIpQLSeXA_Tpz1alvdX2xH4Bxw5RzAW-HspzlIdOOWc_RkE65Y3NhA/viewform?usp=header" 
+                href="https://docs.google.com/forms/d/e/1FAIpQLSfFCS4HXw9onZ1uUCbOvuSb7egqXb-jYrwfDA_NgS2qv9ej9Q/viewform" 
                 target="_blank" 
                 className="char-btn survey-btn main-btn"
                 rel="noreferrer"

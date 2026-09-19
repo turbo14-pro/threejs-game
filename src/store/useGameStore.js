@@ -1,22 +1,27 @@
+import * as THREE from 'three';
 import { create } from 'zustand';
 import { subscribeWithSelector, persist } from 'zustand/middleware';
 import { SKINS, WEAPONS, LEVELS } from '../data/registries';
 import { Logger } from '../utils/Logger';
+import {
+  POWERUP_EFFECTS,
+  POWERUP_DURATIONS,
+  POWERUP_DESCRIPTIONS,
+} from '../config/playerConfig';
 
-// --- POWER-UP CONFIGURATION ---
-export const POWERUP_DURATIONS = {
-  bronze: 120,   // 2 min
-  silver: 140,   // 2 min 20s
-  gold: 160,     // 2 min 40s
-  diamond: 180,  // 3 min
+// Re-export for backward compatibility with existing imports
+export { POWERUP_EFFECTS, POWERUP_DURATIONS, POWERUP_DESCRIPTIONS };
+
+// Shadow quality → shadow map type mapping
+const SHADOW_TYPE_MAP = {
+  None:   null,                    // shadows disabled
+  Low:    THREE.BasicShadowMap,    // cheapest, hard edges
+  Medium: THREE.PCFShadowMap,      // moderate, slightly soft
+  High:   THREE.PCFSoftShadowMap,  // smooth soft edges
+  Ultra:  THREE.PCFSoftShadowMap,  // smooth soft edges (higher res)
 };
 
-export const POWERUP_EFFECTS = {
-  speed: { bronze: 2, silver: 3, gold: 4, diamond: 5 },      // multiplier
-  jump:  { bronze: 3, silver: 4, gold: 5, diamond: 6 },      // total jumps
-  dash:  { bronze: 0.3, silver: 0.5, gold: 0.7, diamond: 1.0 }, // seconds
-  slide: { bronze: 1.5, silver: 2.0, gold: 2.5, diamond: 3.0 }, // BLAST_POWER multiplier
-};
+export const getShadowMapType = (shadowQuality) => SHADOW_TYPE_MAP[shadowQuality] ?? THREE.PCFSoftShadowMap;
 
 /**
  * THE MAIN BRAIN (Game Store)
@@ -62,7 +67,7 @@ export const useGameStore = create(
         // --- TECHNICAL / INPUT ---
         teleportCount: 0, // Used to trigger player position resets
         respawnCount: 0, // Used to trigger lobby respawn
-        mobileInput: { x: 0, y: 0, jump: false, sprint: false, slide: false },
+        mobileInput: { x: 0, y: 0, jump: false, sprint: false, slide: false, dash: false },
         cameraInput: { x: 0, y: 0 },
         
         // --- MULTIPLAYER ---
@@ -70,9 +75,9 @@ export const useGameStore = create(
         lastServerState: null, // { pos, tick } for local player reconciliation
         
         // --- VISUAL SETTINGS ---
-        performancePreset: 'Medium', // Lowest, Low, Medium, High, Ultra, Custom
+        performancePreset: 'High', // Lowest, Low, Medium, High, Ultra, Custom
         settings: {
-          shadowQuality: 'Medium', // None, Low, Medium, High, Ultra
+          shadowQuality: 'High', // None, Low, Medium, High, Ultra
           skybox: true,
           bloom: true,
           vignette: true,
@@ -87,10 +92,20 @@ export const useGameStore = create(
         },
 
         // --- EFFECTS ---
+        dashBlur: false, // radial blur during dash
+        playerIsMoving: false, // set by PlayerController each frame
+        playerIsDashing: false, // set by PlayerController each frame
         shockwaves: [null, null, null], // Fixed pool of 3 shockwaves
+        rippleTimer: 0, // Seconds remaining for impact ripple animation (>0 = active)
+        debugRipple: {
+          enabled: false,
+          worldPosition: { x: 0, y: 0, z: 0 },
+          screenPosition: { x: 0, y: 0 },
+        },
         shockwaveIndex: 0,
         knockbackCount: 0,
         knockbackDir: { x: 0, y: 0, z: 0 },
+        knockbackForce: 250,
         isStunned: false,
         remoteKnockbacks: {}, // { id: timestamp }
 
@@ -98,8 +113,36 @@ export const useGameStore = create(
         powerUp: null, // { category: 'jump'|'speed'|'dash'|'slide', rarity: 'bronze'|'silver'|'gold'|'diamond', expiresAt: number } or null
         coinCount: 0, // Number of active power-up coins on map
 
+        // --- NOTIFICATION ---
+        notification: null, // { category, rarity, id } or null
+
         // --- ACTIONS ---
+        setDashBlur: (val) => set({ dashBlur: val }),
+        setPlayerMovement: (moving, dashing) => set({ playerIsMoving: moving, playerIsDashing: dashing }),
         setIsStunned: (val) => set({ isStunned: val }),
+        setRippleDebugPosition: (worldPosition, screenPosition = null) => set((state) => ({
+          debugRipple: {
+            ...state.debugRipple,
+            worldPosition,
+            screenPosition: screenPosition ?? state.debugRipple.screenPosition,
+          }
+        })),
+        setRippleDebugScreenPosition: (screenPosition) => set((state) => ({
+          debugRipple: {
+            ...state.debugRipple,
+            screenPosition,
+          }
+        })),
+        showNotification: (category, rarity) => {
+          const id = Date.now();
+          set({ notification: { category, rarity, id } });
+          setTimeout(() => {
+            const current = get().notification;
+            if (current && current.id === id) {
+              set({ notification: null });
+            }
+          }, 4000);
+        },
 
         // Game Control
         setGameState: (state) => set((s) => ({ game: { ...s.game, state } })),
@@ -172,7 +215,6 @@ export const useGameStore = create(
           delete newPlayers[id];
           return { remotePlayers: newPlayers };
         }),
-        setNetworkId: (id) => set((s) => ({ player: { ...s.player, networkId: id } })),
         
         // System
         triggerWorldReset: () => set({ teleportCount: get().teleportCount + 1 }),
@@ -191,11 +233,11 @@ export const useGameStore = create(
           if (preset === 'Custom') return { performancePreset: preset };
           
           const PRESETS = {
-            Lowest: { shadowQuality: 'None', skybox: false, bloom: false, vignette: false, grain: false, antialiasing: 'None', ssao: false, lightRays: false, shockwave: false, depthOfField: false, physicsDebug: false },
-            Low: { shadowQuality: 'Medium', skybox: true, bloom: false, vignette: false, grain: false, antialiasing: 'FXAA', ssao: false, lightRays: true, shockwave: true, depthOfField: false, physicsDebug: false },
-            Medium: { shadowQuality: 'Medium', skybox: true, bloom: true, vignette: true, grain: false, antialiasing: 'FXAA', ssao: false, lightRays: true, shockwave: true, depthOfField: false, physicsDebug: false },
-            High: { shadowQuality: 'High', skybox: true, bloom: true, vignette: true, grain: true, antialiasing: 'SMAA', ssao: false, lightRays: true, shockwave: true, depthOfField: true, physicsDebug: false },
-            Ultra: { shadowQuality: 'Ultra', skybox: true, bloom: true, vignette: true, grain: true, antialiasing: 'TAA', ssao: true, lightRays: true, shockwave: true, depthOfField: true, physicsDebug: false }
+            Lowest: { shadowQuality: 'None',  skybox: true, bloom: false, vignette: false, grain: false, antialiasing: 'None',  ssao: false, lightRays: false, shockwave: false, depthOfField: false, physicsDebug: false },
+            Low:    { shadowQuality: 'Low',    skybox: true, bloom: false, vignette: false, grain: false, antialiasing: 'FXAA', ssao: false, lightRays: true,  shockwave: true,  depthOfField: false, physicsDebug: false },
+            Medium: { shadowQuality: 'Medium', skybox: true, bloom: true,  vignette: true,  grain: false, antialiasing: 'FXAA', ssao: false, lightRays: true,  shockwave: true,  depthOfField: false, physicsDebug: false },
+            High:   { shadowQuality: 'High',   skybox: true, bloom: true,  vignette: true,  grain: true,  antialiasing: 'SMAA', ssao: false, lightRays: true,  shockwave: true,  depthOfField: true,  physicsDebug: false },
+            Ultra:  { shadowQuality: 'Ultra',  skybox: true, bloom: true,  vignette: true,  grain: true,  antialiasing: 'TAA',  ssao: true,  lightRays: true,  shockwave: true,  depthOfField: true,  physicsDebug: false }
           };
           
           return {
@@ -214,20 +256,30 @@ export const useGameStore = create(
         },
 
         // Effects Management
-        addShockwave: (position) => {
+        triggerRipple: (duration = 0.8) => {
+          set({ rippleTimer: duration });
+        },
+        setRippleTimer: (val) => set({ rippleTimer: Math.max(0, val) }),
+        addShockwave: (position, intensity = 1.0) => {
           const id = Math.random().toString(36).substr(2, 9);
           set((s) => {
             const nextIdx = (s.shockwaveIndex + 1) % 3;
             const newShockwaves = [...s.shockwaves];
-            newShockwaves[nextIdx] = { id, position };
+            newShockwaves[nextIdx] = { id, position, intensity };
             return { shockwaves: newShockwaves, shockwaveIndex: nextIdx };
           });
         },
+        clearShockwaveSlot: (index) => set((s) => {
+          const newShockwaves = [...s.shockwaves];
+          newShockwaves[index] = null;
+          return { shockwaves: newShockwaves };
+        }),
 
-        triggerKnockback: (direction) => {
+        triggerKnockback: (direction, force = 250) => {
           set((s) => ({ 
             knockbackCount: s.knockbackCount + 1,
-            knockbackDir: direction
+            knockbackDir: direction,
+            knockbackForce: force
           }));
         },
 
@@ -241,13 +293,16 @@ export const useGameStore = create(
         },
 
         // --- POWER-UP ACTIONS ---
-        collectPowerUp: (category, rarity) => set({
-          powerUp: {
-            category, // 'jump' | 'speed' | 'dash' | 'slide'
-            rarity,   // 'bronze' | 'silver' | 'gold' | 'diamond'
-            expiresAt: Date.now() + (POWERUP_DURATIONS[rarity] || 120) * 1000
-          }
-        }),
+        collectPowerUp: (category, rarity) => {
+          set({
+            powerUp: {
+              category,
+              rarity,
+              expiresAt: Date.now() + (POWERUP_DURATIONS[rarity] || 120) * 1000
+            }
+          });
+          get().showNotification(category, rarity);
+        },
 
         clearPowerUp: () => set({ powerUp: null }),
         

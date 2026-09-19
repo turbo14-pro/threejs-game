@@ -4,7 +4,8 @@ import { useKeyboardControls } from '@react-three/drei';
 import { RigidBody, CylinderCollider, CapsuleCollider, CuboidCollider, useRapier } from '@react-three/rapier';
 import * as THREE from 'three';
 import PlayerModel from './PlayerModel.jsx';
-import { useGameStore, POWERUP_EFFECTS } from '../../store/useGameStore';
+import { useGameStore } from '../../store/useGameStore';
+import { PLAYER_BASELINE, canUseDash, getDashConfig, getMaxJumps, getPowerUpEffect, getActionIntensity, shouldEndDash } from '../../config/playerConfig';
 import { setLocalPlayerWorldPos } from '../World/items/PowerUpCoin.jsx';
 import { soundManager } from '../../utils/SoundManager';
 
@@ -28,9 +29,12 @@ export default function PlayerController({ sendUpdate }) {
   const playerHealth = useGameStore(state => state.player.health);
   const healPlayer = useGameStore(state => state.healPlayer);
   const selectedSkin = useGameStore(state => state.player.selectedSkin);
+  const triggerRipple = useGameStore(state => state.triggerRipple);
   const addShockwave = useGameStore(state => state.addShockwave);
   const knockbackCount = useGameStore(state => state.knockbackCount);
   const knockbackDir = useGameStore(state => state.knockbackDir);
+  const knockbackForce = useGameStore(state => state.knockbackForce);
+  const powerUp = useGameStore(state => state.powerUp);
 
   // --- PLAYER STATE ---
   const [isSliding, setIsSliding] = useState(false);
@@ -38,14 +42,17 @@ export default function PlayerController({ sendUpdate }) {
   const [isWalking, setIsWalking] = useState(false);
   const [moveDir, setMoveDir] = useState('for');
   const [jumpPhase, setJumpPhase] = useState('none'); // none, launch, air, land
+  const [jumpTransitionId, setJumpTransitionId] = useState(0);
   const animConfig = useGameStore(state => state.player.playerAnimations);
   const setPlayerAnimations = useGameStore(state => state.setPlayerAnimations);
   const targetRotationY = useRef(Math.PI);
   const [jumpCount, setJumpCount] = useState(0);
   const isDashing = useRef(false);
-  const dashTimer = useRef(0);
+  const [isDashingVisual, setIsDashingVisual] = useState(false);
   const dashCooldown = useRef(0);
   const prevDashInput = useRef(false);
+  const dashDir = useRef(new THREE.Vector3());
+  const dashStartPos = useRef(new THREE.Vector3());
   const netTick = useRef(0);
   const netAccumulator = useRef(0);
   const inputHistory = useRef([]); // [{ tick, pos, input, camRot }]
@@ -103,6 +110,7 @@ export default function PlayerController({ sendUpdate }) {
   const externalForce = useRef(new THREE.Vector3());
   const worldVelocityRef = useRef(new THREE.Vector3());
   const preImpactVelocity = useRef(new THREE.Vector3());
+  const isSlidingRef = useRef(false); // Mirror isSliding state for collision handler (avoids stale closure)
 
   // Load animation configuration dynamically
   useEffect(() => {
@@ -295,7 +303,8 @@ export default function PlayerController({ sendUpdate }) {
       const setIsStunned = useGameStore.getState().setIsStunned;
       setIsStunned(true);
       
-      const forceMultiplier = 250;
+      const forceMultiplier = knockbackForce;
+      const normalizedForce = Math.min(1, forceMultiplier / 250);
       // 1. Horizontal push
       externalForce.current.set(
         knockbackDir.x * forceMultiplier,
@@ -303,11 +312,11 @@ export default function PlayerController({ sendUpdate }) {
         knockbackDir.z * forceMultiplier
       );
       
-      // 2. Vertical pop
+      // 2. Vertical pop — scaled proportionally to the knockback force
       const currentVel = rigidBodyRef.current.linvel();
       rigidBodyRef.current.setLinvel({
         x: currentVel.x,
-        y: 55,
+        y: 55 * normalizedForce,
         z: currentVel.z
       }, true);
       
@@ -326,6 +335,10 @@ export default function PlayerController({ sendUpdate }) {
 
     // Update shared player position for power-up distance pickup
     setLocalPlayerWorldPos(translation);
+    // Only update debug ripple position when debug mode is active
+    if (useGameStore.getState().debugRipple.enabled) {
+      useGameStore.getState().setRippleDebugPosition({ x: translation.x, y: translation.y, z: translation.z });
+    }
 
     // SAFETY: If physics returns NaN, ignore this frame to avoid crashing the camera
     if (isNaN(translation.x) || isNaN(translation.y) || isNaN(translation.z)) return;
@@ -390,13 +403,19 @@ export default function PlayerController({ sendUpdate }) {
       return;
     }
 
-    // Input Aggregation (Keyboard + Mobile)
-    const moveX = (keys.right ? 1 : 0) - (keys.left ? 1 : 0) + (mobileInput.x || 0);
-    const moveZ = (keys.backward ? 1 : 0) - (keys.forward ? 1 : 0) - (mobileInput.y || 0);
-    const walkingInput = !!(keys.walk || mobileInput.walk);
-    const jumpingInput = !!(keys.jump || mobileInput.jump);
-    const slidingInput = !!(keys.slide || mobileInput.slide);
-    const dashInput = !!(keys.dash);
+    // Input Aggregation (Keyboard + Mobile) — locked during dash
+    let moveX, moveZ, walkingInput, jumpingInput, slidingInput;
+    if (isDashing.current) {
+      moveX = 0; moveZ = 0;
+      walkingInput = false; jumpingInput = false; slidingInput = false;
+    } else {
+      moveX = (keys.right ? 1 : 0) - (keys.left ? 1 : 0) + (mobileInput.x || 0);
+      moveZ = (keys.backward ? 1 : 0) - (keys.forward ? 1 : 0) - (mobileInput.y || 0);
+      walkingInput = !!(keys.walk || mobileInput.walk);
+      jumpingInput = !!(keys.jump || mobileInput.jump);
+      slidingInput = !!(keys.slide || mobileInput.slide);
+    }
+    const dashInput = !!(keys.dash || mobileInput.dash);
 
     // Dash cooldown
     if (dashCooldown.current > 0) dashCooldown.current -= delta;
@@ -404,28 +423,48 @@ export default function PlayerController({ sendUpdate }) {
     // Dash activation
     if (dashInput && !prevDashInput.current && !isDashing.current && dashCooldown.current <= 0) {
       const dashPowerUp = useGameStore.getState().powerUp;
-      if (dashPowerUp?.category === 'dash') {
+      if (canUseDash(dashPowerUp)) {
         isDashing.current = true;
-        dashTimer.current = POWERUP_EFFECTS.dash[dashPowerUp.rarity] || 0.3;
-        // Apply velocity burst in camera forward direction
-        const cameraDir = new THREE.Vector3(0, 0, -1).applyAxisAngle(
+        setIsDashingVisual(true);
+        const dashConfig = getDashConfig(dashPowerUp?.rarity);
+        dashStartPos.current.copy(rigidBodyRef.current.translation());
+        // Store dash direction in camera forward (flat on XZ)
+        dashDir.current = new THREE.Vector3(0, 0, -1).applyAxisAngle(
           new THREE.Vector3(0, 1, 0),
           rotationY.current,
         );
-        rigidBodyRef.current.setLinvel({
-          x: cameraDir.x * 25,
-          y: rigidBodyRef.current.linvel().y,
-          z: cameraDir.z * 25,
-        }, true);
+        // Lock player visual rotation to face dash direction (does NOT touch camera)
+        targetRotationY.current = Math.atan2(dashDir.current.x, dashDir.current.z);
+        if (playerGroupRef.current) {
+          const targetQuat = new THREE.Quaternion().setFromAxisAngle(
+            new THREE.Vector3(0, 1, 0), targetRotationY.current
+          );
+          playerGroupRef.current.quaternion.copy(targetQuat);
+        }
+        // Snap pre-dash velocity to zero so dash speed is clean
+        rigidBodyRef.current.setLinvel({ x: 0, y: rigidBodyRef.current.linvel().y, z: 0 }, true);
+        // Enable radial blur
+        useGameStore.getState().setDashBlur(true);
       }
     }
 
-    // Dash timer
+    // Dash timer + wall collision stop
     if (isDashing.current) {
-      dashTimer.current -= delta;
-      if (dashTimer.current <= 0) {
+      // Stop dash if horizontal speed drops (hit a wall)
+      const vel = rigidBodyRef.current.linvel();
+      const hSpeed = Math.sqrt(vel.x * vel.x + vel.z * vel.z);
+      const dashConfig = getDashConfig(useGameStore.getState().powerUp?.rarity);
+      const currentPos = rigidBodyRef.current.translation();
+      const travelDistance = Math.sqrt(
+        (currentPos.x - dashStartPos.current.x) ** 2 +
+        (currentPos.z - dashStartPos.current.z) ** 2
+      );
+      if (shouldEndDash({ travelDistance, maxDistance: dashConfig.maxDistance, hSpeed })) {
         isDashing.current = false;
-        dashCooldown.current = 3; // 3s cooldown
+        setIsDashingVisual(false);
+        dashCooldown.current = getDashConfig(useGameStore.getState().powerUp?.rarity).cooldown;
+        rigidBodyRef.current.setLinvel({ x: 0, y: vel.y, z: 0 }, true);
+        useGameStore.getState().setDashBlur(false);
       }
     }
 
@@ -526,10 +565,14 @@ export default function PlayerController({ sendUpdate }) {
     }
 
     const currentPowerUp = useGameStore.getState().powerUp;
-    const speedMultiplier = currentPowerUp?.category === 'speed'
-      ? (POWERUP_EFFECTS.speed[currentPowerUp.rarity] || 1)
+    const hasSpeedPowerUp = currentPowerUp?.category === 'speed';
+    const speedMultiplier = hasSpeedPowerUp
+      ? getPowerUpEffect('speed', currentPowerUp.rarity, 'speedMultiplier')
       : 1;
-    const speed = isSliding ? 45 : (walkingInput ? 8 : 30) * speedMultiplier;
+    const walkSpeed = PLAYER_BASELINE.movement.walkSpeed;
+    const sprintSpeed = PLAYER_BASELINE.movement.sprintSpeed;
+    const slideSpeed = PLAYER_BASELINE.movement.slideSpeed;
+    const speed = isSliding ? slideSpeed * speedMultiplier : (walkingInput ? walkSpeed : sprintSpeed) * speedMultiplier;
 
     // apply speed and rotation to direction
     if (direction.lengthSq() > 0) {
@@ -540,12 +583,8 @@ export default function PlayerController({ sendUpdate }) {
 
     // Ground detection already calculated above
 
-    // Calculate max jumps from power-up
-    const jumpPowerUp = useGameStore.getState().powerUp;
-    const jumpBonus = jumpPowerUp?.category === 'jump'
-      ? (POWERUP_EFFECTS.jump[jumpPowerUp.rarity] - 2)
-      : 0;
-    const maxJumps = 2 + jumpBonus;
+    // Calculate max jumps from jump power-up only
+    const maxJumps = getMaxJumps(powerUp);
 
     // Jump State Machine
     let currentPhase = jumpPhase;
@@ -566,6 +605,7 @@ export default function PlayerController({ sendUpdate }) {
           currentPhase = 'launch';
           jumpTimer.current = config.launchFrames / 30; // Use JSON values
           physicsJumpTriggered.current = false;
+          setJumpTransitionId((value) => value + 1);
           soundManager.playPositional('jump', playerGroupRef.current, 0.4);
         } else if (currentPhase === 'land') {
           jumpTimer.current -= delta;
@@ -598,7 +638,7 @@ export default function PlayerController({ sendUpdate }) {
       }
 
       // DOUBLE JUMP LOGIC
-      if (currentPhase === 'air' && jumpingInput && !prevJumpingInput.current && jumpCount < maxJumps - 1) {
+      if ((currentPhase === 'air' || currentPhase === 'launch' || currentPhase === 'doublejump') && jumpingInput && !prevJumpingInput.current && jumpCount < maxJumps - 1) {
         rigidBodyRef.current.setLinvel({ x: currentVelocity.x, y: 35, z: currentVelocity.z }, true);
         setJumpCount(jumpCount + 1);
         currentPhase = 'doublejump';
@@ -606,7 +646,8 @@ export default function PlayerController({ sendUpdate }) {
         const isBack = jumpLock.current.dir === 'bac';
         const djConfig = isBack ? animConfig?.doublejump_back : animConfig?.doublejump;
         const frames = djConfig?.frames || 15;
-        jumpTimer.current = frames / 30;
+        jumpTimer.current = Math.max(PLAYER_BASELINE.movement.doubleJumpDuration, frames / 30);
+        setJumpTransitionId((value) => value + 1);
         
         soundManager.playPositional('jump', playerGroupRef.current, 0.3); // Add double jump sound
       }
@@ -645,8 +686,16 @@ export default function PlayerController({ sendUpdate }) {
 
     // Apply Horizontal Velocity ONLY (preserve vertical velocity)
     // ADDITION: Apply and decay external forces (knockback)
-    const finalX = direction.x + externalForce.current.x;
-    const finalZ = direction.z + externalForce.current.z;
+    let finalX, finalZ;
+    if (isDashing.current) {
+      const dashConfig = getDashConfig(useGameStore.getState().powerUp?.rarity);
+      const dashVelocity = dashConfig.baseSpeed * dashConfig.speedMultiplier;
+      finalX = dashDir.current.x * dashVelocity;
+      finalZ = dashDir.current.z * dashVelocity;
+    } else {
+      finalX = direction.x + externalForce.current.x;
+      finalZ = direction.z + externalForce.current.z;
+    }
     const finalY = rigidBodyRef.current.linvel().y;
     
     rigidBodyRef.current.setLinvel({ x: finalX, y: finalY, z: finalZ }, true);
@@ -658,6 +707,11 @@ export default function PlayerController({ sendUpdate }) {
     // Sync movement direction for animations with hysteresis
     if (moving !== isMoving) setIsMoving(moving);
     if (walkingInput !== isWalking) setIsWalking(walkingInput);
+    // Keep ref in sync for collision handler (avoids stale closure)
+    isSlidingRef.current = isSliding;
+    
+    // Update store with current movement state for post-effects system
+    useGameStore.getState().setPlayerMovement(moving, isDashing.current);
 
     // FOOTSTEP SOUNDS
     if (currentlyGrounded && moving && currentPhase === 'none') {
@@ -682,20 +736,22 @@ export default function PlayerController({ sendUpdate }) {
     const shouldBackUp = isInputBack && facingAwayFromCamera;
 
     let currentMoveDir = 'for';
-    if (moving) {
-      if (shouldBackUp) {
-        currentMoveDir = 'bac';
-        targetRotationY.current = rotationY.current + Math.PI;
-      } else {
-        currentMoveDir = 'for';
-        targetRotationY.current = Math.atan2(direction.x, direction.z);
+    if (!isDashing.current) {
+      if (moving) {
+        if (shouldBackUp) {
+          currentMoveDir = 'bac';
+          targetRotationY.current = rotationY.current + Math.PI;
+        } else {
+          currentMoveDir = 'for';
+          targetRotationY.current = Math.atan2(direction.x, direction.z);
+        }
       }
-    }
 
-    // Smoothly rotate the visual mesh towards the target heading
-    if (playerGroupRef.current) {
-      const targetQuat = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), targetRotationY.current);
-      playerGroupRef.current.quaternion.slerp(targetQuat, 0.2);
+      // Smoothly rotate the visual mesh towards the target heading
+      if (playerGroupRef.current) {
+        const targetQuat = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), targetRotationY.current);
+        playerGroupRef.current.quaternion.slerp(targetQuat, 0.2);
+      }
     }
 
     if (currentMoveDir !== moveDir) setMoveDir(currentMoveDir);
@@ -943,10 +999,10 @@ export default function PlayerController({ sendUpdate }) {
   const triggerKnockback = (direction, force = 12) => {
     if (!rigidBodyRef.current) return;
     
-    // Apply World-Space Impulse
+    // Apply World-Space Impulse — reduced force & pop since network also applies
     rigidBodyRef.current.applyImpulse({
       x: direction.x * force,
-      y: 8, // Fixed upward pop for "Real Time" feel
+      y: 3,
       z: direction.z * force
     }, true);
 
@@ -954,54 +1010,79 @@ export default function PlayerController({ sendUpdate }) {
     soundManager.playPositional('hit', playerGroupRef.current, 0.5);
   };
 
+  const impactTracker = useRef(new Set());
+
   const handleCollision = (e) => {
     if (!rigidBodyRef.current) return;
 
-    // Invincible during dash
-    if (isDashing.current) return;
-
+    // Only react to collisions with physics bodies that have a userData flag
     const other = e.other.rigidBody;
-    if (!other || other.userData?.type !== 'remote-player') return;
+    if (!other || !other.userData) return;
 
-    // 1. I am the ATTACKER (I am sliding into someone)
-    console.log("🛠️ LOCAL COLLISION: sliding:", isSliding, "target:", other.userData?.id);
-    
-    if (isSliding) {
+    // Only process impacts with players or tin cans
+    const isPlayer = other.userData?.type === 'player';
+    const isTinCan = other.userData?.type === 'tinCan';
+    if (!isPlayer && !isTinCan) return;
+
+    // Avoid duplicate ripple triggers for the same object within a short window
+    const uniqueId = other.userData?.id ?? `tinCan_${e.contactPoint?.x}`;
+    if (impactTracker.current.has(uniqueId)) return;
+    impactTracker.current.add(uniqueId);
+    // Clean up the id after a brief window so future collisions can be detected again
+    setTimeout(() => impactTracker.current.delete(uniqueId), 2000);
+
+    // Only react to sliding attacks (not when we are the victim)
+    if (isSlidingRef.current) {
+      console.log("🛠️ LOCAL COLLISION: sliding:", isSlidingRef.current, "target:", other.userData?.id);
       console.log("💥 Slide IMPACT! Launching Victim...");
-      
+
       // 1. PHYSICAL KICK (Newtonian Interaction)
       // We apply an impulse to the other body locally on our screen
       // so they fly away instantly without waiting for the network.
       const attackerPos = rigidBodyRef.current.translation();
       const victimPos = other.translation();
-      
-      // 1. SIMPLE BLAST DIRECTION
-      // Victim flies directly away from the attacker's center.
       const hitDir = new THREE.Vector3(
         victimPos.x - attackerPos.x,
         0,
         victimPos.z - attackerPos.z
       ).normalize();
 
-      // Apply a massive impulse to launch them!
       const slidePowerUp = useGameStore.getState().powerUp;
-      const slideMultiplier = slidePowerUp?.category === 'slide'
-        ? (POWERUP_EFFECTS.slide[slidePowerUp.rarity] || 1)
+      const hasSpeedPowerUp = slidePowerUp?.category === 'speed';
+      const hasSlidePowerUp = slidePowerUp?.category === 'slide';
+
+      const blastPowerMultiplier = hasSlidePowerUp
+        ? getPowerUpEffect('slide', slidePowerUp.rarity, 'blastPowerMultiplier')
         : 1;
-      const BLAST_POWER = 250 * slideMultiplier;
-      console.log("🚀 BLASTING Victim with Force:", BLAST_POWER);
-      
+      const knockbackReduction = hasSpeedPowerUp
+        ? getPowerUpEffect('speed', slidePowerUp.rarity, 'knockbackReduction')
+        : 1;
+
+      const slideMultiplier = blastPowerMultiplier * knockbackReduction;
+      const BLAST_POWER = PLAYER_BASELINE.knockback.baseBlastPower * slideMultiplier;
+      const UPWARD_POP = hasSpeedPowerUp
+        ? PLAYER_BASELINE.knockback.speedUpwardPop
+        : PLAYER_BASELINE.knockback.baseUpwardPop;
+      console.log("🚀 BLASTING Victim with Force:", BLAST_POWER, "Up:", UPWARD_POP);
+
       other.applyImpulse({
         x: hitDir.x * BLAST_POWER,
-        y: 45, // Massive upward pop
+        y: UPWARD_POP,
         z: hitDir.z * BLAST_POWER
       }, true);
 
       // Trigger visual effects instantly for attacker
       const contactPoint = e.contactPoint;
-      if (contactPoint) {
-        addShockwave([contactPoint.x, contactPoint.y, contactPoint.z]);
-      }
+      // Fallback to player position if contactPoint is not available from Rapier
+      const shockwavePos = contactPoint 
+        ? [contactPoint.x, contactPoint.y, contactPoint.z]
+        : [attackerPos.x, attackerPos.y, attackerPos.z];
+      const currentPowerUp = useGameStore.getState().powerUp;
+      const shockwaveIntensity = getActionIntensity('slideImpact', currentPowerUp?.rarity || 'none');
+      addShockwave(shockwavePos, shockwaveIntensity);
+      // Trigger screen-space ripple displacement
+      console.log("💥 Calling triggerRipple() from collision handler");
+      triggerRipple();
 
       // Send network message for server validation
       if (sendUpdate) {
@@ -1009,17 +1090,18 @@ export default function PlayerController({ sendUpdate }) {
           type: 'impact',
           victimId: other.userData.id,
           dir: [hitDir.x, hitDir.y, hitDir.z],
-          position: contactPoint ? [contactPoint.x, contactPoint.y, contactPoint.z] : null
+          position: contactPoint ? [contactPoint.x, contactPoint.y, contactPoint.z] : null,
+          slideMultiplier
         });
       }
-    } 
+    } // end isSliding
     // 2. I am the VICTIM (A sliding player hit me!)
     else if (other.userData?.isSliding) {
       console.log("🛡️ Newtonian Victim-side Knockback!");
-      
+
       const attackerPos = other.translation();
       const victimPos = rigidBodyRef.current.translation();
-      
+
       // Calculate Glancing Blow (Offset Vector)
       const glanceDir = new THREE.Vector3(
         victimPos.x - attackerPos.x,
@@ -1030,13 +1112,27 @@ export default function PlayerController({ sendUpdate }) {
       // Blend Attacker Velocity with Glancing Blow
       const attackerVel = other.linvel();
       const velDir = new THREE.Vector3(attackerVel.x, 0, attackerVel.z).normalize();
-      
+
       const finalDir = new THREE.Vector3()
         .copy(velDir).multiplyScalar(0.7) // 70% Forward
         .addScaledVector(glanceDir, 0.3)  // 30% Outward (Glance)
         .normalize();
 
-      triggerKnockback(finalDir, 15);
+      // Scale force by player speed (min threshold so even slow hits move the can)
+      const slideMultiplier = other.userData?.slideMultiplier || 1;
+      // Calculate speed from attacker's velocity since we're the victim
+      const attackerSpeed = new THREE.Vector3(attackerVel.x, 0, attackerVel.z).length();
+      const force = Math.max(attackerSpeed * 800 * slideMultiplier, 25);
+      console.log("🥫 Victim hit! attackerSpeed:", attackerSpeed, "multiplier:", slideMultiplier, "force:", force);
+
+      rigidBodyRef.current.applyImpulse({
+        x: finalDir.x * force,
+        y: force,  // slight upward pop
+        z: finalDir.z * force
+      }, true);
+
+      // Trigger screen-space ripple displacement for the victim
+      triggerRipple();
     }
   };
 
@@ -1057,7 +1153,12 @@ export default function PlayerController({ sendUpdate }) {
       userData={{ 
         type: 'player', 
         id: 'local', 
-        isSliding 
+        isSliding,
+        slideMultiplier: powerUp?.category === 'slide'
+          ? getPowerUpEffect('slide', powerUp.rarity, 'blastPowerMultiplier')
+          : (powerUp?.category === 'speed' 
+            ? getPowerUpEffect('speed', powerUp.rarity, 'knockbackReduction') 
+            : 1)
       }}
     >
       {/* UNIFIED COLLIDER (Hidden Debug) */}
@@ -1070,17 +1171,16 @@ export default function PlayerController({ sendUpdate }) {
 
 
       <group ref={playerGroupRef} name="localPlayer" position={[0, isSliding ? -2.8 : -2.5, 0]}>
-        {isDashing.current ? (
-          <mesh>
-            <sphereGeometry args={[1.5, 16, 16]} />
-            <meshStandardMaterial
-              color="#4488ff"
-              emissive="#4488ff"
-              emissiveIntensity={2}
-              transparent
-              opacity={0.8}
-            />
-          </mesh>
+        {isDashingVisual ? (
+          <PlayerModel
+            isMoving={true}
+            moveDir="for"
+            jumpPhase="none"
+            isSprinting={true}
+            isSliding={false}
+            config={animConfig}
+            jumpTransitionId={jumpTransitionId}
+          />
         ) : (
           <PlayerModel
             isMoving={jumpPhase === 'none' ? isMoving : true}
@@ -1089,6 +1189,7 @@ export default function PlayerController({ sendUpdate }) {
             isSprinting={jumpPhase === 'none' ? !isWalking : jumpLock.current.sprint}
             isSliding={isSliding}
             config={animConfig}
+            jumpTransitionId={jumpTransitionId}
           />
         )}
       </group>

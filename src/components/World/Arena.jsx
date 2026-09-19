@@ -367,19 +367,19 @@ export default function Arena() {
 
       {/* Main Kitchen Table Sides */}
       <group position={[0, -502, 0]}>
-        <mesh position={[0, 0, 296]} receiveShadow>
+        <mesh position={[0, 0, 296]}>
           <boxGeometry args={[596, 1000, 4]} />
           <meshStandardMaterial color="#eeeeee" roughness={1.0} metalness={0} />
         </mesh>
-        <mesh position={[0, 0, -296]} receiveShadow>
+        <mesh position={[0, 0, -296]}>
           <boxGeometry args={[596, 1000, 4]} />
           <meshStandardMaterial color="#eeeeee" roughness={1.0} metalness={0} />
         </mesh>
-        <mesh position={[-296, 0, 0]} receiveShadow>
+        <mesh position={[-296, 0, 0]}>
           <boxGeometry args={[4, 1000, 596]} />
           <meshStandardMaterial color="#eeeeee" roughness={1.0} metalness={0} />
         </mesh>
-        <mesh position={[296, 0, 0]} receiveShadow>
+        <mesh position={[296, 0, 0]}>
           <boxGeometry args={[4, 1000, 596]} />
           <meshStandardMaterial color="#eeeeee" roughness={1.0} metalness={0} />
         </mesh>
@@ -570,12 +570,7 @@ export default function Arena() {
         </mesh>
       </group>
 
-      {/* WEAPON PODIUMS on Platform 2 */}
-      <group position={[0, 101, -45]}>
-        <WeaponPodium weapon="Baguette" position={[-20, 0, 0]} color="#f1c232" />
-        <WeaponPodium weapon="Donut" position={[0, 0, 0]} color="#ea9999" />
-        <WeaponPodium weapon="Breadstick" position={[20, 0, 0]} color="#ce7e00" />
-      </group>
+
 
       {/* 5. Cereal Box Obstacles (Individual Meshes with Custom Shader) */}
       {cerealBoxes.map((box) => (

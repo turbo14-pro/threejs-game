@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState, memo } from 'react';
+import React, { useEffect, useMemo, useRef, useState, memo } from 'react';
 import { useShallow } from 'zustand/react/shallow';
 import { useGLTF } from '@react-three/drei';
 import { useFrame } from '@react-three/fiber';
@@ -55,7 +55,7 @@ const applyCharacterMaterials = (material) => {
   return material;
 };
 
-const PlayerModel = ({ isMoving, moveDir, isSprinting, jumpPhase = 'none', isSliding = false, config, skinOverride }) => {
+const PlayerModel = ({ isMoving, moveDir, isSprinting, jumpPhase = 'none', isSliding = false, config, skinOverride, jumpTransitionId = 0 }) => {
   const { localSkin, globalAnimConfig } = useGameStore(useShallow(state => ({
     localSkin: state.player.selectedSkin,
     globalAnimConfig: state.player.playerAnimations
@@ -231,7 +231,9 @@ const PlayerModel = ({ isMoving, moveDir, isSprinting, jumpPhase = 'none', isSli
 
     if (!action) return;
 
-    if (prevAnimState.current !== targetKey) {
+    const shouldRestart = prevAnimState.current === targetKey && (jumpPhase === 'doublejump' || jumpPhase === 'launch');
+
+    if (prevAnimState.current !== targetKey || shouldRestart) {
       let fadeTime = 0.2;
       if (animState.includes('launch')) fadeTime = 0.05;
       if (animState.includes('loop')) fadeTime = 2 / 30;
@@ -264,13 +266,46 @@ const PlayerModel = ({ isMoving, moveDir, isSprinting, jumpPhase = 'none', isSli
     
     action.setEffectiveTimeScale(speedScale);
 
-  }, [animState, activeConfig, mixer]);
+  }, [animState, activeConfig, mixer, jumpTransitionId, jumpPhase]);
+
+  const blobShadowRef = useRef();
 
   useFrame((state, delta) => {
     if (mixer) mixer.update(delta);
+    // Keep blob shadow on the ground — counteract the player's Y movement
+    if (blobShadowRef.current && clone) {
+      const worldPos = new THREE.Vector3();
+      clone.getWorldPosition(worldPos);
+      blobShadowRef.current.position.y = -worldPos.y + 0.05;
+    }
   });
 
-  return <primitive object={clone} scale={[scale, scale, scale]} />;
+  const blobShadowTexture = useMemo(() => {
+    const size = 64;
+    const canvas = document.createElement('canvas');
+    canvas.width = canvas.height = size;
+    const ctx = canvas.getContext('2d');
+    const half = size / 2;
+    const gradient = ctx.createRadialGradient(half, half, 0, half, half, half);
+    gradient.addColorStop(0, 'rgba(0,0,0,0.35)');
+    gradient.addColorStop(0.5, 'rgba(0,0,0,0.15)');
+    gradient.addColorStop(1, 'rgba(0,0,0,0)');
+    ctx.fillStyle = gradient;
+    ctx.fillRect(0, 0, size, size);
+    const tex = new THREE.CanvasTexture(canvas);
+    return tex;
+  }, []);
+
+  return (
+    <group>
+      <primitive object={clone} scale={[scale, scale, scale]} />
+      {/* Blob shadow — soft radial circle on the ground for visual grounding */}
+      <mesh ref={blobShadowRef} rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.05, 0]}>
+        <planeGeometry args={[2.5, 2.5]} />
+        <meshBasicMaterial map={blobShadowTexture} transparent depthWrite={false} />
+      </mesh>
+    </group>
+  );
 };
 
 export default memo(PlayerModel);
