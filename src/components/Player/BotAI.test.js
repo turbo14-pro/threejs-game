@@ -198,18 +198,36 @@ describe('BotAI — adaptive difficulty', () => {
 });
 
 describe('BotAI — slide attack band', () => {
-  it('slides from mid range all the way into strike range so the lunge can connect', () => {
-    const midRange = 5;   // inside the 2 × engageDistance engage band
-    const strike = 2.5;   // inside BOT_COMBAT.hitRange
-    const inputs = [midRange, strike].map((d) => computeBotInput({
+  it('runs most of the time — sprint anywhere beyond the tight finish', () => {
+    const inputs = [4, 8, 15, 40].map((d) => computeBotInput({
       time: 5,
       difficulty: BOT_DIFFICULTY.normal,
       bot: botAtOrigin,
       target: { x: d, y: 0, z: 0 },
     }).input);
 
-    expect(inputs[0].slide).toBe(true);
-    expect(inputs[1].slide).toBe(true);
+    inputs.forEach((input) => expect(input.sprint).toBe(true));
+    // Only the tight finish is a walk
+    const close = computeBotInput({
+      time: 5,
+      difficulty: BOT_DIFFICULTY.normal,
+      bot: botAtOrigin,
+      target: { x: BOT_TUNING.turnHardDistance, y: 0, z: 0 },
+    });
+    expect(close.input.sprint).toBe(false);
+  });
+
+  it('slide tackles from attack range all the way into strike range', () => {
+    // 8m: inside BOT_COMBAT.attackRange (9) — the tackle is committed from here
+    // 2.5m: inside BOT_COMBAT.hitRange — the lunge is still held so it connects
+    const inputs = [8, 5, 2.5].map((d) => computeBotInput({
+      time: 5,
+      difficulty: BOT_DIFFICULTY.normal,
+      bot: botAtOrigin,
+      target: { x: d, y: 0, z: 0 },
+    }).input);
+
+    inputs.forEach((input) => expect(input.slide).toBe(true));
   });
 
   it('stops sliding once within turn distance so it can finish the approach', () => {

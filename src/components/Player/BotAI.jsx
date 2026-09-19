@@ -48,6 +48,8 @@ export const BOT_COMBAT = {
   hitRange: 2.8,         // centre-to-centre distance that counts as a landing
   attackRange: 9,        // distance at which a committed bot launches a slide attack
   slideSpeedBias: 1.9,   // horizontal speed multiplier during the slide lunge
+  slideLinger: 0.35,     // seconds the lunge stays armed after the slide input drops
+                         // (the strike window is narrower than one frame at lunge speed)
   knockbackForce: 170,
   knockbackDuration: 0.55,
   knockbackPop: 13,      // upward velocity given to a knocked-back victim
@@ -302,13 +304,14 @@ export function computeBotInput(snapshot = {}) {
   // --- MOVEMENT ---
   input.x = travelX * profile.speed;
   input.y = travelZ * profile.speed;
-  // Sprint when far away, ease off when close so bots don't overshoot
-  input.sprint = profile.sprint && distance > BOT_TUNING.turnHardDistance * 2;
-  // Slide-in as a closing move: engages at mid range and is held all the way into
-  // strike range so the lunge can actually connect (hitRange > turnHardDistance).
+  // RUN most of the time: only ease to a walk in the tight finish so bots don't
+  // overshoot the target. Everything beyond close quarters is a run.
+  input.sprint = distance > BOT_TUNING.turnHardDistance * 1.2;
+  // Slide tackle: committed from attack range and held all the way through the
+  // strike window so the lunge can actually connect (hitRange > turnHardDistance).
   input.slide = profile.slide
     && !fleeing
-    && distance <= BOT_TUNING.engageDistance * 2
+    && distance <= BOT_COMBAT.attackRange
     && distance > BOT_TUNING.turnHardDistance;
   // Dash into the target once inside strike range, on a cadence so it isn't spammy
   const dashWindow = Math.max(1, 3 - 2 * profile.aggression);

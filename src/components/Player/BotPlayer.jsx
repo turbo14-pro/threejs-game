@@ -84,6 +84,7 @@ export default function BotPlayer({ bot }) {
     downUntil: 0,
     lastHitAt: -Infinity,
     lastTagAt: -Infinity,
+    slideArmedUntil: 0,
     knockVec: new THREE.Vector3(),
     lastDebug: null,
   });
@@ -237,14 +238,19 @@ export default function BotPlayer({ bot }) {
     s.pos.x += input.x * baseSpeed * slideBias * step;
     s.pos.z += input.y * baseSpeed * slideBias * step;
 
-    // --- SLIDE ATTACK: landing a lunge damages the victim and knocks them back ---
-    const canHit = input.slide
+    // --- SLIDE ATTACK: the lunge stays armed for slideLinger after the slide input
+    // drops (at lunge speed the strike window is shorter than a single frame), and
+    // the impact applies to BOTH bots and the human player ---
+    s.slideArmedUntil = input.slide ? now + BOT_COMBAT.slideLinger : s.slideArmedUntil || 0;
+    const lunging = now < s.slideArmedUntil;
+    const canHit = lunging
       && target
       && distance !== null
       && distance <= BOT_COMBAT.hitRange
       && (now - s.lastHitAt) >= BOT_COMBAT.hitCooldown;
     if (canHit) {
       s.lastHitAt = now;
+      s.slideArmedUntil = 0; // one hit per lunge
       const dir = new THREE.Vector3(target.x - s.pos.x, 0, target.z - s.pos.z).normalize();
       if (target.kind === 'player') {
         store.triggerKnockback({ x: dir.x, y: 0, z: dir.z }, BOT_COMBAT.knockbackForce);
