@@ -24,6 +24,9 @@ const SHADOW_TYPE_MAP = {
 
 export const getShadowMapType = (shadowQuality) => SHADOW_TYPE_MAP[shadowQuality] ?? THREE.PCFSoftShadowMap;
 
+// Bots present on the arena before any lobby selection (see "spawn from the start")
+const DEFAULT_BOT_COUNT = 2;
+
 /**
  * THE MAIN BRAIN (Game Store)
  * Organized into logical sections for clean scaling.
@@ -76,8 +79,10 @@ export const useGameStore = create(
         lastServerState: null, // { pos, tick } for local player reconciliation
 
         // --- CPU BOTS ---
-        bots: [],                       // [{ id, name, isBot, difficulty, difficultyName, score }]
-        botCount: 0,                    // lobby selection (0-3)
+        // Default roster so bots are on the arena from the very first frame,
+        // before any lobby selection is made.
+        bots: buildBotRoster({ count: DEFAULT_BOT_COUNT, difficulty: BOT_DIFFICULTY.normal }),
+        botCount: DEFAULT_BOT_COUNT,    // lobby selection (0-3)
         botDifficulty: BOT_DIFFICULTY.normal,
         matchScore: { player: 0, bots: 0 }, // drives adaptive bot difficulty
         

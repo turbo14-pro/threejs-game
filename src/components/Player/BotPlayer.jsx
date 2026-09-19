@@ -1,10 +1,18 @@
-import React, { useRef, useState, useMemo } from 'react';
+import React, { useRef, useState, useMemo, useEffect } from 'react';
 import { useFrame } from '@react-three/fiber';
 import * as THREE from 'three';
 import { RigidBody, CapsuleCollider, useRapier } from '@react-three/rapier';
 import PlayerModel from './PlayerModel.jsx';
 import { useGameStore } from '../../store/useGameStore';
-import { BotBrain, shouldRegisterTag, TAG_COOLDOWN } from './BotAI.jsx';
+import {
+  BotBrain,
+  shouldRegisterTag,
+  TAG_COOLDOWN,
+  BOT_COMBAT,
+  botSpawnPosition,
+  selectTarget,
+} from './BotAI.jsx';
+import { registerBot, unregisterBot, getBotCandidates, damageBot, applyBotKnockback } from './botRegistry.js';
 import { getLocalPlayerWorldPos } from '../World/items/PowerUpCoin.jsx';
 import { SKINS } from '../../data/registries';
 
@@ -17,6 +25,11 @@ import { SKINS } from '../../data/registries';
  * pointer-lock and local-player store state — a second instance would fight over all three.
  * The brain still produces the exact `mobileInput` shape PlayerController consumes, so the
  * same decision logic can be handed to a real controller later if that is ever refactored.
+ *
+ * COMBAT: bots slide-lunge any living candidate — the human AND the other bots
+ * (candidates via botRegistry + getLocalPlayerWorldPos; selection is the brain's
+ * `selectTarget` scoring). Landing a slide deals BOT_COMBAT.hitDamage and knocks the
+ * victim back (store knockback for the human, kinematic push for other bots).
  */
 
 // Matches the arena's gravity in GameCanvas.jsx (<Physics gravity={[0, -90.81, 0]}>)
@@ -30,34 +43,35 @@ const BOT_WALK_SPEED = 11;
 const MAX_STEP = 0.05;
 // The arena's ground/platform collision group, as used by PlayerController's ground probe
 const GROUND_FILTER = 0x00010001;
-// Stop pressing into the human once we are this close
-const ARRIVE_DISTANCE = 2.0;
+// CapsuleCollider args are [halfHeight, radius] = [1.5, 1], so the body centre sits this
+// far above the feet. Ground "sticks" must land at groundY + this offset — landing at
+// groundY itself is what used to sink bots half-way into the floor.
+const BODY_OFFSET_Y = 2.5;
 // Snap down to a surface within this distance instead of floating above it
 const MAX_STICK_DOWN = 0.6;
+// The ground probe casts a Ball; its contact point is BALL_RADIUS above the true surface
+const GROUND_BALL_RADIUS = 0.5;
 // Safety net only — the arena table's surface is y≈0 (Arena.jsx: RigidBody [0,-1,0] + 600x2x600)
 const RESPAWN_FLOOR_Y = -80;
-
-const SPAWN = { x: 0, y: 103, z: 0 };
-
-// Keeps each bot out of its teammates' spawn point (lobby platform 1)
-const spawnForIndex = (index) => ({
-  x: (index - 1) * 5,
-  y: SPAWN.y,
-  z: SPAWN.z - 6,
-});
+// Ignore vertical differences larger than this when picking a target (lobby unreachable)
+const MAX_TARGET_HEIGHT_DIFF = 6;
 
 export default function BotPlayer({ bot }) {
   const bodyRef = useRef();
   const modelRef = useRef();
   const { world, rapier } = useRapier();
 
-  // Each bot owns its own brain so boot-up delay and animation state are independent
+  // Each bot owns its own brain: independent boot-up delay, personality and animation
   const brainRef = useRef(null);
   if (brainRef.current === null) {
-    brainRef.current = new BotBrain({ difficulty: bot.difficulty, name: bot.name });
+    brainRef.current = new BotBrain({
+      difficulty: bot.difficulty,
+      name: bot.name,
+      seed: bot.id, // per-bot decision variables (aggression, patience, caution, ...)
+    });
   }
 
-  const spawn = useMemo(() => spawnForIndex(bot.spawnIndex ?? 0), [bot.spawnIndex]);
+  const spawn = useMemo(() => botSpawnPosition(bot.spawnIndex ?? 0), [bot.spawnIndex]);
   // Give each bot a different skin from the master registry so they are easy to tell apart
   const skin = SKINS[(bot.spawnIndex ?? 0) % SKINS.length].id;
 
@@ -66,7 +80,11 @@ export default function BotPlayer({ bot }) {
     vy: 0,
     yaw: Math.PI,
     grounded: true,
+    health: BOT_COMBAT.maxHealth,
+    downUntil: 0,
+    lastHitAt: -Infinity,
     lastTagAt: -Infinity,
+    knockVec: new THREE.Vector3(),
     lastDebug: null,
   });
 
@@ -75,34 +93,88 @@ export default function BotPlayer({ bot }) {
   const groundShape = useMemo(() => (rapier ? new rapier.Ball(0.5) : null), [rapier]);
   const addMatchScore = useGameStore(s => s.addMatchScore);
 
+  // Publish this bot so other bots can target it and deal damage to it
+  useEffect(() => {
+    registerBot(bot.id, {
+      getPosition: () => ({
+        x: stateRef.current.pos.x,
+        y: stateRef.current.pos.y,
+        z: stateRef.current.pos.z,
+      }),
+      get health() { return stateRef.current.health; },
+      takeDamage: (amount) => {
+        const s = stateRef.current;
+        if (s.health <= 0) return;
+        s.health = Math.max(0, s.health - amount);
+      },
+      // Kinematic push: knockVec acts as a decaying velocity (units/sec)
+      applyKnockback: (dir, force) => {
+        const s = stateRef.current;
+        const strength = force * 0.12;
+        s.knockVec.set(dir.x * strength, 0, dir.z * strength);
+        s.vy = Math.max(s.vy, BOT_COMBAT.knockbackPop);
+        s.grounded = false;
+      },
+    });
+    return () => unregisterBot(bot.id);
+  }, [bot.id]);
+
   useFrame((frameState, delta) => {
     if (!bodyRef.current) return;
 
     const s = stateRef.current;
     const brain = brainRef.current;
     const step = Math.min(delta, MAX_STEP);
+    const now = frameState.clock.elapsedTime;
+    const store = useGameStore.getState();
 
-    // Match PlayerController: freeze during PREMATCH and the DROP countdown
-    const { game, matchScore } = useGameStore.getState();
-    const frozen = game.phase === 'PREMATCH' || (game.phase === 'DROP' && game.countdown > 0);
-    if (frozen) {
+    // --- DOWNED: respawn on the arena after the delay ---
+    if (s.health <= 0) {
+      if (s.downUntil <= 0) s.downUntil = now + BOT_COMBAT.respawnDelay;
+      if (now < s.downUntil) {
+        // Hide the body under the arena while downed
+        bodyRef.current.setNextKinematicTranslation({ x: s.pos.x, y: -60, z: s.pos.z });
+        return;
+      }
+      s.pos.set(spawn.x, spawn.y, spawn.z);
       s.vy = 0;
-      return;
+      s.knockVec.set(0, 0, 0);
+      s.health = BOT_COMBAT.maxHealth;
+      s.downUntil = 0;
+      s.grounded = true;
     }
 
-    // The human's position is published by PlayerController every frame
-    const target = getLocalPlayerWorldPos();
+    // --- TARGET SELECTION: the human + every other living bot, scored by the brain ---
+    const candidates = getBotCandidates(bot.id);
+    const playerPos = getLocalPlayerWorldPos();
+    const playerHealth = store.player?.health;
+    const playerIsReachable = playerPos
+      && Number.isFinite(playerPos.x)
+      && Math.abs((playerPos.y ?? 0) - s.pos.y) <= MAX_TARGET_HEIGHT_DIFF;
+    if (playerIsReachable && !(Number.isFinite(playerHealth) && playerHealth <= 0)) {
+      candidates.push({
+        id: 'player',
+        kind: 'player',
+        x: playerPos.x,
+        y: playerPos.y,
+        z: playerPos.z,
+        health: Number.isFinite(playerHealth) ? playerHealth : BOT_COMBAT.maxHealth,
+      });
+    }
+    const target = selectTarget(s.pos, candidates, brain.personality);
 
     const input = brain.update(step, {
-      bot: { x: s.pos.x, y: s.pos.y, z: s.pos.z, rotationY: 0 },
+      bot: { x: s.pos.x, y: s.pos.y, z: s.pos.z, rotationY: s.yaw },
       target,
-      targetScore: matchScore.player,
-      botScore: matchScore.bots,
+      targetScore: store.matchScore.player,
+      botScore: store.matchScore.bots,
+      healthRatio: s.health / BOT_COMBAT.maxHealth,
     });
     const debug = brain.lastDebug;
-    s.lastDebug = debug;
+    const distance = debug?.distance ?? null;
 
-    // --- GROUND PROBE: same castShape technique PlayerController uses ---
+    // --- GROUND PROBE: same castShape as before, but the stick now lands the body
+    // centre on groundY + BODY_OFFSET_Y so the FEET rest on the surface ---
     let groundY = null;
     if (groundShape) {
       const hit = world.castShape(
@@ -118,10 +190,16 @@ export default function BotPlayer({ bot }) {
         null,
         bodyRef.current
       );
-      if (hit) groundY = s.pos.y - hit.time_of_impact;
-      // Only "grounded" when the surface is within stepping distance — a platform 3m below
-      // is a ledge to fall off, not something to stand on.
-      s.grounded = groundY !== null && (s.pos.y - groundY) <= MAX_STICK_DOWN;
+      if (hit) {
+        // hit.time_of_impact is where the BALL CENTRE stops; the true surface is
+        // ballRadius below that (the ball touches the floor bottom-first).
+        const toi = hit.toi ?? hit.time_of_impact;
+        if (typeof toi === 'number' && Number.isFinite(toi)) {
+          groundY = s.pos.y - toi - GROUND_BALL_RADIUS;
+        }
+      }
+      const feetAboveGround = s.pos.y - BODY_OFFSET_Y - groundY;
+      s.grounded = groundY !== null && feetAboveGround >= -0.1 && feetAboveGround <= MAX_STICK_DOWN;
     }
 
     // --- VERTICAL ---
@@ -130,36 +208,56 @@ export default function BotPlayer({ bot }) {
       s.vy = BOT_JUMP_SPEED;
       s.grounded = false;
       s.pos.y += s.vy * step;
-    } else if (groundY !== null && s.vy <= 0 && (s.pos.y - groundY) <= MAX_STICK_DOWN) {
-      // Stick to the surface so bots can walk down slopes and small steps without floating
-      s.pos.y = groundY;
+    } else if (groundY !== null && s.vy <= 0 && (s.pos.y - BODY_OFFSET_Y - groundY) <= MAX_STICK_DOWN) {
+      s.pos.y = groundY + BODY_OFFSET_Y;
       s.vy = 0;
       s.grounded = true;
     } else {
-      // Nothing in reach (or falling): integrate gravity off the ledge
       s.vy -= BOT_GRAVITY * step;
       s.pos.y += s.vy * step;
       s.grounded = false;
     }
-    // Never fall out of the world if the arena has a hole under a platform
     if (s.pos.y < RESPAWN_FLOOR_Y) {
       s.pos.set(spawn.x, spawn.y, spawn.z);
       s.vy = 0;
       s.grounded = true;
     }
 
-    // --- HORIZONTAL: ease off as we arrive so bots do not shove into the player ---
-    const distance = debug?.distance ?? null;
-    const arrival = distance === null
-      ? 1
-      : Math.max(0, Math.min(1, (distance - ARRIVE_DISTANCE) / ARRIVE_DISTANCE));
-    const speed = input.sprint ? BOT_SPRINT_SPEED : BOT_WALK_SPEED;
-    s.pos.x += input.x * speed * arrival * step;
-    s.pos.z += input.y * speed * arrival * step;
+    // --- KNOCKBACK: decaying displacement from the last slide hit received ---
+    if (s.knockVec.lengthSq() > 0.01) {
+      s.pos.addScaledVector(s.knockVec, step);
+      s.knockVec.multiplyScalar(Math.max(0, 1 - step / BOT_COMBAT.knockbackDuration));
+    } else if (s.knockVec.lengthSq() > 0) {
+      s.knockVec.set(0, 0, 0);
+    }
+
+    // --- HORIZONTAL: walk/sprint cruise, biased up during a slide lunge ---
+    const baseSpeed = input.sprint ? BOT_SPRINT_SPEED : BOT_WALK_SPEED;
+    const slideBias = input.slide ? BOT_COMBAT.slideSpeedBias : 1;
+    s.pos.x += input.x * baseSpeed * slideBias * step;
+    s.pos.z += input.y * baseSpeed * slideBias * step;
+
+    // --- SLIDE ATTACK: landing a lunge damages the victim and knocks them back ---
+    const canHit = input.slide
+      && target
+      && distance !== null
+      && distance <= BOT_COMBAT.hitRange
+      && (now - s.lastHitAt) >= BOT_COMBAT.hitCooldown;
+    if (canHit) {
+      s.lastHitAt = now;
+      const dir = new THREE.Vector3(target.x - s.pos.x, 0, target.z - s.pos.z).normalize();
+      if (target.kind === 'player') {
+        store.triggerKnockback({ x: dir.x, y: 0, z: dir.z }, BOT_COMBAT.knockbackForce);
+        store.damagePlayer(BOT_COMBAT.hitDamage);
+      } else {
+        damageBot(target.id, BOT_COMBAT.hitDamage);
+        applyBotKnockback(target.id, dir, BOT_COMBAT.knockbackForce);
+      }
+    }
 
     // --- TAG SCORING: drives the bots' side of the adaptive difficulty ---
-    if (shouldRegisterTag({ distance, lastTagAt: s.lastTagAt, now: frameState.clock.elapsedTime, cooldown: TAG_COOLDOWN })) {
-      s.lastTagAt = frameState.clock.elapsedTime;
+    if (shouldRegisterTag({ distance, lastTagAt: s.lastTagAt, now, cooldown: TAG_COOLDOWN })) {
+      s.lastTagAt = now;
       addMatchScore('bots', 1);
     }
 
@@ -192,7 +290,7 @@ export default function BotPlayer({ bot }) {
     >
       <CapsuleCollider args={[1.5, 1]} />
 
-      <group ref={modelRef} position={[0, -2.5, 0]}>
+      <group ref={modelRef} position={[0, -BODY_OFFSET_Y, 0]}>
         <PlayerModel
           isMoving={anim.mv}
           moveDir={anim.dir}

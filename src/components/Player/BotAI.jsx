@@ -39,6 +39,41 @@ export const TAG_COOLDOWN = 2.5;
 // ".memory/decisions_log.md → 2026-04-10 · Bot AI: Flee at 25% Health"
 export const FLEE_HEALTH = 0.25;
 
+// --- COMBAT -------------------------------------------------------------------
+// Bots attack with a slide lunge. Landing one damages the victim and knocks them back.
+export const BOT_COMBAT = {
+  maxHealth: 100,
+  hitDamage: 12,
+  hitCooldown: 1.2,      // seconds between a bot's own landed hits
+  hitRange: 2.8,         // centre-to-centre distance that counts as a landing
+  attackRange: 9,        // distance at which a committed bot launches a slide attack
+  slideSpeedBias: 1.9,   // horizontal speed multiplier during the slide lunge
+  knockbackForce: 170,
+  knockbackDuration: 0.55,
+  knockbackPop: 13,      // upward velocity given to a knocked-back victim
+  respawnDelay: 3,       // seconds before a downed bot is back on the arena
+};
+
+// --- ARENA GEOMETRY -----------------------------------------------------------
+// From Arena.jsx: the battle table's top surface is y=0 (RigidBody [0,-1,0] + 600x2x600),
+// while the lobby platform's surface is y=101 (RigidBody [0,100,0] + 70x2x30).
+export const ARENA_SURFACE_Y = 0;
+export const LOBBY_SURFACE_Y = 101;
+// BotPlayer uses <CapsuleCollider args={[1.5, 1]} /> → halfHeight + radius = 2.5 above the feet,
+// so a bot resting on a surface has its body centre this far above it.
+export const BOT_BODY_OFFSET_Y = 2.5;
+// Spawn ring around the lobby platform, all clear of Arena.jsx's PLATFORM_ZONES
+// (those are the footprints the player's drop deliberately avoids).
+export const ARENA_SPAWNS = [
+  { x: 0, z: -92 },
+  { x: 70, z: 6 },
+  { x: -70, z: 6 },
+];
+export const botSpawnPosition = (index = 0) => {
+  const spot = ARENA_SPAWNS[Math.abs(Math.trunc(index)) % ARENA_SPAWNS.length];
+  return { x: spot.x, y: ARENA_SURFACE_Y + BOT_BODY_OFFSET_Y, z: spot.z };
+};
+
 const DIRECTIONS = ['for', 'back', 'left', 'right'];
 
 const clamp01 = (value) => {
@@ -57,20 +92,116 @@ const toVector = (p) => {
   return null;
 };
 
+// --- PERSONALITY --------------------------------------------------------------
+/**
+ * Stable string → 0..1 hash (FNV-1a). Deterministic so every bot keeps the same
+ * character between rounds, and so behaviour is testable without seeding.
+ */
+const hashSeed = (seed) => {
+  const text = String(seed ?? '');
+  let hash = 2166136261;
+  for (let i = 0; i < text.length; i++) {
+    hash ^= text.charCodeAt(i);
+    hash = Math.imul(hash, 16777619);
+  }
+  return (hash >>> 0) / 4294967295;
+};
+
+const round3 = (value) => Math.round(value * 1000) / 1000;
+
+/**
+ * Every bot gets its OWN decision variables, derived deterministically from its id.
+ * Two bots given the same position, difficulty and clock will still behave differently.
+ *
+ * @param {string} seed usually the bot id ('bot-0', 'bot-1', ...)
+ */
+export function createBotPersonality(seed = 'bot') {
+  const a = hashSeed(seed);          // primary traits
+  const b = hashSeed(`${seed}#2`);   // independent second stream
+  const c = hashSeed(`${seed}#3`);   // independent third stream
+
+  return Object.freeze({
+    seed: String(seed),
+    aggression: round3(0.25 + a * 0.7),   // appetite for attacking
+    patience:   round3(0.55 + b * 0.95),  // reaction-time multiplier (higher = slower to react)
+    caution:    round3(0.2 + c * 0.7),    // flees earlier when hurt
+    reach:      round3(0.8 + a * 1.4),    // slide-attack range multiplier
+    speedBias:  round3(0.85 + b * 0.35),  // cruise-speed multiplier
+    jumpiness:  round3(0.6 + c * 1.1),    // eagerness to jump for higher ground
+    wanderAngle: round3(c * Math.PI * 2), // idle patrol heading
+  });
+}
+
+/**
+ * Picks which enemy a bot should go after.
+ *
+ * - Always excludes itself (by `id`) and anything already downed.
+ * - Close targets beat distant ones.
+ * - Aggressive bots are drawn to the human (`kind: 'player'`); everyone loves an
+ *   easy meal, so weakened targets are favoured too.
+ *
+ * @param {object} botPos                     { x, z } (y optional)
+ * @param {Array} candidates                  [{ id, kind, x, y, z, health }]
+ * @param {object} personality                from createBotPersonality
+ * @returns {object|null} the chosen candidate, augmented with distance/score
+ */
+export function selectTarget(botPos, candidates = [], personality = createBotPersonality()) {
+  const from = toVector(botPos);
+  if (!from || !Array.isArray(candidates)) return null;
+
+  let best = null;
+  for (const candidate of candidates) {
+    if (!candidate) continue;
+    if (Number.isFinite(candidate.health) && candidate.health <= 0) continue;
+
+    const pos = toVector(candidate);
+    if (!pos) continue;
+
+    const distance = Math.hypot(pos.x - from.x, pos.z - from.z);
+    const healthRatio = Number.isFinite(candidate.health)
+      ? clamp01(candidate.health / BOT_COMBAT.maxHealth)
+      : 1;
+
+    const preyBonus = (1 - healthRatio) * 6;                                   // finish the wounded
+    const hunterBonus = candidate.kind === 'player' ? personality.aggression * 8 : 0;
+    const score = distance - preyBonus - hunterBonus;
+
+    if (!best || score < best.score) {
+      best = {
+        id: candidate.id,
+        kind: candidate.kind || 'bot',
+        x: pos.x,
+        y: pos.y,
+        z: pos.z,
+        health: candidate.health,
+        distance,
+        score: round3(score),
+      };
+    }
+  }
+
+  return best;
+}
+
 /**
  * Difficulty preset → a fully resolved profile the runtime can consume.
+ * `personality` modulates the preset so each bot has unique decision variables.
  */
-export function createBotProfile(difficulty = BOT_DIFFICULTY.normal) {
+export function createBotProfile(difficulty = BOT_DIFFICULTY.normal, personality = null) {
+  const person = personality || createBotPersonality('default');
   const d = clamp01(difficulty);
   return {
     difficulty: d,
-    reactionTime: BOT_TUNING.reactionBase + (BOT_TUNING.reactionFast - BOT_TUNING.reactionBase) * d,
-    speed: 0.45 + 0.4 * d,
+    reactionTime: (BOT_TUNING.reactionBase + (BOT_TUNING.reactionFast - BOT_TUNING.reactionBase) * d) * person.patience,
+    speed: (0.45 + 0.4 * d) * person.speedBias,
     sprint: d >= 0.5,
     jump: d >= 0.3,
-    slide: d >= 0.6,
+    slide: d >= BOT_DIFFICULTY.normal,
     dash: d >= 0.7,
     aggression: d,
+    attackRange: BOT_COMBAT.attackRange * person.reach,
+    jumpThreshold: BOT_TUNING.jumpClearance * person.jumpiness,
+    fleeBelow: FLEE_HEALTH * (0.7 + person.caution),
   };
 }
 
@@ -141,12 +272,14 @@ export function computeBotInput(snapshot = {}) {
     targetScore = 0,
     botScore = 0,
     healthRatio = 1,
+    personality = null,
   } = snapshot;
 
   const botPos = toVector(bot);
   const targetPos = toVector(target);
   const adaptive = computeAdaptiveDifficulty(targetScore - botScore, difficulty);
-  const profile = createBotProfile(adaptive);
+  const profile = createBotProfile(adaptive, personality);
+  const fleeBelow = profile.fleeBelow ?? FLEE_HEALTH;
   const input = { x: 0, y: 0, jump: false, sprint: false, slide: false, dash: false };
 
   if (!botPos || !targetPos) {
@@ -162,7 +295,7 @@ export function computeBotInput(snapshot = {}) {
   const distance = steer.distance;
 
   // --- FLEE MODE: a hurt bot breaks off and runs to regenerate (project decision)
-  const fleeing = healthRatio < FLEE_HEALTH;
+  const fleeing = healthRatio < fleeBelow;
   const travelX = fleeing ? -steer.x : steer.x;
   const travelZ = fleeing ? -steer.z : steer.z;
 
@@ -171,11 +304,12 @@ export function computeBotInput(snapshot = {}) {
   input.y = travelZ * profile.speed;
   // Sprint when far away, ease off when close so bots don't overshoot
   input.sprint = profile.sprint && distance > BOT_TUNING.turnHardDistance * 2;
-  // Slide-in as a closing move
+  // Slide-in as a closing move: engages at mid range and is held all the way into
+  // strike range so the lunge can actually connect (hitRange > turnHardDistance).
   input.slide = profile.slide
     && !fleeing
-    && distance > BOT_TUNING.engageDistance * 3
-    && distance < BOT_TUNING.engageDistance * 6;
+    && distance <= BOT_TUNING.engageDistance * 2
+    && distance > BOT_TUNING.turnHardDistance;
   // Dash into the target once inside strike range, on a cadence so it isn't spammy
   const dashWindow = Math.max(1, 3 - 2 * profile.aggression);
   input.dash = profile.dash
@@ -266,9 +400,11 @@ export function buildBotRoster({ count = 0, difficulty = BOT_DIFFICULTY.normal, 
  * re-deriving everything in the component body. Optional — `computeBotInput` is usable alone.
  */
 export class BotBrain {
-  constructor({ difficulty = BOT_DIFFICULTY.normal, name = BOT_NAME_POOL[0] } = {}) {
+  constructor({ difficulty = BOT_DIFFICULTY.normal, name = BOT_NAME_POOL[0], seed = null } = {}) {
     this.name = name;
     this.difficulty = difficulty;
+    // Each bot gets its own decision variables derived from a stable seed
+    this.personality = createBotPersonality(seed ?? name);
     this.time = 0;
     this.direction = 'for';
     this.lastDebug = null;
@@ -280,6 +416,7 @@ export class BotBrain {
     const result = computeBotInput({
       time: this.time,
       difficulty: this.difficulty,
+      personality: this.personality,
       ...snapshot,
     });
 

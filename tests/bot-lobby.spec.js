@@ -11,8 +11,8 @@ test('lobby shows the CPU opponent roster and reflects the bot count selection',
   await expect(roster).toBeVisible();
   await expect(roster.locator('.bot-panel-title')).toHaveText(/CPU Opponents/i);
 
-  // Fresh players have no bots configured
-  await expect(roster.locator('.bot-roster-empty')).toBeVisible();
+  // Fresh players get a default roster of 2 bots so the arena is populated from the start
+  await expect(roster.locator('.bot-roster-row')).toHaveCount(2);
 
   // Select 3 bots
   await roster.locator('.bot-option-row', { hasText: 'Bots' }).locator('.bot-option-btn', { hasText: '3' }).click();

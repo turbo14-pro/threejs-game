@@ -197,6 +197,67 @@ describe('BotAI — adaptive difficulty', () => {
   });
 });
 
+describe('BotAI — slide attack band', () => {
+  it('slides from mid range all the way into strike range so the lunge can connect', () => {
+    const midRange = 5;   // inside the 2 × engageDistance engage band
+    const strike = 2.5;   // inside BOT_COMBAT.hitRange
+    const inputs = [midRange, strike].map((d) => computeBotInput({
+      time: 5,
+      difficulty: BOT_DIFFICULTY.normal,
+      bot: botAtOrigin,
+      target: { x: d, y: 0, z: 0 },
+    }).input);
+
+    expect(inputs[0].slide).toBe(true);
+    expect(inputs[1].slide).toBe(true);
+  });
+
+  it('stops sliding once within turn distance so it can finish the approach', () => {
+    const close = computeBotInput({
+      time: 5,
+      difficulty: BOT_DIFFICULTY.normal,
+      bot: botAtOrigin,
+      target: { x: BOT_TUNING.turnHardDistance - 0.5, y: 0, z: 0 },
+    });
+
+    expect(close.input.slide).toBe(false);
+  });
+});
+
+describe('BotAI — per-bot personality', () => {
+  it('gives different bots different decision variables for the same difficulty', () => {
+    const a = computeBotInput({
+      time: 5,
+      difficulty: BOT_DIFFICULTY.normal,
+      bot: botAtOrigin,
+      target: targetAtTen,
+      personality: { patience: 1.2, speedBias: 0.9, caution: 0.3, reach: 1.1 },
+    });
+    const b = computeBotInput({
+      time: 5,
+      difficulty: BOT_DIFFICULTY.normal,
+      bot: botAtOrigin,
+      target: targetAtTen,
+      personality: { patience: 0.8, speedBias: 1.15, caution: 0, reach: 0.9 },
+    });
+
+    expect(a.debug.profile.reactionTime).not.toBe(b.debug.profile.reactionTime);
+    expect(a.debug.profile.attackRange).not.toBe(b.debug.profile.attackRange);
+    expect(a.debug.profile.fleeBelow).not.toBe(b.debug.profile.fleeBelow);
+  });
+
+  it('seeds personalities from the roster ids so roster bots diverge', () => {
+    const roster = buildBotRoster({ count: 3, difficulty: BOT_DIFFICULTY.normal });
+    const quirks = roster.map((bot) => {
+      const brain = new BotBrain({ difficulty: bot.difficulty, name: bot.name, seed: bot.id });
+      return brain.personality;
+    });
+
+    const unique = new Set(quirks.map(p => `${p.patience}|${p.speedBias}|${p.caution}`));
+    expect(unique.size).toBe(3);
+  });
+});
+
 describe('BotAI — lobby roster', () => {
   it('spawns the requested number of named bots', () => {
     const roster = buildBotRoster({ count: 3 });
