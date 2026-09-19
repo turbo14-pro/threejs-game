@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useGameStore } from '../../store/useGameStore';
 import Options from './Options.jsx';
+import BotRoster from './BotRoster.jsx';
 
 export default function MainMenu() {
   const setGameState = useGameStore(state => state.setGameState);
@@ -46,6 +47,9 @@ export default function MainMenu() {
                 <span className="btn-name">SURVEY</span>
               </a>
             </div>
+
+            {/* CPU opponents are chosen here and their names show in the lobby */}
+            <BotRoster showControls />
           </>
         )}
 

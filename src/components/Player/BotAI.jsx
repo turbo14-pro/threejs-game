@@ -32,6 +32,13 @@ export const BOT_TUNING = {
 // Naming pool for lobby display — deterministic so bots keep their identity between rounds
 export const BOT_NAME_POOL = ['Bot Byte', 'Bot Crumb', 'Bot Munch', 'Bot Nibbler'];
 
+// Seconds between a bot's scoring tags (see shouldRegisterTag)
+export const TAG_COOLDOWN = 2.5;
+
+// Bots retreat below this health fraction — recorded project decision:
+// ".memory/decisions_log.md → 2026-04-10 · Bot AI: Flee at 25% Health"
+export const FLEE_HEALTH = 0.25;
+
 const DIRECTIONS = ['for', 'back', 'left', 'right'];
 
 const clamp01 = (value) => {
@@ -133,6 +140,7 @@ export function computeBotInput(snapshot = {}) {
     target,
     targetScore = 0,
     botScore = 0,
+    healthRatio = 1,
   } = snapshot;
 
   const botPos = toVector(bot);
@@ -153,38 +161,59 @@ export function computeBotInput(snapshot = {}) {
   const steer = steerTowards(botPos, targetPos, bot.rotationY || 0);
   const distance = steer.distance;
 
+  // --- FLEE MODE: a hurt bot breaks off and runs to regenerate (project decision)
+  const fleeing = healthRatio < FLEE_HEALTH;
+  const travelX = fleeing ? -steer.x : steer.x;
+  const travelZ = fleeing ? -steer.z : steer.z;
+
   // --- MOVEMENT ---
-  input.x = steer.x * profile.speed;
-  input.y = steer.z * profile.speed;
+  input.x = travelX * profile.speed;
+  input.y = travelZ * profile.speed;
   // Sprint when far away, ease off when close so bots don't overshoot
   input.sprint = profile.sprint && distance > BOT_TUNING.turnHardDistance * 2;
   // Slide-in as a closing move
   input.slide = profile.slide
+    && !fleeing
     && distance > BOT_TUNING.engageDistance * 3
     && distance < BOT_TUNING.engageDistance * 6;
   // Dash into the target once inside strike range, on a cadence so it isn't spammy
   const dashWindow = Math.max(1, 3 - 2 * profile.aggression);
   input.dash = profile.dash
+    && !fleeing
     && distance <= BOT_TUNING.strikeDistance
     && distance > BOT_TUNING.turnHardDistance
     && (time % dashWindow) < 0.1;
   // Hop when the target is meaningfully above us (chasing onto a platform)
-  input.jump = profile.jump && (targetPos.y - botPos.y) > BOT_TUNING.jumpClearance;
+  input.jump = profile.jump && !fleeing && (targetPos.y - botPos.y) > BOT_TUNING.jumpClearance;
 
-  // --- AIM: try to face the target (models look down -Z) ---
-  const targetRotationY = Math.atan2(-(targetPos.x - botPos.x), -(targetPos.z - botPos.z));
+  // --- AIM: face the way we are travelling, matching PlayerController's
+  // `targetRotationY = Math.atan2(direction.x, direction.z)`.
+  const targetRotationY = Math.atan2(travelX, travelZ);
 
   return {
     input: reacting ? { ...input, x: 0, y: 0, dash: false, slide: false } : input,
     debug: {
       profile,
       distance,
-      reason: reacting ? 'reacting' : 'engaging',
+      reason: reacting ? 'reacting' : fleeing ? 'fleeing' : 'engaging',
       targetRotationY,
       reactionAt,
       reactionRemaining: Math.max(0, reactionAt - time),
     },
   };
+}
+
+/**
+ * Bots score by "tagging" the human — contact inside engage range. This is the only
+ * attack the bot runtime can express today, and it gives the adaptive heuristic a live
+ * signal for the bot side of the scoreboard.
+ *
+ * @returns {boolean} true when this tag should count as a point
+ */
+export function shouldRegisterTag({ distance, lastTagAt = -Infinity, now = 0, cooldown = TAG_COOLDOWN }) {
+  if (!Number.isFinite(distance)) return false;
+  if (distance > BOT_TUNING.engageDistance) return false;
+  return (now - lastTagAt) >= cooldown;
 }
 
 /**

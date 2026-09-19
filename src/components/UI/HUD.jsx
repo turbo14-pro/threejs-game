@@ -6,6 +6,7 @@ import Options from './Options.jsx';
 import LatencyGraph from './LatencyGraph.jsx';
 import { PowerUpHUD } from './PowerUpHUD.jsx';
 import { PowerUpNotification } from './PowerUpNotification.jsx';
+import BotRoster from './BotRoster.jsx';
 
 export default function HUD() {
   const matchPhase = useGameStore(state => state.game.phase);
@@ -271,6 +272,9 @@ export default function HUD() {
                     <span className="btn-name">MAIN MENU</span>
                   </button>
                 </div>
+
+                {/* Who you are up against in this match */}
+                <BotRoster />
               </>
             )}
           </div>

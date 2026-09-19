@@ -8,6 +8,7 @@ import {
   POWERUP_DURATIONS,
   POWERUP_DESCRIPTIONS,
 } from '../config/playerConfig';
+import { BOT_DIFFICULTY, buildBotRoster, normalizeBotCount } from '../components/Player/BotAI.jsx';
 
 // Re-export for backward compatibility with existing imports
 export { POWERUP_EFFECTS, POWERUP_DURATIONS, POWERUP_DESCRIPTIONS };
@@ -73,6 +74,12 @@ export const useGameStore = create(
         // --- MULTIPLAYER ---
         remotePlayers: {}, // { id: { pos, rot, skin, username } }
         lastServerState: null, // { pos, tick } for local player reconciliation
+
+        // --- CPU BOTS ---
+        bots: [],                       // [{ id, name, isBot, difficulty, difficultyName, score }]
+        botCount: 0,                    // lobby selection (0-3)
+        botDifficulty: BOT_DIFFICULTY.normal,
+        matchScore: { player: 0, bots: 0 }, // drives adaptive bot difficulty
         
         // --- VISUAL SETTINGS ---
         performancePreset: 'High', // Lowest, Low, Medium, High, Ultra, Custom
@@ -215,6 +222,28 @@ export const useGameStore = create(
           delete newPlayers[id];
           return { remotePlayers: newPlayers };
         }),
+
+        // --- CPU BOT ACTIONS ---
+        // The roster is rebuilt from the lobby selection so the names are visible
+        // in the menu before the match even starts.
+        setBotCount: (count) => set((s) => {
+          const next = normalizeBotCount(count);
+          return {
+            botCount: next,
+            bots: buildBotRoster({ count: next, difficulty: s.botDifficulty })
+          };
+        }),
+        setBotDifficulty: (value) => set((s) => ({
+          botDifficulty: value,
+          bots: buildBotRoster({ count: s.botCount, difficulty: value })
+        })),
+        addMatchScore: (side, amount = 1) => set((s) => ({
+          matchScore: {
+            ...s.matchScore,
+            [side]: Math.max(0, (s.matchScore[side] || 0) + amount)
+          }
+        })),
+        resetMatchScore: () => set({ matchScore: { player: 0, bots: 0 } }),
         
         // System
         triggerWorldReset: () => set({ teleportCount: get().teleportCount + 1 }),
@@ -301,6 +330,9 @@ export const useGameStore = create(
               expiresAt: Date.now() + (POWERUP_DURATIONS[rarity] || 120) * 1000
             }
           });
+          // Collecting a power-up counts as a point for the human, which nudges the
+          // CPU bots' adaptive difficulty upward while the player is ahead.
+          get().addMatchScore('player', 1);
           get().showNotification(category, rarity);
         },
 

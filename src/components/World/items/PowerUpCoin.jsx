@@ -6,6 +6,8 @@ import { useGameStore } from '../../../store/useGameStore';
 
 const _playerPos = new THREE.Vector3();
 export const setLocalPlayerWorldPos = (v) => _playerPos.copy(v);
+// Read-only accessor so CPU bots can chase the human player without duplicating position state
+export const getLocalPlayerWorldPos = () => _playerPos;
 
 const CATEGORY_CONFIG = {
   jump:  { iconColor: '#00ff88', label: 'Jump' },
