@@ -47,19 +47,25 @@ const GROUND_FILTER = 0x00010001;
 // far above the feet. Ground "sticks" must land at groundY + this offset — landing at
 // groundY itself is what used to sink bots half-way into the floor.
 const BODY_OFFSET_Y = 2.5;
-// Snap down to a surface within this distance instead of floating above it
+    // Snap down to a surface within this distance instead of floating above it
 const MAX_STICK_DOWN = 0.6;
 // The ground probe casts a Ball; its contact point is BALL_RADIUS above the true surface
 const GROUND_BALL_RADIUS = 0.5;
 // Safety net only — the arena table's surface is y≈0 (Arena.jsx: RigidBody [0,-1,0] + 600x2x600)
 const RESPAWN_FLOOR_Y = -80;
+// Below this the bot has dropped off the arena table into the pit -> eliminated, not respawned
+const ELIMINATION_FLOOR_Y = -6;
 // Ignore vertical differences larger than this when picking a target (lobby unreachable)
 const MAX_TARGET_HEIGHT_DIFF = 6;
 
 export default function BotPlayer({ bot }) {
-  const bodyRef = useRef();
+    const bodyRef = useRef();
   const modelRef = useRef();
   const { world, rapier } = useRapier();
+  // Last frame time, published in the useFrame loop so async callbacks (e.g.
+  // applyKnockback, invoked from the shared bot registry) can arm a knockback
+  // window without their own clock.
+  const nowRef = useRef(0);
 
   // Each bot owns its own brain: independent boot-up delay, personality and animation
   const brainRef = useRef(null);
@@ -85,7 +91,9 @@ export default function BotPlayer({ bot }) {
     lastHitAt: -Infinity,
     lastTagAt: -Infinity,
     slideArmedUntil: 0,
-    knockVec: new THREE.Vector3(),
+            knockVec: new THREE.Vector3(),
+    knockUntil: 0, // end-time of the current knockback window (steering locked during)
+    eliminated: false,
     lastDebug: null,
   });
 
@@ -108,12 +116,18 @@ export default function BotPlayer({ bot }) {
         if (s.health <= 0) return;
         s.health = Math.max(0, s.health - amount);
       },
-      // Kinematic push: knockVec acts as a decaying velocity (units/sec)
-      applyKnockback: (dir, force) => {
+            // Kinematic launch: the bot is pushed horizontally at `force`-scaled velocity and
+      // given a vertical pop so it actually arcs — `applyImpulse` would do nothing on a
+      // kinematic body, and a tiny pop gets immediately re-snapped by the ground probe.
+            applyKnockback: (dir, force) => {
         const s = stateRef.current;
-        const strength = force * 0.12;
+        const now = nowRef.current;
+        // Clamp horizontal velocity so a single hit can't rocket a bot across the map,
+        // while still being strong enough to read as a launch.
+        const strength = Math.min(Math.max(force, 40), 110);
         s.knockVec.set(dir.x * strength, 0, dir.z * strength);
-        s.vy = Math.max(s.vy, BOT_COMBAT.knockbackPop);
+        s.vy = Math.max(s.vy, 28); // visibly launched, then gravity takes over
+        s.knockUntil = now + BOT_COMBAT.knockbackDuration;
         s.grounded = false;
       },
     });
@@ -125,8 +139,9 @@ export default function BotPlayer({ bot }) {
 
     const s = stateRef.current;
     const brain = brainRef.current;
-    const step = Math.min(delta, MAX_STEP);
+        const step = Math.min(delta, MAX_STEP);
     const now = frameState.clock.elapsedTime;
+    nowRef.current = now;
     const store = useGameStore.getState();
 
     // --- DOWNED: respawn on the arena after the delay ---
@@ -224,6 +239,19 @@ export default function BotPlayer({ bot }) {
       s.grounded = true;
     }
 
+        // --- ELIMINATION: a bot that drops off the arena table into the pit is OUT.
+    // (Unlike RESPAWN_FLOOR_Y, this doesn't teleport it back to spawn — it's
+    // eliminated from gameplay and stays downed until the round resets.)
+    if (!s.eliminated && s.pos.y < ELIMINATION_FLOOR_Y) {
+      s.health = 0;
+      s.eliminated = true;
+      s.downUntil = Infinity; // keep the body hidden, never auto-respawn
+      s.knockVec.set(0, 0, 0);
+      s.vy = 0;
+      s.grounded = false;
+      console.log("💀 Bot eliminated — fell off the arena:", bot.name);
+    }
+
     // --- KNOCKBACK: decaying displacement from the last slide hit received ---
     if (s.knockVec.lengthSq() > 0.01) {
       s.pos.addScaledVector(s.knockVec, step);
@@ -232,11 +260,16 @@ export default function BotPlayer({ bot }) {
       s.knockVec.set(0, 0, 0);
     }
 
-    // --- HORIZONTAL: walk/sprint cruise, biased up during a slide lunge ---
+        // --- HORIZONTAL: walk/sprint cruise, biased up during a slide lunge ---
+    // During a knockback launch window the bot is airborne and coasts on its
+    // knockVec alone — zero the self-steering so the launch actually carries.
+    const inKnockback = now < s.knockUntil;
+    const steerX = inKnockback ? 0 : input.x;
+    const steerZ = inKnockback ? 0 : input.y;
     const baseSpeed = input.sprint ? BOT_SPRINT_SPEED : BOT_WALK_SPEED;
     const slideBias = input.slide ? BOT_COMBAT.slideSpeedBias : 1;
-    s.pos.x += input.x * baseSpeed * slideBias * step;
-    s.pos.z += input.y * baseSpeed * slideBias * step;
+    s.pos.x += steerX * baseSpeed * slideBias * step;
+    s.pos.z += steerZ * baseSpeed * slideBias * step;
 
     // --- SLIDE ATTACK: the lunge stays armed for slideLinger after the slide input
     // drops (at lunge speed the strike window is shorter than a single frame), and

@@ -22,7 +22,10 @@ export const getBotCandidates = (excludeId) => {
     if (id === excludeId || !api) continue;
     const pos = api.getPosition();
     if (!pos || !Number.isFinite(pos.x)) continue;
-    list.push({ id, kind: 'bot', x: pos.x, y: pos.y, z: pos.z, health: api.health });
+    // Skip bots that are downed or eliminated so they're not targeted/attacked
+    const health = typeof api.health === 'number' ? api.health : 1;
+    if (health <= 0) continue;
+    list.push({ id, kind: 'bot', x: pos.x, y: pos.y, z: pos.z, health });
   }
   return list;
 };
