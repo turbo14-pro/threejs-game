@@ -23,10 +23,13 @@ export const BOT_TUNING = {
   maxDifficultyStep: 0.3,// adaptive nudge is clamped to ±0.3
   reactionBase: 0.62,    // seconds before reacting to a new target (at difficulty 0)
   reactionFast: 0.1,     // seconds before reacting to a new target (at difficulty 1)
-  engageDistance: 3.2,   // how close (metres) a bot wants to be before "strike" range
+    engageDistance: 3.2,   // how close (metres) a bot wants to be before "strike" range
   strikeDistance: 4.5,   // distance at which the bot will dash/attack
   jumpClearance: 2.2,    // height difference that makes a bot prefer to jump
   turnHardDistance: 2.0, // distance under which steering eases off to avoid overshoot
+  jumpDwell: 0.35,       // target must stay above jumpClearance this long before the bot commits
+  jumpCooldown: 0.6,     // a bot won't chain-jump (prevents mirroring a player's repeated jumps)
+  powerupSeekDistance: 7, // a token closer than this is worth breaking off to collect (normal+ only)
 };
 
 // Naming pool for lobby display — deterministic so bots keep their identity between rounds
@@ -144,12 +147,36 @@ export function createBotPersonality(seed = 'bot') {
  *
  * @param {object} botPos                     { x, z } (y optional)
  * @param {Array} candidates                  [{ id, kind, x, y, z, health }]
- * @param {object} personality                from createBotPersonality
+  * @param {object} personality                from createBotPersonality
+ * @param {object} [opts]
+ * @param {boolean} [opts.seekPowerups]       whether bots should consider powerup tokens
+ * @param {number}  [opts.powerupSeekDistance] max metres at which a token is worth grabbing
  * @returns {object|null} the chosen candidate, augmented with distance/score
  */
-export function selectTarget(botPos, candidates = [], personality = createBotPersonality()) {
+export function selectTarget(botPos, candidates = [], personality = createBotPersonality(), opts = {}) {
   const from = toVector(botPos);
   if (!from || !Array.isArray(candidates)) return null;
+
+  const seekPowerups = !!opts.seekPowerups;
+  const powerupRange = opts.powerupSeekDistance ?? BOT_TUNING.powerupSeekDistance;
+
+  // Powerup tokens: the closest token within range is preferred over combat so bots
+  // break off and seek upgrades as a secondary primary aim (normal+ difficulty only).
+  if (seekPowerups) {
+    let nearestToken = null;
+    let nearestTokenDist = powerupRange;
+    for (const candidate of candidates) {
+      if (candidate?.kind !== 'powerup') continue;
+      const pos = toVector(candidate);
+      if (!pos) continue;
+      const distance = Math.hypot(pos.x - from.x, pos.z - from.z);
+      if (distance < nearestTokenDist) {
+        nearestTokenDist = distance;
+        nearestToken = { id: candidate.id, kind: 'powerup', x: pos.x, y: pos.y, z: pos.z, distance, score: distance };
+      }
+    }
+    if (nearestToken) return nearestToken;
+  }
 
   let best = null;
   for (const candidate of candidates) {
@@ -432,7 +459,30 @@ export class BotBrain {
       this.direction = 'for';
     }
 
-    this.lastDebug = result.debug;
+        this.lastDebug = result.debug;
+
+    // --- JUMP GATING ---
+    // A bot should chase a target that is on a higher *surface*, not mirror a player's
+    // momentary jump. Require the height gap to persist for `jumpDwell` and enforce a
+    // per-bot `jumpCooldown` so repeated jumps aren't echoed. (computeBotInput is pure
+    // and still reports the raw intent; this is where the runtime commits to it.)
+    const botY = snapshot.bot?.y ?? 0;
+    const tgtY = snapshot.target?.y ?? 0;
+    const gap = tgtY - botY;
+    if (gap > BOT_TUNING.jumpClearance) {
+      if (this._gapSince == null) this._gapSince = this.time;
+    } else {
+      this._gapSince = null;
+    }
+    const dwellOk = this._gapSince != null && (this.time - this._gapSince) >= BOT_TUNING.jumpDwell;
+    const cooldownOk = this._nextJump == null || this.time >= this._nextJump;
+    if (result.input.jump && (!dwellOk || !cooldownOk)) {
+      result.input.jump = false;
+    } else if (result.input.jump) {
+      this._gapSince = null;
+      this._nextJump = this.time + BOT_TUNING.jumpCooldown;
+    }
+
     return result.input;
   }
 

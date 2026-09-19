@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useFrame } from '@react-three/fiber';
 import { RigidBody } from '@react-three/rapier';
 import * as THREE from 'three';
@@ -8,6 +8,19 @@ const _playerPos = new THREE.Vector3();
 export const setLocalPlayerWorldPos = (v) => _playerPos.copy(v);
 // Read-only accessor so CPU bots can chase the human player without duplicating position state
 export const getLocalPlayerWorldPos = () => _playerPos;
+
+// Live registry of hovering power-up tokens so CPU bots can seek them out.
+// PowerUpManager owns spawn state locally, so each PowerUpCoin publishes its
+// ground-plane position here on mount and removes it on collect/unmount.
+const _activePowerUps = new Map();
+let _powerUpIdCounter = 0;
+export const registerPowerUp = (id, pos) => {
+  _activePowerUps.set(id, pos);
+};
+export const unregisterPowerUp = (id) => {
+  _activePowerUps.delete(id);
+};
+export const getActivePowerUps = () => Array.from(_activePowerUps.values());
 
 const CATEGORY_CONFIG = {
   jump:  { iconColor: '#00ff88', label: 'Jump' },
@@ -124,6 +137,20 @@ export function PowerUpCoin({
   const rarityCfg = RARITY_CONFIG[rarity] ?? RARITY_CONFIG.bronze;
   const catCfg = CATEGORY_CONFIG[category] ?? CATEGORY_CONFIG.speed;
   const icon = iconData[category] ?? iconData.speed;
+  const coinIdRef = useRef(0);
+  if (coinIdRef.current === 0) coinIdRef.current = ++_powerUpIdCounter;
+
+  // Publish this token's ground-plane position so CPU bots can seek it;
+  // remove it on unmount so stale entries never linger.
+  useEffect(() => {
+    const id = coinIdRef.current;
+    registerPowerUp(id, {
+      x: spawnPosition[0],
+      y: targetY,
+      z: spawnPosition[2],
+    });
+    return () => unregisterPowerUp(id);
+  }, [spawnPosition]);
 
   useFrame((state, delta) => {
     if (phase === 'collected') return;
@@ -160,6 +187,7 @@ export function PowerUpCoin({
       const dz = coinPos.z - _playerPos.z;
       if (dx * dx + dy * dy + dz * dz < COLLECT_DISTANCE * COLLECT_DISTANCE) {
         useGameStore.getState().collectPowerUp(category, rarity);
+        unregisterPowerUp(coinIdRef.current);
         setPhase('collected');
         onCollected?.();
       }

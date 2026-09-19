@@ -13,7 +13,8 @@ import {
   selectTarget,
 } from './BotAI.jsx';
 import { registerBot, unregisterBot, getBotCandidates, damageBot, applyBotKnockback } from './botRegistry.js';
-import { getLocalPlayerWorldPos } from '../World/items/PowerUpCoin.jsx';
+import { getLocalPlayerWorldPos, getActivePowerUps } from '../World/items/PowerUpCoin.jsx';
+import { BOT_DIFFICULTY } from './BotAI.jsx';
 import { SKINS } from '../../data/registries';
 
 /**
@@ -167,7 +168,7 @@ export default function BotPlayer({ bot }) {
     const playerIsReachable = playerPos
       && Number.isFinite(playerPos.x)
       && Math.abs((playerPos.y ?? 0) - s.pos.y) <= MAX_TARGET_HEIGHT_DIFF;
-    if (playerIsReachable && !(Number.isFinite(playerHealth) && playerHealth <= 0)) {
+        if (playerIsReachable && !(Number.isFinite(playerHealth) && playerHealth <= 0)) {
       candidates.push({
         id: 'player',
         kind: 'player',
@@ -177,7 +178,20 @@ export default function BotPlayer({ bot }) {
         health: Number.isFinite(playerHealth) ? playerHealth : BOT_COMBAT.maxHealth,
       });
     }
-    const target = selectTarget(s.pos, candidates, brain.personality);
+    // On normal-or-above, also feed live powerup tokens into the candidate set so bots
+    // seek them out as a secondary primary aim (selectTarget prefers a nearby token).
+    const seekPowerups = bot.difficulty >= BOT_DIFFICULTY.normal;
+    if (seekPowerups) {
+      for (const p of getActivePowerUps()) {
+        if (p && Number.isFinite(p.x)) candidates.push({ id: `powerup-${p.x.toFixed(0)}-${p.z.toFixed(0)}`, kind: 'powerup', x: p.x, y: p.y, z: p.z });
+      }
+    }
+    const target = selectTarget(
+      s.pos,
+      candidates,
+      brain.personality,
+      seekPowerups ? { seekPowerups: true } : {},
+    );
 
     const input = brain.update(step, {
       bot: { x: s.pos.x, y: s.pos.y, z: s.pos.z, rotationY: s.yaw },
