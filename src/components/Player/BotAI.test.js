@@ -3,6 +3,7 @@ import {
   BOT_DIFFICULTY,
   BOT_TUNING,
   BOT_NAME_POOL,
+  TAG_COOLDOWN,
   BotBrain,
   buildBotRoster,
   computeAdaptiveDifficulty,
@@ -10,6 +11,7 @@ import {
   createBotProfile,
   makeBotName,
   normalizeBotCount,
+  shouldRegisterTag,
   steerTowards,
 } from './BotAI.jsx';
 
@@ -240,6 +242,33 @@ describe('BotAI — lobby roster', () => {
   it('wraps the name pool instead of producing empty names', () => {
     expect(makeBotName(BOT_NAME_POOL.length)).toBe(BOT_NAME_POOL[0]);
     expect(makeBotName(BOT_NAME_POOL.length + 2)).toBe(BOT_NAME_POOL[2]);
+  });
+});
+
+describe('BotAI — scoring tags', () => {
+  it('counts a tag when a bot reaches the player', () => {
+    const tagged = shouldRegisterTag({ distance: 1.5, lastTagAt: -Infinity, now: 10 });
+
+    expect(tagged).toBe(true);
+  });
+
+  it('does not count a tag from across the arena', () => {
+    const tagged = shouldRegisterTag({
+      distance: BOT_TUNING.engageDistance + 5,
+      lastTagAt: -Infinity,
+      now: 10,
+    });
+
+    expect(tagged).toBe(false);
+  });
+
+  it('rate-limits tags so one bot cannot farm the scoreboard', () => {
+    expect(shouldRegisterTag({ distance: 1, lastTagAt: 10, now: 11 })).toBe(false);
+    expect(shouldRegisterTag({ distance: 1, lastTagAt: 10, now: 10 + TAG_COOLDOWN })).toBe(true);
+  });
+
+  it('ignores a missing distance', () => {
+    expect(shouldRegisterTag({ distance: null, now: 10 })).toBe(false);
   });
 });
 
