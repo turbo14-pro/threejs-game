@@ -7,6 +7,8 @@ import PlayerModel from './PlayerModel.jsx';
 import { useGameStore } from '../../store/useGameStore';
 import { PLAYER_BASELINE, canUseDash, getDashConfig, getMaxJumps, getPowerUpEffect, getActionIntensity, shouldEndDash } from '../../config/playerConfig';
 import { setLocalPlayerWorldPos } from '../World/items/PowerUpCoin.jsx';
+import { damageBot, applyBotKnockback } from './botRegistry.js';
+import { BOT_COMBAT } from './BotAI.jsx';
 import { soundManager } from '../../utils/SoundManager';
 
 const direction = new THREE.Vector3();
@@ -1019,10 +1021,11 @@ export default function PlayerController({ sendUpdate }) {
     const other = e.other.rigidBody;
     if (!other || !other.userData) return;
 
-    // Only process impacts with players or tin cans
+        // Only process impacts with players, tin cans, and bot opponents
     const isPlayer = other.userData?.type === 'player';
+    const isBot = other.userData?.type === 'bot-player';
     const isTinCan = other.userData?.type === 'tinCan';
-    if (!isPlayer && !isTinCan) return;
+    if (!isPlayer && !isBot && !isTinCan) return;
 
     // Avoid duplicate ripple triggers for the same object within a short window
     const uniqueId = other.userData?.id ?? `tinCan_${e.contactPoint?.x}`;
@@ -1063,36 +1066,50 @@ export default function PlayerController({ sendUpdate }) {
       const UPWARD_POP = hasSpeedPowerUp
         ? PLAYER_BASELINE.knockback.speedUpwardPop
         : PLAYER_BASELINE.knockback.baseUpwardPop;
-      console.log("🚀 BLASTING Victim with Force:", BLAST_POWER, "Up:", UPWARD_POP);
+                  console.log("🚀 BLASTING Victim with Force:", BLAST_POWER, "Up:", UPWARD_POP);
 
-      other.applyImpulse({
-        x: hitDir.x * BLAST_POWER,
-        y: UPWARD_POP,
-        z: hitDir.z * BLAST_POWER
-      }, true);
-
-      // Trigger visual effects instantly for attacker
+      // Visual effects at the contact point (shared by both bot and human victims)
       const contactPoint = e.contactPoint;
       // Fallback to player position if contactPoint is not available from Rapier
-      const shockwavePos = contactPoint 
+      const shockwavePos = contactPoint
         ? [contactPoint.x, contactPoint.y, contactPoint.z]
         : [attackerPos.x, attackerPos.y, attackerPos.z];
       const currentPowerUp = useGameStore.getState().powerUp;
       const shockwaveIntensity = getActionIntensity('slideImpact', currentPowerUp?.rarity || 'none');
-      addShockwave(shockwavePos, shockwaveIntensity);
-      // Trigger screen-space ripple displacement
-      console.log("💥 Calling triggerRipple() from collision handler");
-      triggerRipple();
 
-      // Send network message for server validation
-      if (sendUpdate) {
-        sendUpdate({
-          type: 'impact',
-          victimId: other.userData.id,
-          dir: [hitDir.x, hitDir.y, hitDir.z],
-          position: contactPoint ? [contactPoint.x, contactPoint.y, contactPoint.z] : null,
-          slideMultiplier
-        });
+      if (isBot) {
+        // Bots are kinematic (their position is driven by BotPlayer, not physics),
+        // so `applyImpulse` would have no visible effect. Route the impact through
+        // the bot registry so the bot takes damage + kinematic knockback like it
+        // would from another bot, and log the impact the same way the human-vs-human
+        // path does.
+        console.log("🤖 Slide IMPACT! Bot hit:", other.userData?.name);
+        applyBotKnockback(other.userData.id, hitDir, BLAST_POWER);
+        damageBot(other.userData.id, BOT_COMBAT.hitDamage, 'local');
+        addShockwave(shockwavePos, shockwaveIntensity);
+        triggerRipple();
+      } else {
+        // Dynamic (networked human) victims respond to a real physics impulse
+        other.applyImpulse({
+          x: hitDir.x * BLAST_POWER,
+          y: UPWARD_POP,
+          z: hitDir.z * BLAST_POWER
+        }, true);
+
+        // Trigger visual effects instantly for attacker
+        console.log("💥 Calling triggerRipple() from collision handler");
+        triggerRipple();
+
+        // Send network message for server validation
+        if (sendUpdate) {
+          sendUpdate({
+            type: 'impact',
+            victimId: other.userData.id,
+            dir: [hitDir.x, hitDir.y, hitDir.z],
+            position: contactPoint ? [contactPoint.x, contactPoint.y, contactPoint.z] : null,
+            slideMultiplier
+          });
+        }
       }
     } // end isSliding
     // 2. I am the VICTIM (A sliding player hit me!)
