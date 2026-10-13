@@ -55,6 +55,11 @@ const BODY_OFFSET_Y = 2.5;
 const MAX_STICK_DOWN = 0.6;
 // The ground probe casts a Ball; its contact point is BALL_RADIUS above the true surface
 const GROUND_BALL_RADIUS = 0.5;
+// Horizontal wall-cast tuning: skip contacts within this gap (lets a bot slide along
+// a wall it's already touching instead of sticking) and stop this far short of a
+// surface it runs head-on into.
+const WALL_CAST_GAP = 0.12;
+const WALL_STOP_SKIN = 0.06;
 // Safety net only — the arena table's surface is y≈0 (Arena.jsx: RigidBody [0,-1,0] + 600x2x600)
 const RESPAWN_FLOOR_Y = -80;
 // Below this the bot has dropped off the arena table — it falls freely past it,
@@ -108,6 +113,12 @@ export default function BotPlayer({ bot }) {
   const [anim, setAnim] = useState({ mv: false, dir: 'for', spr: false, jp: 'none' });
 
   const groundShape = useMemo(() => (rapier ? new rapier.Ball(0.5) : null), [rapier]);
+  // Horizontal probe matching the capsule's radius (1.0), used to stop the kinematic
+  // bot at fixed geometry (cereal boxes, arena walls) the solver would otherwise let
+  // it phase through. A kinematic body is only pushed by dynamic bodies, not stopped
+  // by fixed ones — hence this manual sweep. The probe radius equals the collider
+  // radius, so the sweep's time-of-impact is exactly how far the body centre may travel.
+  const wallShape = useMemo(() => (rapier ? new rapier.Ball(1.0) : null), [rapier]);
   const addMatchScore = useGameStore(s => s.addMatchScore);
 
   // Publish this bot so other bots can target it and deal damage to it
@@ -299,8 +310,71 @@ export default function BotPlayer({ bot }) {
     const steerZ = inKnockback ? 0 : input.y;
     const baseSpeed = input.sprint ? BOT_SPRINT_SPEED : BOT_WALK_SPEED;
     const slideBias = input.slide ? BOT_COMBAT.slideSpeedBias : 1;
-    s.pos.x += steerX * baseSpeed * slideBias * step;
-    s.pos.z += steerZ * baseSpeed * slideBias * step;
+    const moveX = steerX * baseSpeed * slideBias * step;
+    const moveZ = steerZ * baseSpeed * slideBias * step;
+    const moveLen = Math.hypot(moveX, moveZ);
+
+    // Kinematic bodies are pushed BY dynamic bodies but are NOT stopped BY fixed ones,
+    // so without this sweep the bot phases straight through the (fixed) cereal boxes
+    // while the (dynamic) cans/player still shove it. Cast the capsule probe along the
+    // intended move against FIXED geometry only; stop at contact and slide along it.
+    let appliedMove = false;
+    if (moveLen > 1e-4 && wallShape) {
+      const dirX = moveX / moveLen;
+      const dirZ = moveZ / moveLen;
+      // EXCLUDE_DYNAMIC | EXCLUDE_KINEMATIC -> only fixed bodies (boxes, arena walls)
+      const flags = rapier.QueryFilterFlags
+        ? (rapier.QueryFilterFlags.EXCLUDE_DYNAMIC | rapier.QueryFilterFlags.EXCLUDE_KINEMATIC)
+        : 6;
+      const hit = world.castShape(
+        s.pos,
+        { w: 1, x: 0, y: 0, z: 0 },
+        { x: dirX, y: 0, z: dirZ },
+        wallShape,
+        WALL_CAST_GAP,      // ignore walls we're already touching (lets us slide off them)
+        moveLen + 2.0,      // reach the full step plus the probe radius
+        false,              // only hits the sweep actually reaches
+        flags,
+        GROUND_FILTER,
+        null,
+        bodyRef.current
+      );
+      if (hit) {
+        const toi = hit.toi ?? hit.time_of_impact;
+        if (typeof toi === 'number' && Number.isFinite(toi) && toi < moveLen) {
+          // Probe ball radius (1.0) equals the capsule radius, so `toi` is exactly how
+          // far the body centre may travel before touching. Stop just short of it...
+          const allowed = Math.max(0, toi - WALL_STOP_SKIN);
+          let advX = dirX * allowed;
+          let advZ = dirZ * allowed;
+          // ...then convert the leftover into a slide along the wall tangent so the
+          // bot glides around boxes instead of sticking to them. The tangent is
+          // independent of the hit-normal's orientation.
+          const n = hit.normal1;
+          if (n && Number.isFinite(n.x) && Number.isFinite(n.z) && (n.x * n.x + n.z * n.z) > 1e-4) {
+            const nLen = Math.hypot(n.x, n.z);
+            const nx = n.x / nLen;
+            const nz = n.z / nLen;
+            const dn = dirX * nx + dirZ * nz;
+            let tx = dirX - nx * dn;
+            let tz = dirZ - nz * dn;
+            const tLen = Math.hypot(tx, tz);
+            if (tLen > 1e-4) {
+              const remain = moveLen - allowed;
+              advX += (tx / tLen) * remain;
+              advZ += (tz / tLen) * remain;
+            }
+          }
+          s.pos.x += advX;
+          s.pos.z += advZ;
+          appliedMove = true;
+        }
+      }
+    }
+    if (!appliedMove) {
+      s.pos.x += moveX;
+      s.pos.z += moveZ;
+    }
 
     // --- SLIDE ATTACK: the lunge stays armed for slideLinger after the slide input
     // drops (at lunge speed the strike window is shorter than a single frame), and
