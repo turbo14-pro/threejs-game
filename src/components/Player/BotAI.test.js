@@ -11,6 +11,9 @@ import {
   createBotProfile,
   makeBotName,
   normalizeBotCount,
+  randomTableRespawn,
+  TABLE_RESPAWN_BOUNDS,
+  TABLE_RESPAWN_EXCLUSIONS,
   shouldRegisterTag,
   steerTowards,
 } from './BotAI.jsx';
@@ -321,6 +324,26 @@ describe('BotAI — lobby roster', () => {
   it('wraps the name pool instead of producing empty names', () => {
     expect(makeBotName(BOT_NAME_POOL.length)).toBe(BOT_NAME_POOL[0]);
     expect(makeBotName(BOT_NAME_POOL.length + 2)).toBe(BOT_NAME_POOL[2]);
+  });
+
+  it('respawns at a random on-table point, never inside an exclusion zone', () => {
+    for (let i = 0; i < 50; i++) {
+      const spot = randomTableRespawn();
+      expect(spot.x).toBeGreaterThanOrEqual(TABLE_RESPAWN_BOUNDS.minX);
+      expect(spot.x).toBeLessThanOrEqual(TABLE_RESPAWN_BOUNDS.maxX);
+      expect(spot.z).toBeGreaterThanOrEqual(TABLE_RESPAWN_BOUNDS.minZ);
+      expect(spot.z).toBeLessThanOrEqual(TABLE_RESPAWN_BOUNDS.maxZ);
+      const inside = TABLE_RESPAWN_EXCLUSIONS.some(
+        (zone) => spot.x >= zone.minX && spot.x <= zone.maxX && spot.z >= zone.minZ && spot.z <= zone.maxZ,
+      );
+      expect(inside).toBe(false);
+    }
+  });
+
+  it('picks a different respawn spot (nearly) every time', () => {
+    const spots = Array.from({ length: 20 }, () => randomTableRespawn());
+    const unique = new Set(spots.map(s => `${s.x.toFixed(1)},${s.z.toFixed(1)}`));
+    expect(unique.size).toBeGreaterThan(1);
   });
 });
 

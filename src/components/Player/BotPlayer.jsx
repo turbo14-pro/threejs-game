@@ -10,6 +10,7 @@ import {
   TAG_COOLDOWN,
   BOT_COMBAT,
   botSpawnPosition,
+  randomTableRespawn,
   selectTarget,
 } from './BotAI.jsx';
 import { registerBot, unregisterBot, getBotCandidates, damageBot, applyBotKnockback } from './botRegistry.js';
@@ -54,7 +55,8 @@ const MAX_STICK_DOWN = 0.6;
 const GROUND_BALL_RADIUS = 0.5;
 // Safety net only — the arena table's surface is y≈0 (Arena.jsx: RigidBody [0,-1,0] + 600x2x600)
 const RESPAWN_FLOOR_Y = -80;
-// Below this the bot has dropped off the arena table into the pit -> eliminated, not respawned
+// Below this the bot has dropped off the arena table — it falls freely past it,
+// then respawns at a fresh random point on the table (never eliminated-hovering).
 const ELIMINATION_FLOOR_Y = -6;
 // Ignore vertical differences larger than this when picking a target (lobby unreachable)
 const MAX_TARGET_HEIGHT_DIFF = 6;
@@ -94,7 +96,7 @@ export default function BotPlayer({ bot }) {
     slideArmedUntil: 0,
             knockVec: new THREE.Vector3(),
     knockUntil: 0, // end-time of the current knockback window (steering locked during)
-    eliminated: false,
+    fellOff: false, // latched while falling off the table — cleared on respawn
     lastDebug: null,
   });
 
@@ -145,19 +147,24 @@ export default function BotPlayer({ bot }) {
     nowRef.current = now;
     const store = useGameStore.getState();
 
-    // --- DOWNED: respawn on the arena after the delay ---
+    // --- DOWNED: respawn at a fresh random table spot after the delay ---
+    // (Falling off the table also routes through here — see FELL OFF below.)
     if (s.health <= 0) {
       if (s.downUntil <= 0) s.downUntil = now + BOT_COMBAT.respawnDelay;
       if (now < s.downUntil) {
-        // Hide the body under the arena while downed
+        // Hide the body far under the arena while downed (occluded by the
+        // table from above; the blob shadow hides itself below y=-1).
         bodyRef.current.setNextKinematicTranslation({ x: s.pos.x, y: -60, z: s.pos.z });
         return;
       }
-      s.pos.set(spawn.x, spawn.y, spawn.z);
+      const spot = randomTableRespawn();
+      s.pos.set(spot.x, spot.y, spot.z);
       s.vy = 0;
       s.knockVec.set(0, 0, 0);
+      s.knockUntil = 0;
       s.health = BOT_COMBAT.maxHealth;
       s.downUntil = 0;
+      s.fellOff = false;
       s.grounded = true;
     }
 
@@ -253,17 +260,16 @@ export default function BotPlayer({ bot }) {
       s.grounded = true;
     }
 
-        // --- ELIMINATION: a bot that drops off the arena table into the pit is OUT.
-    // (Unlike RESPAWN_FLOOR_Y, this doesn't teleport it back to spawn — it's
-    // eliminated from gameplay and stays downed until the round resets.)
-    if (!s.eliminated && s.pos.y < ELIMINATION_FLOOR_Y) {
-      s.health = 0;
-      s.eliminated = true;
-      s.downUntil = Infinity; // keep the body hidden, never auto-respawn
+        // --- FELL OFF: the bot walked off the table edge — let it fall, then route
+    // it through the DOWNED respawn so it pops back at a fresh random table
+    // spot after the delay. Latch fellOff so the trigger fires once per fall.
+    if (!s.fellOff && s.pos.y < ELIMINATION_FLOOR_Y) {
+      s.fellOff = true;
+      s.health = 0; // DOWNED block above handles the delay + random respawn
+      s.downUntil = 0;
       s.knockVec.set(0, 0, 0);
-      s.vy = 0;
-      s.grounded = false;
-      console.log("💀 Bot eliminated — fell off the arena:", bot.name);
+      s.vy = Math.min(s.vy, 0);
+      console.log("💀 Bot fell off the arena — respawning:", bot.name);
     }
 
     // --- KNOCKBACK: decaying displacement from the last slide hit received ---

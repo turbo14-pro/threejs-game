@@ -79,6 +79,35 @@ export const botSpawnPosition = (index = 0) => {
   return { x: spot.x, y: ARENA_SURFACE_Y + BOT_BODY_OFFSET_Y, z: spot.z };
 };
 
+// --- TABLE RESPAWN ------------------------------------------------------------
+// The battle table's top surface spans x/z ∈ [-290, 290] (Arena.jsx: 600×600 box
+// at [0,-1,0]). A bot that falls off respawns at a fresh random point on the table
+// every time — exclusion zones keep it clear of the raised platforms/bridge, matching
+// PowerUpManager's spawn rules.
+export const TABLE_RESPAWN_BOUNDS = { minX: -280, maxX: 280, minZ: -280, maxZ: 280 };
+export const TABLE_RESPAWN_EXCLUSIONS = [
+  { minX: -35, maxX: 35, minZ: -15, maxZ: 15 },        // Platform 1
+  { minX: -35, maxX: 35, minZ: -60, maxZ: -30 },       // Platform 2
+  { minX: -7.5, maxX: 7.5, minZ: -32.5, maxZ: -12.5 }, // Bridge
+];
+/**
+ * Random on-table respawn point — different every call. `rng` is injectable so
+ * tests can seed it; the game passes nothing and gets Math.random.
+ */
+export const randomTableRespawn = (rng = Math.random) => {
+  const { minX, maxX, minZ, maxZ } = TABLE_RESPAWN_BOUNDS;
+  for (let attempt = 0; attempt < 20; attempt++) {
+    const x = minX + rng() * (maxX - minX);
+    const z = minZ + rng() * (maxZ - minZ);
+    const inside = TABLE_RESPAWN_EXCLUSIONS.some(
+      (zone) => x >= zone.minX && x <= zone.maxX && z >= zone.minZ && z <= zone.maxZ,
+    );
+    if (!inside) return { x, y: ARENA_SURFACE_Y + BOT_BODY_OFFSET_Y, z };
+  }
+  // Fallback (practically unreachable): centre of the table.
+  return { x: 0, y: ARENA_SURFACE_Y + BOT_BODY_OFFSET_Y, z: -92 };
+};
+
 const DIRECTIONS = ['for', 'back', 'left', 'right'];
 
 const clamp01 = (value) => {

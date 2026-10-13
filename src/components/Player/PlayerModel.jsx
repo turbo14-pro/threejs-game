@@ -272,11 +272,19 @@ const PlayerModel = ({ isMoving, moveDir, isSprinting, jumpPhase = 'none', isSli
 
   useFrame((state, delta) => {
     if (mixer) mixer.update(delta);
-    // Keep blob shadow on the ground — counteract the player's Y movement
+    // Keep the blob shadow glued to the ground under the character: the shadow
+    // mesh is a child of the model group, so subtract the world Y to cancel the
+    // body's height. Below the table (y < -1, e.g. falling off or hidden while
+    // downed) the shadow hides instead of floating at table height.
     if (blobShadowRef.current && clone) {
       const worldPos = new THREE.Vector3();
       clone.getWorldPosition(worldPos);
-      blobShadowRef.current.position.y = -worldPos.y + 0.05;
+      if (worldPos.y < -1) {
+        blobShadowRef.current.visible = false;
+      } else {
+        blobShadowRef.current.visible = true;
+        blobShadowRef.current.position.y = -worldPos.y + 0.05;
+      }
     }
   });
 
