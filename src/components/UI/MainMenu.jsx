@@ -1,7 +1,6 @@
 import React, { useState } from 'react';
 import { useGameStore } from '../../store/useGameStore';
 import Options from './Options.jsx';
-import BotRoster from './BotRoster.jsx';
 
 export default function MainMenu() {
   const setGameState = useGameStore(state => state.setGameState);
@@ -48,8 +47,6 @@ export default function MainMenu() {
               </a>
             </div>
 
-            {/* CPU opponents in this match — always 3 bots on normal skill */}
-            <BotRoster />
           </>
         )}
 

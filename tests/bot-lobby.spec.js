@@ -1,28 +1,18 @@
 import { test, expect } from '@playwright/test';
 
 /**
- * Smoke test for the CPU bot lobby roster. Every match runs a fixed roster of
- * 3 bots on normal skill — the lobby has no selectors, it just shows the names.
+ * Smoke test: the main menu and pause menu show no CPU opponent names.
+ * Every match runs a fixed 3 bots on normal skill — names/tags are internal only.
  */
-test('lobby shows the fixed 3-bot CPU opponent roster', async ({ page }) => {
+test('menus show no CPU opponent names', async ({ page }) => {
   await page.goto('/');
 
-  const roster = page.locator('.bot-panel');
-  await expect(roster).toBeVisible();
-  await expect(roster.locator('.bot-panel-title')).toHaveText(/CPU Opponents/i);
-
-  // Fixed roster: always 3 named bots, all on normal skill
-  const rows = roster.locator('.bot-roster-row');
-  await expect(rows).toHaveCount(3);
-
-  // Every bot is named and shows its difficulty tag
-  const names = await roster.locator('.bot-roster-name').allTextContents();
-  expect(names.length).toBe(3);
-  names.forEach((name) => expect(name.trim()).toMatch(/^Bot /));
-  await expect(roster.locator('.bot-roster-tag').first()).toHaveText(/normal/i);
-
-  // No lobby selectors remain
-  await expect(roster.locator('.bot-option-btn')).toHaveCount(0);
+  // The old roster panel (names + difficulty tags + selectors) is gone
+  await expect(page.locator('.bot-panel')).toHaveCount(0);
+  await expect(page.locator('.bot-roster-row')).toHaveCount(0);
+  await expect(page.locator('.bot-roster-name')).toHaveCount(0);
+  await expect(page.locator('.bot-roster-tag')).toHaveCount(0);
+  await expect(page.locator('.bot-option-btn')).toHaveCount(0);
 });
 test('bots mount and spawn in the arena without runtime errors', async ({ page }) => {
   const errors = [];
@@ -30,8 +20,8 @@ test('bots mount and spawn in the arena without runtime errors', async ({ page }
 
   await page.goto('/');
 
-  const roster = page.locator('.bot-panel');
-  await expect(roster.locator('.bot-roster-row')).toHaveCount(3);
+  // No roster UI on the menu anymore
+  await expect(page.locator('.bot-panel')).toHaveCount(0);
 
   // Enter the match — the bots are rendered inside the Rapier <Physics> tree
   await page.locator('button', { hasText: 'START GAME' }).click();
@@ -45,7 +35,7 @@ test('bots mount and spawn in the arena without runtime errors', async ({ page }
   // Bots must not throw while driven by BotAI (e.g. bad castShape arguments)
   expect(errors).toEqual([]);
 
-  // NOTE: the in-game roster lives in the pause menu, which only opens after a real
-  // pointer-lock change. Headless Chromium cannot acquire the lock, so the roster's
-  // in-game rendering is covered by the lobby test above (same shared component).
+  // NOTE: the bots still mount in-game (BotPlayers inside the Rapier <Physics>
+  // tree). The old pause-menu roster was removed along with the lobby one —
+  // bot names/tags are internal only now.
 });
