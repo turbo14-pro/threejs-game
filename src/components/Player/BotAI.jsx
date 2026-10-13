@@ -32,8 +32,8 @@ export const BOT_TUNING = {
   powerupSeekDistance: 7, // a token closer than this is worth breaking off to collect (normal+ only)
 };
 
-// Naming pool for lobby display — deterministic so bots keep their identity between rounds
-export const BOT_NAME_POOL = ['Bot Byte', 'Bot Crumb', 'Bot Munch', 'Bot Nibbler'];
+// Naming pool for the floating name tags — deterministic so bots keep their identity between rounds
+export const BOT_NAME_POOL = ['Byte', 'Crumb', 'Munch', 'Nibbler'];
 
 // Seconds between a bot's scoring tags (see shouldRegisterTag)
 export const TAG_COOLDOWN = 2.5;

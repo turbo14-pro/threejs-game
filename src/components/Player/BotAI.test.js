@@ -294,7 +294,7 @@ describe('BotAI — lobby roster', () => {
     const names = roster.map(b => b.name);
 
     expect(new Set(names).size).toBe(3);
-    names.forEach(name => expect(name).toMatch(/^Bot /));
+    names.forEach(name => expect(name).not.toMatch(/^Bot /));
   });
 
   it('spawns no bots when the count is zero or invalid', () => {

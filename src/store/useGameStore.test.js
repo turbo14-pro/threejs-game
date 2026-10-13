@@ -20,7 +20,7 @@ describe('CPU bot store state', () => {
     expect(botCount).toBe(3);
     expect(botDifficulty).toBe(BOT_DIFFICULTY.normal);
     expect(bots).toHaveLength(3);
-    expect(bots.map(b => b.name)).toEqual(['Bot Byte', 'Bot Crumb', 'Bot Munch']);
+    expect(bots.map(b => b.name)).toEqual(['Byte', 'Crumb', 'Munch']);
     expect(bots.every(b => b.difficulty === BOT_DIFFICULTY.normal)).toBe(true);
   });
 
