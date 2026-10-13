@@ -32,8 +32,30 @@ export const BOT_TUNING = {
   powerupSeekDistance: 7, // a token closer than this is worth breaking off to collect (normal+ only)
 };
 
-// Naming pool for the floating name tags — deterministic so bots keep their identity between rounds
-export const BOT_NAME_POOL = ['Byte', 'Crumb', 'Munch', 'Nibbler'];
+// Naming pool for the floating name tags — a fresh random name from this list
+// is picked on every spawn and every respawn, so tags keep changing.
+export const BOT_NAME_POOL = [
+  'Mr. Feast',
+  'IShowSeed',
+  'Steak Paul',
+  'Lionel Cheesy',
+  'Cider-Man',
+  'Avacado Ronaldo',
+  "Fryin' Man",
+  'Soup-erman',
+  'Breadpool',
+  'Bob',
+  "S'more",
+];
+
+/**
+ * Random name from the pool — different (almost) every call. `rng` is injectable
+ * so tests can seed it; the game passes nothing and gets Math.random.
+ */
+export const randomBotName = (rng = Math.random) => {
+  const pool = BOT_NAME_POOL;
+  return pool[Math.floor(rng() * pool.length) % pool.length];
+};
 
 // Seconds between a bot's scoring tags (see shouldRegisterTag)
 export const TAG_COOLDOWN = 2.5;
@@ -411,10 +433,32 @@ export function shouldRegisterTag({ distance, lastTagAt = -Infinity, now = 0, co
 
 /**
  * Deterministic, unique bot name. `index` is the lobby slot so two bots never clash.
+ * (Kept for backward compatibility — the game now uses randomBotName instead.)
  */
 export function makeBotName(index = 0, pool = BOT_NAME_POOL) {
   const names = Array.isArray(pool) && pool.length ? pool : BOT_NAME_POOL;
   return names[Math.abs(Math.trunc(index)) % names.length];
+}
+
+/**
+ * Picks `count` random names from the pool, avoiding duplicates within the batch
+ * when the pool is big enough (11 names vs 3 bots, so spawns are always unique).
+ * `rng` is injectable so tests can seed it.
+ */
+export function pickRandomBotNames(count = 0, rng = Math.random) {
+  const total = Math.max(0, Math.trunc(count));
+  const names = [];
+  const used = new Set();
+  for (let i = 0; i < total; i++) {
+    let name = randomBotName(rng);
+    // Avoid a duplicate within this batch — bounded retries, then accept any.
+    for (let retry = 0; retry < 10 && used.has(name); retry++) {
+      name = randomBotName(rng);
+    }
+    used.add(name);
+    names.push(name);
+  }
+  return names;
 }
 
 /**
@@ -428,9 +472,9 @@ export function normalizeBotCount(value) {
 }
 
 /**
- * Builds the immutable bot roster used by the lobby/HUD and the runtime renderer.
- * Only its parameters affect the result — no randomness — so we can sync the roster into
- * the store and still identify each spawned bot by id afterwards.
+ * Builds the immutable bot roster used by the runtime renderer.
+ * Each bot gets a random name from the pool (unique within the batch), so the
+ * floating tags differ every match.
  *
  * @param {object} options
  *   - {number|string} count   how many bots to spawn (0-3)
@@ -443,10 +487,11 @@ export function buildBotRoster({ count = 0, difficulty = BOT_DIFFICULTY.normal, 
   const difficultyName = Object.keys(BOT_DIFFICULTY).find(
     (key) => BOT_DIFFICULTY[key] === difficulty
   ) || 'normal';
+  const names = pickRandomBotNames(total);
 
   return Array.from({ length: total }, (_, index) => ({
     id: `bot-${index}`,
-    name: makeBotName(index),
+    name: names[index] ?? randomBotName(),
     isBot: true,
     difficultyName,
     difficulty,

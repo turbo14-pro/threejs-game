@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { useGameStore } from './useGameStore.js';
-import { BOT_DIFFICULTY } from '../components/Player/BotAI.jsx';
+import { BOT_DIFFICULTY, BOT_NAME_POOL } from '../components/Player/BotAI.jsx';
 
 describe('CPU bot store state', () => {
   beforeEach(() => {
@@ -20,7 +20,9 @@ describe('CPU bot store state', () => {
     expect(botCount).toBe(3);
     expect(botDifficulty).toBe(BOT_DIFFICULTY.normal);
     expect(bots).toHaveLength(3);
-    expect(bots.map(b => b.name)).toEqual(['Byte', 'Crumb', 'Munch']);
+    // Names are random from the food-fighter pool (unique within the batch)
+    expect(bots.map(b => b.name).every(name => BOT_NAME_POOL.includes(name))).toBe(true);
+    expect(new Set(bots.map(b => b.name)).size).toBe(3);
     expect(bots.every(b => b.difficulty === BOT_DIFFICULTY.normal)).toBe(true);
   });
 

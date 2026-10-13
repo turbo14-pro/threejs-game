@@ -11,6 +11,7 @@ import {
   TAG_COOLDOWN,
   BOT_COMBAT,
   botSpawnPosition,
+  randomBotName,
   randomTableRespawn,
   selectTarget,
 } from './BotAI.jsx';
@@ -84,6 +85,9 @@ export default function BotPlayer({ bot }) {
   const spawn = useMemo(() => botSpawnPosition(bot.spawnIndex ?? 0), [bot.spawnIndex]);
   // Give each bot a different skin from the master registry so they are easy to tell apart
   const skin = SKINS[(bot.spawnIndex ?? 0) % SKINS.length].id;
+  // Floating name tag: starts as the roster name, re-rolled to a fresh random
+  // name from the pool on every respawn (see DOWNED below).
+  const [tagName, setTagName] = useState(bot.name);
 
   const stateRef = useRef({
     pos: new THREE.Vector3(spawn.x, spawn.y, spawn.z),
@@ -167,6 +171,12 @@ export default function BotPlayer({ bot }) {
       s.downUntil = 0;
       s.fellOff = false;
       s.grounded = true;
+      // Fresh random name tag every respawn — try to avoid repeating the old one
+      setTagName((prev) => {
+        let next = randomBotName();
+        for (let retry = 0; retry < 5 && next === prev; retry++) next = randomBotName();
+        return next;
+      });
     }
 
     // --- TARGET SELECTION: the human + every other living bot, scored by the brain ---
@@ -360,7 +370,7 @@ export default function BotPlayer({ bot }) {
           outlineWidth={0.08}
           outlineColor="#000000"
         >
-          {bot.name}
+          {tagName}
         </Text>
       </Billboard>
 

@@ -11,6 +11,8 @@ import {
   createBotProfile,
   makeBotName,
   normalizeBotCount,
+  pickRandomBotNames,
+  randomBotName,
   randomTableRespawn,
   TABLE_RESPAWN_BOUNDS,
   TABLE_RESPAWN_EXCLUSIONS,
@@ -289,12 +291,26 @@ describe('BotAI — lobby roster', () => {
     expect(roster.every(b => typeof b.name === 'string' && b.name.length > 0)).toBe(true);
   });
 
-  it('gives bots unique, human-readable names for the lobby', () => {
+  it('gives bots names from the food-fighter pool', () => {
     const roster = buildBotRoster({ count: 3 });
     const names = roster.map(b => b.name);
 
+    names.forEach(name => expect(BOT_NAME_POOL).toContain(name));
+  });
+
+  it('picks unique random names within a spawn batch', () => {
+    const names = pickRandomBotNames(3);
+
+    expect(names).toHaveLength(3);
     expect(new Set(names).size).toBe(3);
-    names.forEach(name => expect(name).not.toMatch(/^Bot /));
+    names.forEach(name => expect(BOT_NAME_POOL).toContain(name));
+  });
+
+  it('rolls a fresh random name on demand', () => {
+    const seen = new Set(Array.from({ length: 30 }, () => randomBotName()));
+
+    expect(seen.size).toBeGreaterThan(1);
+    seen.forEach(name => expect(BOT_NAME_POOL).toContain(name));
   });
 
   it('spawns no bots when the count is zero or invalid', () => {
