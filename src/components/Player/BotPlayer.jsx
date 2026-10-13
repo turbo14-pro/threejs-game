@@ -2,6 +2,7 @@ import React, { useRef, useState, useMemo, useEffect } from 'react';
 import { useFrame } from '@react-three/fiber';
 import * as THREE from 'three';
 import { RigidBody, CapsuleCollider, useRapier } from '@react-three/rapier';
+import { Billboard, Text } from '@react-three/drei';
 import PlayerModel from './PlayerModel.jsx';
 import { useGameStore } from '../../store/useGameStore';
 import {
@@ -348,6 +349,20 @@ export default function BotPlayer({ bot }) {
       userData={{ type: 'bot-player', id: bot.id, name: bot.name, isBot: true }}
     >
       <CapsuleCollider args={[1.5, 1]} />
+
+      {/* Floating name tag — billboarded so it always faces the camera */}
+      <Billboard position={[0, BODY_OFFSET_Y + 3.4, 0]}>
+        <Text
+          fontSize={1.1}
+          color="#ffffff"
+          anchorX="center"
+          anchorY="middle"
+          outlineWidth={0.08}
+          outlineColor="#000000"
+        >
+          {bot.name}
+        </Text>
+      </Billboard>
 
       <group ref={modelRef} position={[0, -BODY_OFFSET_Y, 0]}>
         <PlayerModel
