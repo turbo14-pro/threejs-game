@@ -12,30 +12,16 @@ describe('CPU bot store state', () => {
     });
   });
 
-  it('builds a named roster from the lobby bot count', () => {
-    useGameStore.getState().setBotCount(3);
-
-    const { bots, botCount } = useGameStore.getState();
-    expect(botCount).toBe(3);
-    expect(bots).toHaveLength(3);
-    expect(bots.map(b => b.name)).toEqual(['Bot Byte', 'Bot Crumb', 'Bot Munch']);
-  });
-
-  it('re-applies the current count when the difficulty changes', () => {
-    useGameStore.getState().setBotCount(2);
+  it('always runs 3 bots on normal skill — the setters are locked no-ops', () => {
+    useGameStore.getState().setBotCount(1);
     useGameStore.getState().setBotDifficulty(BOT_DIFFICULTY.insane);
 
-    const { bots, botDifficulty } = useGameStore.getState();
-    expect(botDifficulty).toBe(BOT_DIFFICULTY.insane);
-    expect(bots).toHaveLength(2);
-    expect(bots.every(b => b.difficulty === BOT_DIFFICULTY.insane)).toBe(true);
-  });
-
-  it('clamps a nonsensical bot count instead of spawning a crowd', () => {
-    useGameStore.getState().setBotCount(99);
-
-    expect(useGameStore.getState().botCount).toBe(3);
-    expect(useGameStore.getState().bots).toHaveLength(3);
+    const { bots, botCount, botDifficulty } = useGameStore.getState();
+    expect(botCount).toBe(3);
+    expect(botDifficulty).toBe(BOT_DIFFICULTY.normal);
+    expect(bots).toHaveLength(3);
+    expect(bots.map(b => b.name)).toEqual(['Bot Byte', 'Bot Crumb', 'Bot Munch']);
+    expect(bots.every(b => b.difficulty === BOT_DIFFICULTY.normal)).toBe(true);
   });
 
   it('credits match score to the side that earned it', () => {

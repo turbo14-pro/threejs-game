@@ -48,8 +48,8 @@ export default function MainMenu() {
               </a>
             </div>
 
-            {/* CPU opponents are chosen here and their names show in the lobby */}
-            <BotRoster showControls />
+            {/* CPU opponents in this match — always 3 bots on normal skill */}
+            <BotRoster />
           </>
         )}
 

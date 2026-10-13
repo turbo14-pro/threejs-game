@@ -1,22 +1,17 @@
 import { test, expect } from '@playwright/test';
 
 /**
- * Smoke test for the CPU bot lobby roster. Verifies the plan's "visible in lobby with
- * names" requirement end-to-end in a real browser, without needing the game server.
+ * Smoke test for the CPU bot lobby roster. Every match runs a fixed roster of
+ * 3 bots on normal skill — the lobby has no selectors, it just shows the names.
  */
-test('lobby shows the CPU opponent roster and reflects the bot count selection', async ({ page }) => {
+test('lobby shows the fixed 3-bot CPU opponent roster', async ({ page }) => {
   await page.goto('/');
 
   const roster = page.locator('.bot-panel');
   await expect(roster).toBeVisible();
   await expect(roster.locator('.bot-panel-title')).toHaveText(/CPU Opponents/i);
 
-  // Fresh players get a default roster of 2 bots so the arena is populated from the start
-  await expect(roster.locator('.bot-roster-row')).toHaveCount(2);
-
-  // Select 3 bots
-  await roster.locator('.bot-option-row', { hasText: 'Bots' }).locator('.bot-option-btn', { hasText: '3' }).click();
-
+  // Fixed roster: always 3 named bots, all on normal skill
   const rows = roster.locator('.bot-roster-row');
   await expect(rows).toHaveCount(3);
 
@@ -26,13 +21,8 @@ test('lobby shows the CPU opponent roster and reflects the bot count selection',
   names.forEach((name) => expect(name.trim()).toMatch(/^Bot /));
   await expect(roster.locator('.bot-roster-tag').first()).toHaveText(/normal/i);
 
-  // Switching difficulty relabels the roster
-  await roster.locator('.bot-option-row', { hasText: 'Skill' }).locator('.bot-option-btn', { hasText: 'insane' }).click();
-  await expect(roster.locator('.bot-roster-tag').first()).toHaveText(/insane/i);
-
-  // Back to solo practice
-  await roster.locator('.bot-option-row', { hasText: 'Bots' }).locator('.bot-option-btn', { hasText: '0' }).click();
-  await expect(roster.locator('.bot-roster-empty')).toBeVisible();
+  // No lobby selectors remain
+  await expect(roster.locator('.bot-option-btn')).toHaveCount(0);
 });
 test('bots mount and spawn in the arena without runtime errors', async ({ page }) => {
   const errors = [];
@@ -41,7 +31,6 @@ test('bots mount and spawn in the arena without runtime errors', async ({ page }
   await page.goto('/');
 
   const roster = page.locator('.bot-panel');
-  await roster.locator('.bot-option-row', { hasText: 'Bots' }).locator('.bot-option-btn', { hasText: '3' }).click();
   await expect(roster.locator('.bot-roster-row')).toHaveCount(3);
 
   // Enter the match — the bots are rendered inside the Rapier <Physics> tree

@@ -8,7 +8,7 @@ import {
   POWERUP_DURATIONS,
   POWERUP_DESCRIPTIONS,
 } from '../config/playerConfig';
-import { BOT_DIFFICULTY, buildBotRoster, normalizeBotCount } from '../components/Player/BotAI.jsx';
+import { BOT_DIFFICULTY, buildBotRoster } from '../components/Player/BotAI.jsx';
 
 // Re-export for backward compatibility with existing imports
 export { POWERUP_EFFECTS, POWERUP_DURATIONS, POWERUP_DESCRIPTIONS };
@@ -24,8 +24,10 @@ const SHADOW_TYPE_MAP = {
 
 export const getShadowMapType = (shadowQuality) => SHADOW_TYPE_MAP[shadowQuality] ?? THREE.PCFSoftShadowMap;
 
-// Bots present on the arena before any lobby selection (see "spawn from the start")
-const DEFAULT_BOT_COUNT = 2;
+// Bots present on the arena before any lobby selection (see "spawn from the start").
+// Every match runs exactly 3 bots on normal skill — the lobby has no selectors.
+const DEFAULT_BOT_COUNT = 3;
+const DEFAULT_BOT_DIFFICULTY = BOT_DIFFICULTY.normal;
 
 /**
  * THE MAIN BRAIN (Game Store)
@@ -79,11 +81,11 @@ export const useGameStore = create(
         lastServerState: null, // { pos, tick } for local player reconciliation
 
         // --- CPU BOTS ---
-        // Default roster so bots are on the arena from the very first frame,
-        // before any lobby selection is made.
-        bots: buildBotRoster({ count: DEFAULT_BOT_COUNT, difficulty: BOT_DIFFICULTY.normal }),
-        botCount: DEFAULT_BOT_COUNT,    // lobby selection (0-3)
-        botDifficulty: BOT_DIFFICULTY.normal,
+        // Fixed roster: every match runs 3 bots on normal skill. The lobby has
+        // no selectors, so the count and difficulty are constants, not state.
+        bots: buildBotRoster({ count: DEFAULT_BOT_COUNT, difficulty: DEFAULT_BOT_DIFFICULTY }),
+        botCount: DEFAULT_BOT_COUNT,    // always 3
+        botDifficulty: DEFAULT_BOT_DIFFICULTY, // always normal
         matchScore: { player: 0, bots: 0 }, // drives adaptive bot difficulty
         
         // --- VISUAL SETTINGS ---
@@ -229,18 +231,16 @@ export const useGameStore = create(
         }),
 
         // --- CPU BOT ACTIONS ---
-        // The roster is rebuilt from the lobby selection so the names are visible
-        // in the menu before the match even starts.
-        setBotCount: (count) => set((s) => {
-          const next = normalizeBotCount(count);
-          return {
-            botCount: next,
-            bots: buildBotRoster({ count: next, difficulty: s.botDifficulty })
-          };
-        }),
-        setBotDifficulty: (value) => set((s) => ({
-          botDifficulty: value,
-          bots: buildBotRoster({ count: s.botCount, difficulty: value })
+        // Locked: every match runs 3 bots on normal skill. The setters are kept
+        // as no-ops so old callers/tests don't crash — they always rebuild the
+        // fixed roster.
+        setBotCount: () => set(() => ({
+          botCount: DEFAULT_BOT_COUNT,
+          bots: buildBotRoster({ count: DEFAULT_BOT_COUNT, difficulty: DEFAULT_BOT_DIFFICULTY }),
+        })),
+        setBotDifficulty: () => set(() => ({
+          botDifficulty: DEFAULT_BOT_DIFFICULTY,
+          bots: buildBotRoster({ count: DEFAULT_BOT_COUNT, difficulty: DEFAULT_BOT_DIFFICULTY }),
         })),
         addMatchScore: (side, amount = 1) => set((s) => ({
           matchScore: {
