@@ -330,7 +330,18 @@ export default function PlayerController({ sendUpdate }) {
   }, [knockbackCount]);
 
   useFrame((state, delta) => {
-    if (gameState !== 'PLAYING' || !rigidBodyRef.current || !playerGroupRef.current) return;
+    if (gameState !== 'PLAYING' || !rigidBodyRef.current || !playerGroupRef.current) {
+      // Publish the player's world position even when the match isn't live. Power-up
+      // pickup is distance-based against this value, so if it stays stale while the
+      // menu camera orbits, coins spawned before START can never be collected.
+      if (rigidBodyRef.current) {
+        const t = rigidBodyRef.current.translation();
+        if (Number.isFinite(t.x) && Number.isFinite(t.y) && Number.isFinite(t.z)) {
+          setLocalPlayerWorldPos(t);
+        }
+      }
+      return;
+    }
 
     const keys = getKeys();
     const translation = rigidBodyRef.current.translation();

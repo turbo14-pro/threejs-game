@@ -170,6 +170,11 @@ export function PowerUpCoin({
       );
     }
 
+    // Pickup must read the SAME y the token is actually drawn at. During the drop the
+    // mesh slides from spawnPosition[1] down to targetY, but rigidRef.translation()
+    // still reports the spawn y — so comparing that against _playerPos can register a
+    // hit mid-air (or miss at the visible hover height). Track the drawn y explicitly
+    // and only allow pickup once the token is hovering.
     if (phase === 'hovering') {
       if (wobbleRef.current) {
         const t = state.clock.elapsedTime * 2.0 + floatPhase.current;
@@ -183,8 +188,12 @@ export function PowerUpCoin({
 
       const coinPos = rigidRef.current.translation();
       const dx = coinPos.x - _playerPos.x;
-      const dy = coinPos.y - _playerPos.y;
       const dz = coinPos.z - _playerPos.z;
+      // The body is fixed at spawnPosition[1] (y=50); the visible token only reaches
+      // targetY via the drop tween + the child wobble. Compare against the ACTUAL
+      // drawn y so pickup matches what the player sees (and can't trigger mid-drop).
+      const drawnY = spawnPosition[1] + (targetY - spawnPosition[1]) * (dropProgress.current * dropProgress.current);
+      const dy = drawnY - _playerPos.y;
       if (dx * dx + dy * dy + dz * dz < COLLECT_DISTANCE * COLLECT_DISTANCE) {
         useGameStore.getState().collectPowerUp(category, rarity);
         unregisterPowerUp(coinIdRef.current);
