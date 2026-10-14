@@ -473,10 +473,16 @@ export default function Arena() {
           <RigidBody
             type="fixed"
             sensor
-            onIntersectionEnter={() => startMatchSequence()}
+            onIntersectionEnter={() => {
+              console.log('START BUTTON: intersection enter');
+              useGameStore.getState().spawnPlayerAtRandomLocation();
+            }}
+            onIntersectionExit={() => {
+              console.log('START BUTTON: intersection exit');
+            }}
             position={[0, 0.5, 0]}
           >
-            <CuboidCollider args={[2, 0.5, 2]} />
+            <CuboidCollider args={[3, 0.5, 3]} />
             <mesh>
               <boxGeometry args={[4, 0.2, 4]} />
               <meshStandardMaterial color="#ffcc00" emissive="#ffcc00" emissiveIntensity={2} toneMapped={false} />

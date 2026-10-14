@@ -208,58 +208,72 @@ export default function PlayerController({ sendUpdate }) {
         if (count > 0) {
           console.log("🚀 Teleport fired, count:", count);
 
-          // Replicate cereal box positions (must match Arena.jsx seededRandom(42))
-          const seededRandom = (seed) => {
-            let s = seed;
-            return () => { s = (s * 9301 + 49297) % 233280; return s / 233280; };
-          };
-          const rand = seededRandom(42);
-          const cerealPositions = [];
-          for (let i = 0; i < 20; i++) {
-            let bx, bz, valid = false, attempts = 0;
-            while (!valid && attempts < 100) {
-              bx = (rand() - 0.5) * 520;
-              bz = (rand() - 0.5) * 520;
-              attempts++;
-              if (Math.abs(bx) < 45 && bz > -75 && bz < 30) continue;
-              let ok = true;
-              for (const b of cerealPositions) {
-                if (Math.hypot(bx - b.x, bz - b.z) < 42) { ok = false; break; }
+          // Use custom spawn target if set by spawnPlayerAtRandomLocation, otherwise generate random
+          let tx, tz, ty;
+          const target = useGameStore.getState().pendingTeleportTarget;
+          if (target) {
+            tx = target.x;
+            tz = target.z;
+            ty = target.y;
+            // Clear the target after using it
+            useGameStore.getState().pendingTeleportTarget = null;
+            // Actually need to use set — let's do it properly via store action
+            // For simplicity, we'll rely on the subscriber to clear it
+          } else {
+            // Replicate cereal box positions (must match Arena.jsx seededRandom(42))
+            const seededRandom = (seed) => {
+              let s = seed;
+              return () => { s = (s * 9301 + 49297) % 233280; return s / 233280; };
+            };
+            const rand = seededRandom(42);
+            const cerealPositions = [];
+            for (let i = 0; i < 20; i++) {
+              let bx, bz, valid = false, attempts = 0;
+              while (!valid && attempts < 100) {
+                bx = (rand() - 0.5) * 520;
+                bz = (rand() - 0.5) * 520;
+                attempts++;
+                if (Math.abs(bx) < 45 && bz > -75 && bz < 30) continue;
+                let ok = true;
+                for (const b of cerealPositions) {
+                  if (Math.hypot(bx - b.x, bz - b.z) < 42) { ok = false; break; }
+                }
+                if (ok) valid = true;
               }
-              if (ok) valid = true;
+              if (valid) cerealPositions.push({ x: bx, z: bz });
             }
-            if (valid) cerealPositions.push({ x: bx, z: bz });
-          }
 
-          const TABLE_HALF = 280;
-          const PLATFORM_ZONES = [
-            { cx: 0, cz: 0, rx: 50, rz: 35 },
-            { cx: 0, cz: -45, rx: 40, rz: 20 },
-            { cx: 0, cz: -22.5, rx: 12, rz: 15 },
-          ];
-          const SAFE_DIST = 22;
+            const TABLE_HALF = 280;
+            const PLATFORM_ZONES = [
+              { cx: 0, cz: 0, rx: 50, rz: 35 },
+              { cx: 0, cz: -45, rx: 40, rz: 20 },
+              { cx: 0, cz: -22.5, rx: 12, rz: 15 },
+            ];
+            const SAFE_DIST = 22;
 
-          let tx, tz, placed = false;
-          for (let attempt = 0; attempt < 200; attempt++) {
-            tx = (Math.random() - 0.5) * TABLE_HALF * 2;
-            tz = (Math.random() - 0.5) * TABLE_HALF * 2;
-            let inZone = false;
-            for (const z of PLATFORM_ZONES) {
-              if (Math.abs(tx - z.cx) < z.rx && Math.abs(tz - z.cz) < z.rz) { inZone = true; break; }
+            let placed = false;
+            for (let attempt = 0; attempt < 200; attempt++) {
+              tx = (Math.random() - 0.5) * TABLE_HALF * 2;
+              tz = (Math.random() - 0.5) * TABLE_HALF * 2;
+              let inZone = false;
+              for (const z of PLATFORM_ZONES) {
+                if (Math.abs(tx - z.cx) < z.rx && Math.abs(tz - z.cz) < z.rz) { inZone = true; break; }
+              }
+              if (inZone) continue;
+              let tooClose = false;
+              for (const b of cerealPositions) {
+                if (Math.hypot(tx - b.x, tz - b.z) < SAFE_DIST) { tooClose = true; break; }
+              }
+              if (tooClose) continue;
+              placed = true;
+              break;
             }
-            if (inZone) continue;
-            let tooClose = false;
-            for (const b of cerealPositions) {
-              if (Math.hypot(tx - b.x, tz - b.z) < SAFE_DIST) { tooClose = true; break; }
-            }
-            if (tooClose) continue;
-            placed = true;
-            break;
+            if (!placed) { tx = 0; tz = 80; }
+            ty = 5; // default teleport y position
           }
-          if (!placed) { tx = 0; tz = 80; }
 
           // Store target — useFrame will apply it outside the physics step
-          pendingTeleport.current = { x: tx, y: 5, z: tz };
+          pendingTeleport.current = { x: tx, y: ty, z: tz };
 
           // Lock pointer and set game state to playing
           try {

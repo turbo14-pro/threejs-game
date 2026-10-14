@@ -75,6 +75,7 @@ export const useGameStore = create(
         respawnCount: 0, // Used to trigger lobby respawn
         mobileInput: { x: 0, y: 0, jump: false, sprint: false, slide: false, dash: false },
         cameraInput: { x: 0, y: 0 },
+        pendingTeleportTarget: null, // { x, y, z } set by spawnPlayerAtRandomLocation
         
         // --- MULTIPLAYER ---
         remotePlayers: {}, // { id: { pos, rot, skin, username } }
@@ -171,6 +172,74 @@ export const useGameStore = create(
             game: { ...s.game, phase: 'BATTLE', countdown: 0 },
             teleportCount: s.teleportCount + 1
           }));
+        },
+        
+        // Spawn player at random location 15m above arena floor
+        spawnPlayerAtRandomLocation: () => {
+          Logger.info('Player', 'Spawning player at random location');
+          const store = get();
+          
+          // Generate random position within arena bounds, avoiding platforms
+          const TABLE_HALF = 280;
+          const PLATFORM_ZONES = [
+            { cx: 0, cz: 0, rx: 50, rz: 35 },   // Platform 1
+            { cx: 0, cz: -45, rx: 40, rz: 20 }, // Platform 2
+            { cx: 0, cz: -22.5, rx: 12, rz: 15 }, // Bridge
+          ];
+          const SAFE_DIST = 22;
+          
+          let tx, tz, placed = false;
+          for (let attempt = 0; attempt < 200; attempt++) {
+            tx = (Math.random() - 0.5) * TABLE_HALF * 2;
+            tz = (Math.random() - 0.5) * TABLE_HALF * 2;
+            let inZone = false;
+            for (const z of PLATFORM_ZONES) {
+              if (Math.abs(tx - z.cx) < z.rx && Math.abs(tz - z.cz) < z.rz) { 
+                inZone = true; 
+                break; 
+              }
+            }
+            if (inZone) continue;
+            let tooClose = false;
+            // Check distance from cereal boxes (reuse logic from PlayerController)
+            const seededRandom = (seed) => {
+              let s = seed;
+              return () => { s = (s * 9301 + 49297) % 233280; return s / 233280; };
+            };
+            const rand = seededRandom(42);
+            const cerealPositions = [];
+            for (let i = 0; i < 20; i++) {
+              let bx, bz, valid = false, attempts = 0;
+              while (!valid && attempts < 100) {
+                bx = (rand() - 0.5) * 520;
+                bz = (rand() - 0.5) * 520;
+                attempts++;
+                if (Math.abs(bx) < 45 && bz > -75 && bz < 30) continue;
+                let ok = true;
+                for (const b of cerealPositions) {
+                  if (Math.hypot(bx - b.x, bz - b.z) < 42) { ok = false; break; }
+                }
+                if (ok) valid = true;
+              }
+              if (valid) cerealPositions.push({ x: bx, z: bz });
+            }
+            
+            for (const b of cerealPositions) {
+              if (Math.hypot(tx - b.x, tz - b.z) < SAFE_DIST) { tooClose = true; break; }
+            }
+            if (tooClose) continue;
+            placed = true;
+            break;
+          }
+          if (!placed) { tx = 0; tz = 80; } // fallback
+          
+          const ty = 15; // 15 metres above arena floor
+          
+          // Trigger teleport via existing mechanism
+          set({ teleportCount: store.teleportCount + 1 });
+          
+          // Store the target position for useFrame to pick up
+          set({ pendingTeleportTarget: { x: tx, y: ty, z: tz } });
         },
 
         // Player Control

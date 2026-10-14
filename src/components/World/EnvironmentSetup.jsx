@@ -5,7 +5,7 @@ import { useThree } from '@react-three/fiber';
 import { useGameStore } from '../../store/useGameStore';
 
 export default function EnvironmentSetup() {
-  const { scene, gl } = useThree();
+  const { scene } = useThree();
   const texture = useTexture('/skybox/skybox-kitchen.webp');
   const settings = useGameStore(state => state.settings);
 
@@ -21,47 +21,31 @@ export default function EnvironmentSetup() {
     }
   }, [settings.shadowQuality]);
 
+  // Configure texture for equirectangular mapping
+  useEffect(() => {
+    if (texture) {
+      texture.mapping = THREE.EquirectangularReflectionMapping;
+      texture.colorSpace = THREE.SRGBColorSpace;
+      texture.generateMipmaps = true;
+      texture.minFilter = THREE.LinearMipmapLinearFilter;
+      texture.wrapS = THREE.RepeatWrapping;
+      texture.wrapT = THREE.ClampToEdgeWrapping;
+      texture.repeat.set(2, 1);
+      texture.needsUpdate = true;
+    }
+  }, [texture]);
+
   useLayoutEffect(() => {
     if (!settings.skybox) {
       scene.background = cabinetColor;
       // Re-apply fog since setting scene.background can reset it
       scene.fog = new THREE.FogExp2('#ac9b82', 0.004);
     } else {
+      // Don't set background to null - let the skybox mesh show through
       scene.background = null;
+      scene.fog = new THREE.FogExp2('#ac9b82', 0.004);
     }
   }, [settings.skybox, scene, cabinetColor]);
-
-  // Process equirectangular texture into a proper environment cubemap
-  useEffect(() => {
-    if (!texture) return;
-
-    const pmremGenerator = new THREE.PMREMGenerator(gl);
-    pmremGenerator.compileEquirectangularShader();
-
-    // Dim the environment texture before processing to reduce IBL brightness
-    const dimmedTexture = texture.clone();
-    dimmedTexture.colorSpace = THREE.NoColorSpace;
-    const canvas = document.createElement('canvas');
-    const ctx = canvas.getContext('2d');
-    canvas.width = texture.image.width;
-    canvas.height = texture.image.height;
-    ctx.drawImage(texture.image, 0, 0);
-    ctx.globalCompositeOperation = 'multiply';
-    ctx.fillStyle = 'rgba(50,50,50,1)'; // dim to ~20%
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
-    dimmedTexture.image = canvas;
-    dimmedTexture.needsUpdate = true;
-
-    const envMap = pmremGenerator.fromEquirectangular(dimmedTexture).texture;
-    scene.environment = envMap;
-
-    pmremGenerator.dispose();
-
-    return () => {
-      scene.environment = null;
-      envMap.dispose();
-    };
-  }, [texture, scene, gl]);
 
   return (
     <>
@@ -93,10 +77,16 @@ export default function EnvironmentSetup() {
       */}
 
       {/* Skybox background — only visible when enabled */}
-      {settings.skybox && (
+      {settings.skybox && texture && (
         <mesh position={[0, 150, 0]} scale={[1, 0.5, 1]}>
           <sphereGeometry args={[900, 64, 32]} />
-          <meshBasicMaterial map={texture} side={THREE.BackSide} toneMapped={false} depthWrite={true} fog={false} />
+          <meshBasicMaterial
+            map={texture}
+            side={THREE.BackSide}
+            toneMapped={false}
+            depthWrite={true}
+            fog={false}
+          />
         </mesh>
       )}
     </>
