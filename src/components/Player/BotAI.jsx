@@ -36,6 +36,10 @@ export const BOT_TUNING = {
   jumpDwell: 0.35,       // target must stay above jumpClearance this long before the bot commits
   jumpCooldown: 0.6,     // a bot won't chain-jump (prevents mirroring a player's repeated jumps)
   powerupSeekDistance: 7, // a token closer than this is worth breaking off to collect (normal+ only)
+  aimError: 0.7,        // max radians of steering error at accuracy 0 (≈40°) — bots swerve & whiff
+  aimWobbleSpeed: 2.4,  // how fast the aim error oscillates (rad/s) so it reads as imprecision
+  slideRollInterval: 1.5, // seconds per slide-chance roll (stable within one approach)
+  slideCooldown: 2.5,   // seconds a bot rests between committed lunges (slides less often)
 };
 
 // Naming pool for the floating name tags — a fresh random name from this list
@@ -205,10 +209,12 @@ export function createBotPersonality(seed = 'bot') {
   return Object.freeze({
     seed: String(seed),
     aggression: round3(0.25 + a * 0.7),   // appetite for attacking
+    accuracy:   round3(0.4 + a * 0.5),    // 0.4–0.9 aim precision (higher = homes in tighter)
     patience:   round3(0.55 + b * 0.95),  // reaction-time multiplier (higher = slower to react)
     caution:    round3(0.2 + c * 0.7),    // flees earlier when hurt
     reach:      round3(0.8 + a * 1.4),    // slide-attack range multiplier
     speedBias:  round3(0.85 + b * 0.35),  // cruise-speed multiplier
+    slideChance: round3(0.35 + b * 0.45), // 0.35–0.80 likelihood of committing to a lunge
     jumpiness:  round3(0.6 + c * 1.1),    // eagerness to jump for higher ground
     wanderAngle: round3(c * Math.PI * 2), // idle patrol heading
   });
@@ -545,6 +551,8 @@ export class BotBrain {
     this.personality = createBotPersonality(seed ?? name);
     this.time = 0;
     this.lastDebug = null;
+    this._sliding = false;  // latched while a slide lunge is committed (held through the strike)
+    this._nextSlide = null; // earliest time the next lunge may start (cooldown between slides)
   }
 
   /** Advance the clock and return the fresh input frame. */
@@ -579,6 +587,44 @@ export class BotBrain {
     } else if (result.input.jump) {
       this._gapSince = null;
       this._nextJump = this.time + BOT_TUNING.jumpCooldown;
+    }
+
+    // --- AIM ERROR: bots don't steer with machine precision. Apply a per-bot,
+    // time-varying angular offset so they swerve and whiff tackles. computeBotInput
+    // stays a perfect-aim pure function; this is the humanizing layer. Skip while
+    // reacting (x/y already zeroed) so the boot-up hesitation still faces the target.
+    if (result.input.x !== 0 || result.input.y !== 0) {
+      const wobble = Math.sin(this.time * BOT_TUNING.aimWobbleSpeed + (this.personality.wanderAngle || 0));
+      const errorAngle = BOT_TUNING.aimError * (1 - this.personality.accuracy) * wobble;
+      const cos = Math.cos(errorAngle);
+      const sin = Math.sin(errorAngle);
+      const ex = result.input.x * cos - result.input.y * sin;
+      const ey = result.input.x * sin + result.input.y * cos;
+      result.input.x = ex;
+      result.input.y = ey;
+      result.debug.targetRotationY = Math.atan2(ex, ey);
+    }
+
+    // --- SLIDE PACING: don't lunge on every approach. Gate the slide on a per-bot
+    // slideChance plus a cooldown so tackles are occasional and readable. Latch the
+    // commit so an in-progress lunge holds through the strike window (the runtime
+    // arms the hit for slideLinger after the input drops); the latch releases when
+    // the bot leaves the band, and the cooldown spaces out the next lunge.
+    if (result.input.slide && !this._sliding) {
+      if (this._nextSlide == null || this.time >= this._nextSlide) {
+        const bucket = Math.floor(this.time / BOT_TUNING.slideRollInterval);
+        const roll = hashSeed(`${this.personality.seed}#slide${bucket}`);
+        if (roll < this.personality.slideChance) {
+          this._sliding = true;
+          this._nextSlide = this.time + BOT_TUNING.slideCooldown;
+        } else {
+          result.input.slide = false;
+        }
+      } else {
+        result.input.slide = false; // cooling down from the last lunge
+      }
+    } else if (!result.input.slide) {
+      this._sliding = false; // left the band — release the latch
     }
 
     return result.input;

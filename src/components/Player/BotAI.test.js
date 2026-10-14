@@ -610,5 +610,89 @@ describe('BotAI — every bot slide-tackles', () => {
   });
 });
 
+describe('BotAI — reduced accuracy (aim error)', () => {
+  const bot = { x: 0, y: 0, z: 0 };
+  const target = { x: 10, y: 0, z: 0 }; // dead ahead on +X → perfect aim has ~zero lateral (y)
+
+  it('a perfectly accurate bot steers with no aim error', () => {
+    const brain = new BotBrain({ difficulty: BOT_DIFFICULTY.normal });
+    brain.personality = { ...brain.personality, accuracy: 1, wanderAngle: 0 };
+    const pure = computeBotInput({ time: 10, difficulty: BOT_DIFFICULTY.normal, bot, target, personality: brain.personality });
+
+    brain.time = 10;
+    const input = brain.update(0, { bot, target });
+
+    // accuracy 1 → errorAngle is exactly 0 → matches the pure (perfect-aim) input
+    expect(input.x).toBeCloseTo(pure.input.x, 6);
+    expect(input.y).toBeCloseTo(pure.input.y, 6);
+  });
+
+  it('an inaccurate bot swerves off the perfect line', () => {
+    const brain = new BotBrain({ difficulty: BOT_DIFFICULTY.normal });
+    brain.personality = { ...brain.personality, accuracy: 0, wanderAngle: 0 };
+
+    brain.time = 10;
+    const input = brain.update(0, { bot, target });
+
+    // Pure aim toward +X keeps y≈0; the aim-error rotation pushes a lateral
+    // component in, so an inaccurate bot visibly drifts off the straight line.
+    expect(Math.abs(input.y)).toBeGreaterThan(0.01);
+    // Still generally advancing toward the target (x stays dominant & positive)
+    expect(input.x).toBeGreaterThan(0);
+    expect(Math.abs(input.x)).toBeGreaterThan(Math.abs(input.y));
+  });
+
+  it('leaves the pure computeBotInput perfect-aim (error is a runtime layer)', () => {
+    // computeBotInput itself must stay a perfect-aim pure function.
+    const pure = computeBotInput({ time: 10, difficulty: BOT_DIFFICULTY.normal, bot, target });
+    expect(pure.input.y).toBeCloseTo(0, 6);
+  });
+});
+
+describe('BotAI — slide pacing (bots slide less often)', () => {
+  const bot = { x: 0, y: 0, z: 0 };
+  const inBand = { x: 6, y: 0, z: 0 };    // inside (turnHard, attackRange] → slide intent
+  const outOfBand = { x: 40, y: 0, z: 0 };  // beyond attackRange → no slide intent
+
+  it('never slides when slideChance is 0', () => {
+    const brain = new BotBrain({ difficulty: BOT_DIFFICULTY.normal });
+    brain.personality = { ...brain.personality, slideChance: 0 };
+
+    for (let i = 0; i < 60; i++) {
+      const input = brain.update(1 / 60, { bot, target: inBand });
+      expect(input.slide).toBe(false);
+    }
+  });
+
+  it('commits a slide when slideChance is 1 and in range', () => {
+    const brain = new BotBrain({ difficulty: BOT_DIFFICULTY.normal });
+    brain.personality = { ...brain.personality, slideChance: 1 };
+
+    let slid = false;
+    for (let i = 0; i < 60; i++) {
+      const input = brain.update(1 / 60, { bot, target: inBand });
+      if (input.slide) slid = true;
+    }
+    expect(slid).toBe(true);
+  });
+
+  it('holds the committed lunge, then rests on cooldown before the next', () => {
+    const brain = new BotBrain({ difficulty: BOT_DIFFICULTY.normal });
+    brain.personality = { ...brain.personality, slideChance: 1 };
+
+    // Advance past the reaction window and commit a lunge while in band.
+    for (let i = 0; i < 40; i++) brain.update(0.05, { bot, target: inBand });
+    expect(brain.update(0.05, { bot, target: inBand }).slide).toBe(true);
+
+    // Leave the band → the latch releases (no slide intent).
+    expect(brain.update(0.05, { bot, target: outOfBand }).slide).toBe(false);
+
+    // Re-enter the band immediately → still cooling down, so no slide yet.
+    expect(brain.update(0.05, { bot, target: inBand }).slide).toBe(false);
+  });
+});
+
+
+
 
 });
