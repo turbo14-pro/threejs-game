@@ -16,6 +16,7 @@ import {
   pickRandomBotNames,
   randomBotName,
   randomTableRespawn,
+  selectTarget,
   TABLE_RESPAWN_BOUNDS,
   TABLE_RESPAWN_EXCLUSIONS,
   shouldRegisterTag,
@@ -485,5 +486,115 @@ describe('BotAI — power-up → combat boost', () => {
     expect(boost.knockbackForce).toBe(BOT_COMBAT.knockbackForce);
   });
 });
+
+describe('BotAI — target detection & player preference', () => {
+  const botAtOrigin = { x: 0, y: 0, z: 0 };
+  // Deterministic aggression so the score math is exact (real bots range 0.25–0.95).
+  const personality = { aggression: 0.9 };
+
+  it('prefers the player over an equidistant bot (aggro bias)', () => {
+    const chosen = selectTarget(
+      botAtOrigin,
+      [
+        { id: 'bot-1', kind: 'bot', x: 10, y: 0, z: 0, health: 100 },
+        { id: 'player', kind: 'player', x: 10, y: 0, z: 0, health: 100 },
+      ],
+      personality,
+    );
+
+    expect(chosen.id).toBe('player');
+  });
+
+  it('chases the player from well beyond a closer bot (increased detection)', () => {
+    // aggression 0.9 × playerAggroBonus 20 = 18m of "pull". A player 20m out still
+    // beats a bot at 3m (17m gap) — with the old bonus (8) the bot would have won,
+    // so this proves the detection/aggro distance increased.
+    const chosen = selectTarget(
+      botAtOrigin,
+      [
+        { id: 'bot-1', kind: 'bot', x: 3, y: 0, z: 0, health: 100 },
+        { id: 'player', kind: 'player', x: 20, y: 0, z: 0, health: 100 },
+      ],
+      personality,
+    );
+
+    expect(chosen.id).toBe('player');
+  });
+
+  it('never drops the player as a target, even far outside the detection radius', () => {
+    const far = BOT_TUNING.detectionRange + 100;
+    const chosen = selectTarget(
+      botAtOrigin,
+      [{ id: 'player', kind: 'player', x: far, y: 0, z: 0, health: 100 }],
+      personality,
+    );
+
+    // Tapered pull (never zero) → a lone distant player is still hunted down.
+    expect(chosen).not.toBeNull();
+    expect(chosen.id).toBe('player');
+  });
+
+  it('tapers the aggro pull beyond the detection radius so a close bot can win', () => {
+    const far = BOT_TUNING.detectionRange + 100;
+    const chosen = selectTarget(
+      botAtOrigin,
+      [
+        { id: 'bot-1', kind: 'bot', x: 5, y: 0, z: 0, health: 100 },
+        { id: 'player', kind: 'player', x: far, y: 0, z: 0, health: 100 },
+      ],
+      personality,
+    );
+
+    // Beyond the radius the player pull is halved, so the near bot takes priority.
+    expect(chosen.id).toBe('bot-1');
+  });
+
+  it('skips downed candidates when picking a target', () => {
+    const chosen = selectTarget(
+      botAtOrigin,
+      [{ id: 'bot-1', kind: 'bot', x: 3, y: 0, z: 0, health: 0 }],
+      personality,
+    );
+
+    expect(chosen).toBeNull();
+  });
+});
+
+describe('BotAI — every bot slide-tackles', () => {
+  it('enables slide at every difficulty so the adaptive nudge cannot disable it', () => {
+    for (const diff of Object.values(BOT_DIFFICULTY)) {
+      expect(createBotProfile(diff).slide).toBe(true);
+    }
+  });
+
+  it('keeps slide on even when adaptive difficulty drops a bot to its floor', () => {
+    // A bot losing badly gets nudged down; slide must stay armed regardless.
+    const floored = computeBotInput({
+      time: 5,
+      difficulty: BOT_DIFFICULTY.easy,
+      bot: { x: 0, y: 0, z: 0 },
+      target: { x: 6, y: 0, z: 0 },
+      targetScore: 0,
+      botScore: 100000, // pushes adaptive difficulty toward 0
+    });
+
+    expect(floored.input.slide).toBe(true);
+  });
+
+  it('commits the slide from the wider attack range', () => {
+    // Just inside the new attackRange (12) but beyond strike distance — the lunge
+    // should be armed so it connects on approach.
+    const far = computeBotInput({
+      time: 5,
+      difficulty: BOT_DIFFICULTY.normal,
+      bot: { x: 0, y: 0, z: 0 },
+      target: { x: BOT_COMBAT.attackRange - 1, y: 0, z: 0 },
+    });
+
+    expect(far.input.slide).toBe(true);
+    expect(BOT_COMBAT.attackRange).toBeGreaterThan(9);
+  });
+});
+
 
 });

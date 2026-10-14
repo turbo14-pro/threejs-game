@@ -427,6 +427,14 @@ export default function BotPlayer({ bot }) {
         damageBot(target.id, BOT_COMBAT.hitDamage);
         applyBotKnockback(target.id, dir, combatBoost.knockbackForce);
       }
+      // --- BOT ATTACK REPORT: who tackled whom, for how much, at what range ---
+      const victim = target.kind === 'player' ? 'PLAYER' : `bot:${target.id}`;
+      const boosted = combatBoost.knockbackForce > BOT_COMBAT.knockbackForce;
+      console.log(
+        `🗡️  [BOT ATTACK] ${bot.name} slide-tackled ${victim} ` +
+        `for ${BOT_COMBAT.hitDamage} dmg @ ${distance.toFixed(1)}m` +
+        `(knockback ${Math.round(combatBoost.knockbackForce)}${boosted ? ', slide-boosted' : ''})`
+      );
     }
 
     // --- TAG SCORING: drives the bots' side of the adaptive difficulty ---

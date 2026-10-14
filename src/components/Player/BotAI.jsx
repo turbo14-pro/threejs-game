@@ -27,6 +27,10 @@ export const BOT_TUNING = {
   reactionFast: 0.1,     // seconds before reacting to a new target (at difficulty 1)
     engageDistance: 3.2,   // how close (metres) a bot wants to be before "strike" range
   strikeDistance: 4.5,   // distance at which the bot will dash/attack
+  detectionRange: 250,   // metres — full-strength aggro radius; bots lock onto the player
+                         // from across the arena (tapered, never zero, beyond this)
+  playerAggroBonus: 20,  // score weighting that makes a bot strongly prefer the human
+                         // over any equidistant target (drives attack likelihood)
   jumpClearance: 2.2,    // height difference that makes a bot prefer to jump
   turnHardDistance: 2.0, // distance under which steering eases off to avoid overshoot
   jumpDwell: 0.35,       // target must stay above jumpClearance this long before the bot commits
@@ -73,7 +77,7 @@ export const BOT_COMBAT = {
   hitDamage: 12,
   hitCooldown: 1.2,      // seconds between a bot's own landed hits
   hitRange: 2.8,         // centre-to-centre distance that counts as a landing
-  attackRange: 9,        // distance at which a committed bot launches a slide attack
+  attackRange: 12,       // distance at which a committed bot launches a slide attack
   slideSpeedBias: 1.9,   // horizontal speed multiplier during the slide lunge
   slideLinger: 0.35,     // seconds the lunge stays armed after the slide input drops
                          // (the strike window is narrower than one frame at lunge speed)
@@ -265,7 +269,15 @@ export function selectTarget(botPos, candidates = [], personality = createBotPer
       : 1;
 
     const preyBonus = (1 - healthRatio) * 6;                                   // finish the wounded
-    const hunterBonus = candidate.kind === 'player' ? personality.aggression * 8 : 0;
+    // The human is the bot's primary prey. Inside the detection radius an aggressive
+    // bot strongly prefers the player over any equidistant target; beyond it the pull
+    // eases (but never vanishes) so a far-away player is still chased down the arena.
+    const detectionPull = candidate.kind === 'player'
+      ? (distance <= BOT_TUNING.detectionRange ? 1 : 0.5)
+      : 1;
+    const hunterBonus = candidate.kind === 'player'
+      ? personality.aggression * BOT_TUNING.playerAggroBonus * detectionPull
+      : 0;
     const score = distance - preyBonus - hunterBonus;
 
     if (!best || score < best.score) {
@@ -298,7 +310,7 @@ export function createBotProfile(difficulty = BOT_DIFFICULTY.normal, personality
     speed: (0.45 + 0.4 * d) * person.speedBias,
     sprint: d >= 0.5,
     jump: d >= 0.3,
-    slide: d >= BOT_DIFFICULTY.normal,
+    slide: true, // every bot slide-tackles (never let the adaptive nudge disable it)
     dash: d >= 0.7,
     aggression: d,
     attackRange: BOT_COMBAT.attackRange * person.reach,
