@@ -9,6 +9,8 @@
  * can reuse the human movement / physics / dash / slide pipeline without changes there.
  */
 
+import { POWERUP_EFFECTS } from '../../config/playerConfig';
+
 // Difficulty presets — 0 (easy) → 1 (ruthless)
 export const BOT_DIFFICULTY = {
   easy:   0.25,
@@ -80,6 +82,28 @@ export const BOT_COMBAT = {
   knockbackPop: 13,      // upward velocity given to a knocked-back victim
   respawnDelay: 3,       // seconds before a downed bot is back on the arena
 };
+
+// ---------------------------------------------------------------------------
+// POWER-UP → COMBAT BOOST
+// A `slide` coin makes the bot lunge faster and hit harder for the buff's
+// duration (mirrors the player's slide power-up: blast power + knockback).
+// Every other category — and no power-up — is a no-op that returns the base
+// BOT_COMBAT values, so jump/dash/speed coins never change bot combat.
+// ---------------------------------------------------------------------------
+export function getBotPowerUpCombatBoost(powerUp) {
+  const base = {
+    slideSpeedBias: BOT_COMBAT.slideSpeedBias,
+    knockbackForce: BOT_COMBAT.knockbackForce,
+  };
+  if (!powerUp || powerUp.category !== 'slide') return base;
+  const fx = POWERUP_EFFECTS.slide?.[powerUp.rarity];
+  if (!fx) return base;
+  return {
+    slideSpeedBias: base.slideSpeedBias * (Number.isFinite(fx.blastPowerMultiplier) ? fx.blastPowerMultiplier : 1),
+    knockbackForce: base.knockbackForce * (Number.isFinite(fx.knockbackMultiplier) ? fx.knockbackMultiplier : 1),
+  };
+}
+
 
 // --- ARENA GEOMETRY -----------------------------------------------------------
 // From Arena.jsx: the battle table's top surface is y=0 (RigidBody [0,-1,0] + 600x2x600),

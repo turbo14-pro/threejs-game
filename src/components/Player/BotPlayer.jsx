@@ -14,6 +14,7 @@ import {
   randomBotName,
   randomTableRespawn,
   selectTarget,
+  getBotPowerUpCombatBoost,
 } from './BotAI.jsx';
 import { registerBot, unregisterBot, getBotCandidates, damageBot, applyBotKnockback } from './botRegistry.js';
 import { getLocalPlayerWorldPos, getActivePowerUps } from '../World/items/PowerUpCoin.jsx';
@@ -153,8 +154,9 @@ export default function BotPlayer({ bot }) {
         s.grounded = false;
       },
       // Power-up pickup: mirror the player's single-slot powerUp with an expiry so
-      // the buff auto-clears. Only `speed` currently affects bot movement; other
-      // categories are held but inert (bots don't jump/dash/slide off power-ups).
+      // the buff auto-clears. `speed` boosts movement; `slide` boosts the lunge
+      // speed and hit knockback (see getBotPowerUpCombatBoost in useFrame). The
+      // remaining categories (jump/dash) are held but inert for bots.
       collectPowerUp: (category, rarity) => {
         const s = stateRef.current;
         const now = nowRef.current;
@@ -333,8 +335,11 @@ export default function BotPlayer({ bot }) {
     const speedMult = powerUpActive && s.powerUp.category === 'speed'
       ? (POWERUP_EFFECTS.speed?.[s.powerUp.rarity]?.speedMultiplier ?? 1)
       : 1;
+    // Slide power-up boosts the lunge speed and the knockback the bot deals —
+    // computed once per frame and reused by the slide-attack block below.
+    const combatBoost = getBotPowerUpCombatBoost(powerUpActive ? s.powerUp : null);
     const baseSpeed = (input.sprint ? BOT_SPRINT_SPEED : BOT_WALK_SPEED) * speedMult;
-    const slideBias = input.slide ? BOT_COMBAT.slideSpeedBias : 1;
+    const slideBias = input.slide ? combatBoost.slideSpeedBias : 1;
     const moveX = steerX * baseSpeed * slideBias * step;
     const moveZ = steerZ * baseSpeed * slideBias * step;
     const moveLen = Math.hypot(moveX, moveZ);
@@ -416,11 +421,11 @@ export default function BotPlayer({ bot }) {
       s.slideArmedUntil = 0; // one hit per lunge
       const dir = new THREE.Vector3(target.x - s.pos.x, 0, target.z - s.pos.z).normalize();
       if (target.kind === 'player') {
-        store.triggerKnockback({ x: dir.x, y: 0, z: dir.z }, BOT_COMBAT.knockbackForce);
+        store.triggerKnockback({ x: dir.x, y: 0, z: dir.z }, combatBoost.knockbackForce);
         store.damagePlayer(BOT_COMBAT.hitDamage);
       } else {
         damageBot(target.id, BOT_COMBAT.hitDamage);
-        applyBotKnockback(target.id, dir, BOT_COMBAT.knockbackForce);
+        applyBotKnockback(target.id, dir, combatBoost.knockbackForce);
       }
     }
 

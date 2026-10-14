@@ -3,12 +3,14 @@ import {
   BOT_DIFFICULTY,
   BOT_TUNING,
   BOT_NAME_POOL,
+  BOT_COMBAT,
   TAG_COOLDOWN,
   BotBrain,
   buildBotRoster,
   computeAdaptiveDifficulty,
   computeBotInput,
   createBotProfile,
+  getBotPowerUpCombatBoost,
   makeBotName,
   normalizeBotCount,
   pickRandomBotNames,
@@ -426,4 +428,48 @@ describe('BotAI — BotBrain', () => {
 
     expect(brain.name).toBe(BOT_NAME_POOL[2]);
   });
+
+describe('BotAI — power-up → combat boost', () => {
+  it('returns base BOT_COMBAT values with no power-up', () => {
+    const boost = getBotPowerUpCombatBoost(null);
+
+    expect(boost.slideSpeedBias).toBe(BOT_COMBAT.slideSpeedBias);
+    expect(boost.knockbackForce).toBe(BOT_COMBAT.knockbackForce);
+  });
+
+  it('leaves combat untouched for non-slide power-ups (speed/jump/dash stay inert)', () => {
+    for (const category of ['speed', 'jump', 'dash']) {
+      const boost = getBotPowerUpCombatBoost({ category, rarity: 'diamond' });
+      expect(boost.slideSpeedBias).toBe(BOT_COMBAT.slideSpeedBias);
+      expect(boost.knockbackForce).toBe(BOT_COMBAT.knockbackForce);
+    }
+  });
+
+  it('scales slide lunge speed and knockback by the slide rarity multipliers', () => {
+    const gold = getBotPowerUpCombatBoost({ category: 'slide', rarity: 'gold' });
+
+    // gold: blastPowerMultiplier 1.70, knockbackMultiplier 1.5
+    expect(gold.slideSpeedBias).toBeCloseTo(BOT_COMBAT.slideSpeedBias * 1.70);
+    expect(gold.knockbackForce).toBeCloseTo(BOT_COMBAT.knockbackForce * 1.5);
+  });
+
+  it('diamond slide is the strongest tier', () => {
+    const diamond = getBotPowerUpCombatBoost({ category: 'slide', rarity: 'diamond' });
+    const bronze = getBotPowerUpCombatBoost({ category: 'slide', rarity: 'bronze' });
+
+    // diamond: 2.0x blast + 2.0x knockback; bronze: 1.0x/1.0x (no change)
+    expect(diamond.slideSpeedBias).toBeCloseTo(BOT_COMBAT.slideSpeedBias * 2.0);
+    expect(diamond.knockbackForce).toBeCloseTo(BOT_COMBAT.knockbackForce * 2.0);
+    expect(bronze.slideSpeedBias).toBe(BOT_COMBAT.slideSpeedBias);
+    expect(bronze.knockbackForce).toBe(BOT_COMBAT.knockbackForce);
+  });
+
+  it('falls back to base values for an unknown slide rarity', () => {
+    const boost = getBotPowerUpCombatBoost({ category: 'slide', rarity: 'mythic' });
+
+    expect(boost.slideSpeedBias).toBe(BOT_COMBAT.slideSpeedBias);
+    expect(boost.knockbackForce).toBe(BOT_COMBAT.knockbackForce);
+  });
+});
+
 });
