@@ -1,11 +1,17 @@
 import React, { useState } from 'react';
 import { useGameStore } from '../../store/useGameStore';
+import { useMenuKeyboard } from '../../hooks/useMenuKeyboard.js';
 import Options from './Options.jsx';
 
 export default function MainMenu() {
   const setGameState = useGameStore(state => state.setGameState);
   
   const [page, setPage] = useState('START'); // 'START' | 'OPTIONS'
+  const menuRef = useMenuKeyboard({
+    enabled: true,
+    screen: page,
+    onBack: page === 'OPTIONS' ? () => setPage('START') : undefined,
+  });
 
   const handleStartGame = () => {
     setGameState('PLAYING');
@@ -19,7 +25,7 @@ export default function MainMenu() {
 
   return (
     <div className="menu-overlay">
-      <div className="menu-content">
+      <div className="menu-content" ref={menuRef}>
         
         {page === 'START' && (
           <>

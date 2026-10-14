@@ -10,6 +10,8 @@ class SoundManager {
     this.audioLoader = new THREE.AudioLoader();
     this.sounds = new Map(); // Buffer Cache
     this.instances = new Set(); // Active sounds
+    this.masterGain = null; // Master SFX gain (not used for connect; volume multiplier instead)
+    this.masterVolume = 1.0; // Global SFX multiplier (0-1)
   }
 
   // Initialize with a camera's listener
@@ -17,7 +19,14 @@ class SoundManager {
     if (this.listener) return;
     this.listener = new THREE.AudioListener();
     camera.add(this.listener);
+    // Resume AudioContext after user interaction (browser policy)
+    if (this.listener.context && this.listener.context.state === 'suspended') {
+      this.listener.context.resume();
+    }
     console.log('[Sound] AudioListener initialized on camera');
+    // Master gain node for global SFX volume
+    this.masterGain = null; // Not used for connect (THREE.Audio.connect expects Audio nodes)
+    this.masterVolume = 1.0;
   }
 
   // Load a sound into memory
@@ -43,7 +52,7 @@ class SoundManager {
 
     const sound = new THREE.Audio(this.listener);
     sound.setBuffer(this.sounds.get(name));
-    sound.setVolume(volume);
+    sound.setVolume(volume * (this.masterVolume || 1.0));
     sound.setLoop(loop);
     sound.play();
 
@@ -59,7 +68,7 @@ class SoundManager {
     const sound = new THREE.PositionalAudio(this.listener);
     sound.setBuffer(this.sounds.get(name));
     sound.setVolume(volume);
-    sound.setRefDistance(refDistance);
+    sound.setVolume(volume * (this.masterVolume || 1.0));
     sound.setLoop(loop);
     sound.play();
 
@@ -70,6 +79,11 @@ class SoundManager {
       this.instances.delete(sound);
     };
     return sound;
+  }
+
+  // Set master SFX volume (0.0 - 1.0) — applied as multiplier to all sounds
+  setMasterVolume(value) {
+    this.masterVolume = Math.max(0, Math.min(1, value));
   }
 
   // Stop all sounds (Clean up)

@@ -2,6 +2,7 @@ import React, { useMemo, useRef, useCallback } from 'react';
 import * as THREE from 'three';
 import { RigidBody, CylinderCollider } from '@react-three/rapier';
 import { useTexture } from '@react-three/drei';
+import { soundManager } from '../../../utils/SoundManager';
 import { useFrame } from '@react-three/fiber';
 
 useTexture.preload('/materials/sonicboom-beans.webp');
@@ -179,6 +180,8 @@ export function TinCanPhysics({ position, rotation, color, mass = 1, linearDampi
     const slideMultiplier = other.userData?.slideMultiplier || 1;
     const force = Math.max(speed * 800 * slideMultiplier, 25);
     console.log("🥫 TinCan hit! speed:", speed, "multiplier:", slideMultiplier, "force:", force);
+    // Sound is non-blocking; guard so it never interferes with physics
+    try { if (soundManager && soundManager.listener) soundManager.playPositional('metal-ground', rigidRef.current, 1.0, 3, false); } catch (e) {}
 
     rigidRef.current.applyImpulse({
       x: finalDir.x * force,

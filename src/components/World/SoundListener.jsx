@@ -19,6 +19,15 @@ export default function SoundListener() {
     soundManager.load('jump', '/audio/jump.mp3');
     soundManager.load('land', '/audio/land.mp3');
     soundManager.load('splat', '/audio/splat.mp3');
+    soundManager.load('running', '/audio/running.ogg');
+    soundManager.load('walk', '/audio/walk.ogg');
+    soundManager.load('metal-hit', '/audio/metal-hit.ogg');
+    soundManager.load('metal-ground', '/audio/metal-ground.ogg');
+
+    // Resume AudioContext on first user gesture (browser policy)
+    const resume = () => { if (soundManager.listener?.context?.state === 'suspended') soundManager.listener.context.resume(); };
+    window.addEventListener('click', resume, { once: true });
+    window.addEventListener('keydown', resume, { once: true });
   }, [camera]);
 
   return null;

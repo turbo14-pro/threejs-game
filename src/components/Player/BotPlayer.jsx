@@ -51,10 +51,15 @@ const BOT_WALK_SPEED = 11;
 const MAX_STEP = 0.05;
 // The arena's ground/platform collision group, as used by PlayerController's ground probe
 const GROUND_FILTER = 0x00010001;
-// CapsuleCollider args are [halfHeight, radius] = [1.5, 1], so the body centre sits this
-// far above the feet. Ground "sticks" must land at groundY + this offset — landing at
-// groundY itself is what used to sink bots half-way into the floor.
-const BODY_OFFSET_Y = 2.5;
+// CapsuleCollider args are [halfHeight, radius]; the horizontal wall sweep below casts
+// this exact capsule, so the probe covers the FULL body height. The old mid-height
+// ball probe let a launched bot sail over box tops and through obstacles mid-flight.
+const CAPSULE_HALF_HEIGHT = 1.5;
+const CAPSULE_RADIUS = 1;
+// The body centre sits this far above the feet. Ground "sticks" must land at
+// groundY + this offset — landing at groundY itself is what used to sink bots
+// half-way into the floor.
+const BODY_OFFSET_Y = CAPSULE_HALF_HEIGHT + CAPSULE_RADIUS; // 2.5
     // Snap down to a surface within this distance instead of floating above it
 const MAX_STICK_DOWN = 0.6;
 // The ground probe casts a Ball; its contact point is BALL_RADIUS above the true surface
@@ -126,12 +131,16 @@ export default function BotPlayer({ bot }) {
   const [anim, setAnim] = useState({ mv: false, dir: 'for', spr: false, jp: 'none', sl: false });
 
   const groundShape = useMemo(() => (rapier ? new rapier.Ball(0.5) : null), [rapier]);
-  // Horizontal probe matching the capsule's radius (1.0), used to stop the kinematic
-  // bot at fixed geometry (cereal boxes, arena walls) the solver would otherwise let
-  // it phase through. A kinematic body is only pushed by dynamic bodies, not stopped
-  // by fixed ones — hence this manual sweep. The probe radius equals the collider
-  // radius, so the sweep's time-of-impact is exactly how far the body centre may travel.
-  const wallShape = useMemo(() => (rapier ? new rapier.Ball(1.0) : null), [rapier]);
+  // Full-body capsule probe (same dimensions as the CapsuleCollider), used to stop the
+  // kinematic bot at fixed geometry (cereal boxes, arena walls) the solver would
+  // otherwise let it phase through. A kinematic body is only pushed by dynamic bodies,
+  // not stopped by fixed ones — hence this manual sweep. Because the probe IS the body
+  // capsule, the sweep's time-of-impact is exactly how far the body centre may travel,
+  // at every height — including a knockback flight over/into an obstacle.
+  const wallShape = useMemo(
+    () => (rapier ? new rapier.Capsule(CAPSULE_HALF_HEIGHT, CAPSULE_RADIUS) : null),
+    [rapier],
+  );
   const addMatchScore = useGameStore(s => s.addMatchScore);
   // Same animation frame config the player's PlayerController reads — launch/land/
   // doublejump timings for advanceBotJump come from the very JSON the model plays.
@@ -377,9 +386,13 @@ export default function BotPlayer({ bot }) {
       console.log("💀 Bot fell off the arena — respawning:", bot.name);
     }
 
-    // --- KNOCKBACK: decaying displacement from the last slide hit received ---
+    // --- KNOCKBACK DECAY: the launch velocity is NOT applied to s.pos directly —
+    // it's folded into the swept horizontal move below (HORIZONTAL block) so a bot
+    // flying through the air from a slide impact is still stopped by obstacles.
+    // Displacing s.pos here was unswept motion: with steering zeroed during the
+    // launch window the wall sweep never ran, and a knocked bot phased straight
+    // through cereal boxes at up to 110 m/s * step per frame.
     if (s.knockVec.lengthSq() > 0.01) {
-      s.pos.addScaledVector(s.knockVec, step);
       s.knockVec.multiplyScalar(Math.max(0, 1 - step / BOT_COMBAT.knockbackDuration));
     } else if (s.knockVec.lengthSq() > 0) {
       s.knockVec.set(0, 0, 0);
@@ -401,14 +414,16 @@ export default function BotPlayer({ bot }) {
     const combatBoost = getBotPowerUpCombatBoost(powerUpActive ? s.powerUp : null);
     const baseSpeed = (input.sprint ? BOT_SPRINT_SPEED : BOT_WALK_SPEED) * speedMult;
     const slideBias = input.slide ? combatBoost.slideSpeedBias : 1;
-    const moveX = steerX * baseSpeed * slideBias * step;
-    const moveZ = steerZ * baseSpeed * slideBias * step;
+    // Cruise + knockback coast in ONE velocity so the sweep below covers the entire
+    // horizontal displacement — including a mid-flight launch from a slide impact.
+    const moveX = (steerX * baseSpeed * slideBias + s.knockVec.x) * step;
+    const moveZ = (steerZ * baseSpeed * slideBias + s.knockVec.z) * step;
     const moveLen = Math.hypot(moveX, moveZ);
 
     // Kinematic bodies are pushed BY dynamic bodies but are NOT stopped BY fixed ones,
     // so without this sweep the bot phases straight through the (fixed) cereal boxes
-    // while the (dynamic) cans/player still shove it. Cast the capsule probe along the
-    // intended move against FIXED geometry only; stop at contact and slide along it.
+    // while the (dynamic) cans/player still shove it. Sweep the full body capsule along
+    // the intended move against FIXED geometry only; stop at contact and slide along it.
     let appliedMove = false;
     if (moveLen > 1e-4 && wallShape) {
       const dirX = moveX / moveLen;
@@ -433,19 +448,24 @@ export default function BotPlayer({ bot }) {
       if (hit) {
         const toi = hit.toi ?? hit.time_of_impact;
         if (typeof toi === 'number' && Number.isFinite(toi) && toi < moveLen) {
-          // Probe ball radius (1.0) equals the capsule radius, so `toi` is exactly how
-          // far the body centre may travel before touching. Stop just short of it...
-          const allowed = Math.max(0, toi - WALL_STOP_SKIN);
-          let advX = dirX * allowed;
-          let advZ = dirZ * allowed;
-          // ...then convert the leftover into a slide along the wall tangent so the
-          // bot glides around boxes instead of sticking to them. The tangent is
-          // independent of the hit-normal's orientation.
+          // The probe IS the body capsule, so `toi` is exactly how far the body centre
+          // may travel before touching. Stop just short of it — but only for contacts
+          // that are actually walls: a near-vertical normal is a floor/ceiling graze
+          // (the capsule's own ground contact, once dilated by WALL_CAST_GAP) and must
+          // never freeze or redirect the bot, so such hits fall through to the raw move.
           const n = hit.normal1;
-          if (n && Number.isFinite(n.x) && Number.isFinite(n.z) && (n.x * n.x + n.z * n.z) > 1e-4) {
-            const nLen = Math.hypot(n.x, n.z);
+          const nLen = n && Number.isFinite(n.x) && Number.isFinite(n.z)
+            ? Math.hypot(n.x, n.z)
+            : 0;
+          if (nLen > 0.2) {
             const nx = n.x / nLen;
             const nz = n.z / nLen;
+            const allowed = Math.max(0, toi - WALL_STOP_SKIN);
+            let advX = dirX * allowed;
+            let advZ = dirZ * allowed;
+            // ...then convert the leftover into a slide along the wall tangent so the
+            // bot glides around boxes instead of sticking to them. The tangent is
+            // independent of the hit-normal's orientation.
             const dn = dirX * nx + dirZ * nz;
             let tx = dirX - nx * dn;
             let tz = dirZ - nz * dn;
@@ -455,10 +475,10 @@ export default function BotPlayer({ bot }) {
               advX += (tx / tLen) * remain;
               advZ += (tz / tLen) * remain;
             }
+            s.pos.x += advX;
+            s.pos.z += advZ;
+            appliedMove = true;
           }
-          s.pos.x += advX;
-          s.pos.z += advZ;
-          appliedMove = true;
         }
       }
     }
@@ -468,14 +488,11 @@ export default function BotPlayer({ bot }) {
     }
 
     // --- VELOCITY: track this frame's horizontal displacement as a velocity so a
-    // Newtonian impact (below) can tell who's driving into whom. Knockback coast
-    // counts too — a launched bot is moving fast even with no steering input. ---
+    // Newtonian impact (below) can tell who's driving into whom. moveX/moveZ already
+    // include the knockback coast (folded in above), so a launched bot reads as fast
+    // movement here even with no steering input. ---
     if (step > 1e-5) {
-      s.vel.set(
-        (moveX + s.knockVec.x * step) / step,
-        0,
-        (moveZ + s.knockVec.z * step) / step,
-      );
+      s.vel.set(moveX / step, 0, moveZ / step);
     }
 
     // --- SLIDE ATTACK: the lunge stays armed for slideLinger after the slide input

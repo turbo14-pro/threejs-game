@@ -113,6 +113,8 @@ export default function PlayerController({ sendUpdate }) {
   const worldVelocityRef = useRef(new THREE.Vector3());
   const preImpactVelocity = useRef(new THREE.Vector3());
   const isSlidingRef = useRef(false); // Mirror isSliding state for collision handler (avoids stale closure)
+  const runningSoundRef = useRef(null); // Positional loop for running footsteps
+  const walkingSoundRef = useRef(null); // Positional loop for walking
 
   // Load animation configuration dynamically
   useEffect(() => {
@@ -333,7 +335,7 @@ export default function PlayerController({ sendUpdate }) {
         z: currentVel.z
       }, true);
       
-      soundManager.playPositional('hit', playerGroupRef.current, 0.5);
+      soundManager.playPositional('hit', playerGroupRef.current, 1.0);
 
       // Yield control for 1.2s to allow the flight to finish
       setTimeout(() => setIsStunned(false), 1200);
@@ -634,7 +636,7 @@ export default function PlayerController({ sendUpdate }) {
         currentPhase = 'land';
         const landDuration = (animConfig?.jump?.landFrames || 10) / (30 * 1.6);
         jumpTimer.current = landDuration;
-        soundManager.playPositional('land', playerGroupRef.current, 0.5);
+        soundManager.playPositional('land', playerGroupRef.current, 1.0);
       }
 
       if (currentPhase === 'land' || currentPhase === 'none') {
@@ -644,7 +646,7 @@ export default function PlayerController({ sendUpdate }) {
           jumpTimer.current = config.launchFrames / 30; // Use JSON values
           physicsJumpTriggered.current = false;
           setJumpTransitionId((value) => value + 1);
-          soundManager.playPositional('jump', playerGroupRef.current, 0.4);
+          soundManager.playPositional('jump', playerGroupRef.current, 1.0);
         } else if (currentPhase === 'land') {
           jumpTimer.current -= delta;
           if (jumpTimer.current <= 0 || (direction.lengthSq() > 0.01 && currentlyGrounded)) {
@@ -687,7 +689,7 @@ export default function PlayerController({ sendUpdate }) {
         jumpTimer.current = Math.max(PLAYER_BASELINE.movement.doubleJumpDuration, frames / 30);
         setJumpTransitionId((value) => value + 1);
         
-        soundManager.playPositional('jump', playerGroupRef.current, 0.3); // Add double jump sound
+        soundManager.playPositional('jump', playerGroupRef.current, 1.0); // Add double jump sound
       }
 
       if (currentPhase === 'doublejump') {
@@ -755,9 +757,40 @@ export default function PlayerController({ sendUpdate }) {
     if (currentlyGrounded && moving && currentPhase === 'none') {
       const footstepDelay = walkingInput ? 400 : 250; // Faster frequency when sprinting
       if (Date.now() - lastFootstepTime.current > footstepDelay) {
-        soundManager.playPositional('footstep', playerGroupRef.current, 0.2, 3);
+        soundManager.playPositional('footstep', playerGroupRef.current, 1.0, 3);
         lastFootstepTime.current = Date.now();
       }
+    }
+
+    // WALKING LOOP (slower, lower volume)
+    const shouldWalk = currentlyGrounded && moving && currentPhase === 'none' && walkingInput && playerGroupRef.current;
+    if (shouldWalk && !walkingSoundRef.current) {
+      console.log('[SoundDebug] walking loop START');
+      walkingSoundRef.current = soundManager.playPositional('walk', playerGroupRef.current, 1.0, 2, true);
+      if (!walkingSoundRef.current) walkingSoundRef.current = soundManager.playGlobal('walk', 1.0, true);
+    } else if (!shouldWalk && walkingSoundRef.current) {
+      console.log('[SoundDebug] walking loop STOP');
+      if (walkingSoundRef.current.isPlaying) walkingSoundRef.current.stop();
+      if (playerGroupRef.current && walkingSoundRef.current.parent === playerGroupRef.current) playerGroupRef.current.remove(walkingSoundRef.current);
+      walkingSoundRef.current = null;
+    }
+
+    // RUNNING LOOP (4-step cycle from running.ogg) — start/stop, not restart
+    const shouldRun = currentlyGrounded && moving && currentPhase === 'none' && playerGroupRef.current;
+    if (shouldRun && !runningSoundRef.current) {
+      if (!soundManager.listener && camera) soundManager.init(camera);
+      runningSoundRef.current = soundManager.playPositional('running', playerGroupRef.current, 1.0, 1.5, true);
+      if (!runningSoundRef.current) {
+        runningSoundRef.current = soundManager.playGlobal('running', 1.0, true);
+      }
+      console.log('[SoundDebug] play result:', !!runningSoundRef.current, 'isPlaying:', runningSoundRef.current?.isPlaying);
+    } else if (!shouldRun && runningSoundRef.current) {
+      console.log('[SoundDebug] running loop STOP');
+      if (runningSoundRef.current.isPlaying) runningSoundRef.current.stop();
+      if (playerGroupRef.current && runningSoundRef.current.parent === playerGroupRef.current) {
+        playerGroupRef.current.remove(runningSoundRef.current);
+      }
+      runningSoundRef.current = null;
     }
 
     // Contextual movement: Backwards logic
@@ -1069,6 +1102,10 @@ export default function PlayerController({ sendUpdate }) {
     impactTracker.current.add(uniqueId);
     // Clean up the id after a brief window so future collisions can be detected again
     setTimeout(() => impactTracker.current.delete(uniqueId), 2000);
+
+    if (isTinCan) {
+      soundManager.playPositional('metal-hit', playerGroupRef.current, 1.0, 3, false);
+    }
 
     // Only react to sliding attacks (not when we are the victim)
     if (isSlidingRef.current) {
