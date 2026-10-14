@@ -3,6 +3,7 @@ import { useFrame } from '@react-three/fiber';
 import { RigidBody } from '@react-three/rapier';
 import * as THREE from 'three';
 import { useGameStore } from '../../../store/useGameStore';
+import { getBotPositions, deliverPowerUp } from '../../Player/botRegistry.js';
 
 const _playerPos = new THREE.Vector3();
 export const setLocalPlayerWorldPos = (v) => _playerPos.copy(v);
@@ -199,6 +200,27 @@ export function PowerUpCoin({
         unregisterPowerUp(coinIdRef.current);
         setPhase('collected');
         onCollected?.();
+        return;
+      }
+
+      // CPU bots collect tokens too — hand it to the nearest living bot in range.
+      const nearBots = getBotPositions(null, coinPos.x, drawnY, coinPos.z, COLLECT_DISTANCE);
+      if (nearBots.length > 0) {
+        let best = null;
+        let bestDist = Infinity;
+        for (const b of nearBots) {
+          const bx = b.x - coinPos.x;
+          const by = b.y - drawnY;
+          const bz = b.z - coinPos.z;
+          const d = bx * bx + by * by + bz * bz;
+          if (d < bestDist) { bestDist = d; best = b; }
+        }
+        if (best) {
+          deliverPowerUp(best.id, category, rarity);
+          unregisterPowerUp(coinIdRef.current);
+          setPhase('collected');
+          onCollected?.();
+        }
       }
     }
   });

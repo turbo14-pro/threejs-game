@@ -19,6 +19,7 @@ import { registerBot, unregisterBot, getBotCandidates, damageBot, applyBotKnockb
 import { getLocalPlayerWorldPos, getActivePowerUps } from '../World/items/PowerUpCoin.jsx';
 import { BOT_DIFFICULTY } from './BotAI.jsx';
 import { SKINS } from '../../data/registries';
+import { POWERUP_DURATIONS, POWERUP_EFFECTS } from '../../config/playerConfig';
 
 /**
  * THE BOT PLAYER
@@ -107,6 +108,8 @@ export default function BotPlayer({ bot }) {
             knockVec: new THREE.Vector3(),
     knockUntil: 0, // end-time of the current knockback window (steering locked during)
     fellOff: false, // latched while falling off the table — cleared on respawn
+    powerUp: null, // { category, rarity } the bot is currently holding
+    powerUpUntil: 0, // clock time the current power-up expires
     lastDebug: null,
   });
 
@@ -149,6 +152,15 @@ export default function BotPlayer({ bot }) {
         s.knockUntil = now + BOT_COMBAT.knockbackDuration;
         s.grounded = false;
       },
+      // Power-up pickup: mirror the player's single-slot powerUp with an expiry so
+      // the buff auto-clears. Only `speed` currently affects bot movement; other
+      // categories are held but inert (bots don't jump/dash/slide off power-ups).
+      collectPowerUp: (category, rarity) => {
+        const s = stateRef.current;
+        const now = nowRef.current;
+        s.powerUp = { category, rarity };
+        s.powerUpUntil = now + (POWERUP_DURATIONS[rarity] ?? POWERUP_DURATIONS.bronze) * 1000;
+      },
     });
     return () => unregisterBot(bot.id);
   }, [bot.id]);
@@ -162,6 +174,12 @@ export default function BotPlayer({ bot }) {
     const now = frameState.clock.elapsedTime;
     nowRef.current = now;
     const store = useGameStore.getState();
+
+    // --- POWER-UP EXPIRY: clear the buff when its duration runs out ---
+    if (s.powerUp && now >= s.powerUpUntil) {
+      s.powerUp = null;
+      s.powerUpUntil = 0;
+    }
 
     // --- DOWNED: respawn at a fresh random table spot after the delay ---
     // (Falling off the table also routes through here — see FELL OFF below.)
@@ -182,6 +200,8 @@ export default function BotPlayer({ bot }) {
       s.downUntil = 0;
       s.fellOff = false;
       s.grounded = true;
+      s.powerUp = null; // buffs don't survive a respawn
+      s.powerUpUntil = 0;
       // Fresh random name tag every respawn — try to avoid repeating the old one
       setTagName((prev) => {
         let next = randomBotName();
@@ -308,7 +328,12 @@ export default function BotPlayer({ bot }) {
     const inKnockback = now < s.knockUntil;
     const steerX = inKnockback ? 0 : input.x;
     const steerZ = inKnockback ? 0 : input.y;
-    const baseSpeed = input.sprint ? BOT_SPRINT_SPEED : BOT_WALK_SPEED;
+    // Speed power-up multiplies movement speed (matches the player's speed buff)
+    const powerUpActive = s.powerUp && now < s.powerUpUntil;
+    const speedMult = powerUpActive && s.powerUp.category === 'speed'
+      ? (POWERUP_EFFECTS.speed?.[s.powerUp.rarity]?.speedMultiplier ?? 1)
+      : 1;
+    const baseSpeed = (input.sprint ? BOT_SPRINT_SPEED : BOT_WALK_SPEED) * speedMult;
     const slideBias = input.slide ? BOT_COMBAT.slideSpeedBias : 1;
     const moveX = steerX * baseSpeed * slideBias * step;
     const moveZ = steerZ * baseSpeed * slideBias * step;

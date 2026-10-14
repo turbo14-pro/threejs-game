@@ -42,3 +42,32 @@ export const applyBotKnockback = (id, dir, force) => {
   if (api && typeof api.applyKnockback === 'function') api.applyKnockback(dir, force);
 };
 
+/** Living bots' current positions (downed/eliminated bots are skipped).
+ *  When cx/cy/cz/radius are given, only bots within `radius` of that point are
+ *  returned (used for power-up pickup proximity checks). */
+export const getBotPositions = (excludeId, cx, cy, cz, radius) => {
+  const list = [];
+  const r2 = typeof radius === 'number' ? radius * radius : Infinity;
+  for (const [id, api] of bots) {
+    if (id === excludeId || !api) continue;
+    const pos = api.getPosition?.();
+    if (!pos || !Number.isFinite(pos.x)) continue;
+    const health = typeof api.health === 'number' ? api.health : 1;
+    if (health <= 0) continue;
+    if (r2 !== Infinity) {
+      const dx = pos.x - cx;
+      const dy = pos.y - cy;
+      const dz = pos.z - cz;
+      if (dx * dx + dy * dy + dz * dz > r2) continue;
+    }
+    list.push({ id, x: pos.x, y: pos.y, z: pos.z });
+  }
+  return list;
+};
+
+/** Deliver a power-up to a bot so it gains a temporary buff (speed, etc.). */
+export const deliverPowerUp = (id, category, rarity) => {
+  const api = bots.get(id);
+  if (api && typeof api.collectPowerUp === 'function') api.collectPowerUp(category, rarity);
+};
+
