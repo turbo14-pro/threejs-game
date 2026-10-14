@@ -3,6 +3,7 @@ import {
   registerBot,
   unregisterBot,
   getBotCandidates,
+  getBotVelocity,
   damageBot,
   applyBotKnockback,
   getBotPositions,
