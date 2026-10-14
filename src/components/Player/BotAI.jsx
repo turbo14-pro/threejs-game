@@ -602,6 +602,10 @@ export class BotBrain {
       dir: 'for',
       spr: !!input.sprint,
       jp: grounded ? 'none' : 'air',
+      // Drive the slide-tackle clip. The brain commits to a lunge via input.slide
+      // (inside attack range); without forwarding this the bot's impact lands but
+      // the model keeps playing walk/run — the slide animation never shows.
+      sl: !!input.slide,
     };
   }
 }

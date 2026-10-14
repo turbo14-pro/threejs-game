@@ -114,7 +114,7 @@ export default function BotPlayer({ bot }) {
     lastDebug: null,
   });
 
-  const [anim, setAnim] = useState({ mv: false, dir: 'for', spr: false, jp: 'none' });
+  const [anim, setAnim] = useState({ mv: false, dir: 'for', spr: false, jp: 'none', sl: false });
 
   const groundShape = useMemo(() => (rapier ? new rapier.Ball(0.5) : null), [rapier]);
   // Horizontal probe matching the capsule's radius (1.0), used to stop the kinematic
@@ -455,7 +455,7 @@ export default function BotPlayer({ bot }) {
     // --- ANIMATION: only re-render on an actual change, not every frame ---
     const next = brain.getAnimationState(input, s.grounded);
     setAnim(prev => (
-      prev.mv === next.mv && prev.dir === next.dir && prev.spr === next.spr && prev.jp === next.jp
+      prev.mv === next.mv && prev.dir === next.dir && prev.spr === next.spr && prev.jp === next.jp && prev.sl === next.sl
         ? prev
         : next
     ));
@@ -492,6 +492,7 @@ export default function BotPlayer({ bot }) {
           moveDir={anim.dir}
           isSprinting={anim.spr}
           jumpPhase={anim.jp}
+          isSliding={anim.sl}
           skinOverride={skin}
         />
       </group>

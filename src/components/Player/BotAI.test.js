@@ -438,6 +438,20 @@ describe('BotAI — BotBrain', () => {
     expect(brain.getAnimationState({ x: 0, y: 0 }, false).jp).toBe('air');
   });
 
+  it('flags slide animation state when the bot commits to a lunge', () => {
+    const brain = new BotBrain({ difficulty: BOT_DIFFICULTY.normal });
+
+    // Inside attack range → the brain sets input.slide; getAnimationState must
+    // surface it as `sl` so PlayerModel plays the slide clip (was missing → the
+    // impact landed but the model kept running).
+    const sliding = brain.getAnimationState({ x: 0.5, y: 0.5, slide: true }, true);
+    const notSliding = brain.getAnimationState({ x: 0.5, y: 0.5, slide: false }, true);
+
+    expect(sliding.sl).toBe(true);
+    expect(notSliding.sl).toBe(false);
+  });
+
+
   it('tracks the bot name for lobby display', () => {
     const brain = new BotBrain({ name: BOT_NAME_POOL[2] });
 
