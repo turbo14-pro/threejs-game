@@ -154,8 +154,6 @@ export const randomTableRespawn = (rng = Math.random) => {
   return { x: 0, y: ARENA_SURFACE_Y + BOT_BODY_OFFSET_Y, z: -92 };
 };
 
-const DIRECTIONS = ['for', 'back', 'left', 'right'];
-
 const clamp01 = (value) => {
   if (!Number.isFinite(value)) return 0;
   return Math.min(1, Math.max(0, value));
@@ -534,7 +532,6 @@ export class BotBrain {
     // Each bot gets its own decision variables derived from a stable seed
     this.personality = createBotPersonality(seed ?? name);
     this.time = 0;
-    this.direction = 'for';
     this.lastDebug = null;
   }
 
@@ -548,16 +545,7 @@ export class BotBrain {
       ...snapshot,
     });
 
-    // Keep the animation direction label in sync with the steering vector
-    if (Math.abs(result.input.x) > Math.abs(result.input.y)) {
-      this.direction = result.input.x >= 0 ? 'right' : 'left';
-    } else if (Math.abs(result.input.y) > 0) {
-      this.direction = result.input.y >= 0 ? 'for' : 'back';
-    } else {
-      this.direction = 'for';
-    }
-
-        this.lastDebug = result.debug;
+    this.lastDebug = result.debug;
 
     // --- JUMP GATING ---
     // A bot should chase a target that is on a higher *surface*, not mirror a player's
@@ -584,12 +572,22 @@ export class BotBrain {
     return result.input;
   }
 
-  /** Mirrors PlayerController's animation vocabulary for PlayerModel. */
+  /**
+   * Mirrors PlayerController's animation vocabulary for PlayerModel.
+   *
+   * A bot's model is rotated every frame to face its travel vector (BotPlayer's
+   * facing step: targetRotationY = atan2(travelX, travelZ)), so in MODEL space a
+   * bot always moves forward. PlayerModel only ships walk/run clips for 'for' and
+   * 'bac' — there are no left/right/back clips, and an unmatched clip name
+   * silently falls back to idle. Emitting 'left'/'right'/'back' here is what made
+   * bots glide around the arena on the idle animation whenever their target was
+   * off to the side. Always report 'for' so a moving bot plays walk_for/run_for.
+   */
   getAnimationState(input = { x: 0, y: 0 }, grounded = true) {
     const moving = Math.abs(input.x || 0) > 0.01 || Math.abs(input.y || 0) > 0.01;
     return {
       mv: moving,
-      dir: DIRECTIONS.includes(this.direction) ? this.direction : 'for',
+      dir: 'for',
       spr: !!input.sprint,
       jp: grounded ? 'none' : 'air',
     };

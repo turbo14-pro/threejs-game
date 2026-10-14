@@ -413,8 +413,22 @@ describe('BotAI — BotBrain', () => {
     const anim = brain.getAnimationState(input, true);
 
     expect(anim.mv).toBe(true);
-    expect(['for', 'back', 'left', 'right']).toContain(anim.dir);
+    // Bots always face their travel vector, so the only clip that exists is 'for'
+    // (walk_for/run_for). 'back'/'left'/'right' would silently fall back to idle.
+    expect(anim.dir).toBe('for');
     expect(anim.jp).toBe('none');
+  });
+
+  it('still animates "for" when the target is off to the side (was the idle bug)', () => {
+    const brain = new BotBrain({ difficulty: BOT_DIFFICULTY.hard });
+    // targetAtTen is straight along +X — the old compass label made this 'right',
+    // which has no clip, so the bot glided around on the idle animation.
+    const input = brain.update(1, { bot: botAtOrigin, target: targetAtTen });
+    const anim = brain.getAnimationState(input, true);
+
+    expect(Math.abs(input.x)).toBeGreaterThan(0.01); // it really is steering sideways
+    expect(anim.mv).toBe(true);
+    expect(anim.dir).toBe('for');
   });
 
   it('reports airborne animation state when the bot is not grounded', () => {
