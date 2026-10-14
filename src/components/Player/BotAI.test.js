@@ -5,6 +5,7 @@ import {
   BOT_NAME_POOL,
   BOT_COMBAT,
   TAG_COOLDOWN,
+  advanceBotJump,
   BotBrain,
   buildBotRoster,
   computeAdaptiveDifficulty,
@@ -23,6 +24,7 @@ import {
   shouldRegisterTag,
   steerTowards,
 } from './BotAI.jsx';
+import { getMaxJumps, PLAYER_BASELINE } from '../../config/playerConfig';
 
 // A bot standing still at the origin, with a target 10m away on +X
 const botAtOrigin = { x: 0, y: 0, z: 0, rotationY: 0 };
@@ -83,6 +85,29 @@ describe('BotAI — responds to player position', () => {
     });
 
     expect(input.jump).toBe(false);
+  });
+
+  it('keeps jump intent alive in the air so a double jump can chain', () => {
+    // A target 1m up is under the 2.2m ground clearance — not worth a hop from a standstill...
+    const grounded = computeBotInput({
+      time: 5,
+      difficulty: BOT_DIFFICULTY.hard,
+      bot: botAtOrigin,
+      target: { x: 2, y: 1, z: 0 },
+      grounded: true,
+    });
+    expect(grounded.input.jump).toBe(false);
+
+    // ...but once the bot is already airborne mid-climb, that same 1m gap is
+    // exactly what the follow-up tap (which performs the double jump) needs.
+    const airborne = computeBotInput({
+      time: 5,
+      difficulty: BOT_DIFFICULTY.hard,
+      bot: botAtOrigin,
+      target: { x: 2, y: 1, z: 0 },
+      grounded: false,
+    });
+    expect(airborne.input.jump).toBe(true);
   });
 
   it('freezes for its reaction window before engaging', () => {
@@ -439,6 +464,37 @@ describe('BotAI — BotBrain', () => {
     expect(brain.getAnimationState({ x: 0, y: 0 }, false).jp).toBe('air');
   });
 
+  it('surfaces the jump machine phases so bots play the player jump clips', () => {
+    const brain = new BotBrain();
+
+    expect(brain.getAnimationState({ x: 0, y: 0 }, true, 'launch').jp).toBe('launch');
+    expect(brain.getAnimationState({ x: 0, y: 0 }, false, 'doublejump').jp).toBe('doublejump');
+    expect(brain.getAnimationState({ x: 0, y: 0 }, false, 'air').jp).toBe('air');
+    expect(brain.getAnimationState({ x: 0, y: 0 }, false, 'land').jp).toBe('land');
+    // No phase passed → the old coarse grounded/airborne mapping still applies
+    expect(brain.getAnimationState({ x: 0, y: 0 }, true).jp).toBe('none');
+  });
+
+  it('emits jump as one-frame taps while a higher target persists', () => {
+    const brain = new BotBrain({ difficulty: BOT_DIFFICULTY.hard, seed: 'pulse' });
+    const taps = [];
+    for (let i = 0; i < 30; i++) {
+      taps.push(brain.update(0.1, {
+        bot: { x: 0, y: 0, z: 0 },
+        target: { x: 0, y: 8, z: 0 },
+        grounded: true,
+      }).jump);
+    }
+
+    // The dwell + cooldown gate eventually commits...
+    expect(taps.some(Boolean)).toBe(true);
+    // ...but never holds across frames: each commit is a single-frame tap — the
+    // re-press that the player's edge-triggered double jump (advanceBotJump) consumes.
+    for (let i = 1; i < taps.length; i++) {
+      expect(taps[i] && taps[i - 1]).toBe(false);
+    }
+  });
+
   it('flags slide animation state when the bot commits to a lunge', () => {
     const brain = new BotBrain({ difficulty: BOT_DIFFICULTY.normal });
 
@@ -777,5 +833,119 @@ describe('BotAI — Newtonian impact resolution (resolveImpact)', () => {
     const r = resolveImpact({ ...A, vx: 30, vz: 0 }, { ...A, vx: 0, vz: 0 });
     expect(r.aggressor).toBeNull();
     expect(r.impact).toBe(0);
+  });
+});
+
+describe('BotAI — bot jump state machine (advanceBotJump)', () => {
+  // The exact velocities PlayerController applies — one source of truth (PLAYER_BASELINE)
+  const GROUND_JUMP = PLAYER_BASELINE.movement.jumpVelocity; // 38
+  const AIR_JUMP = PLAYER_BASELINE.movement.airJumpVelocity; // 35
+
+  it('launches a ground jump with the player\'s exact velocity', () => {
+    // Press while resting → 'launch' phase first (the launch animation beat), no velocity yet
+    const start = advanceBotJump({
+      jump: true, grounded: true, vy: 0, anim: { launchFrames: 6 }, delta: 0.1,
+    });
+    expect(start.phase).toBe('launch');
+    expect(start.jumpVel).toBeNull();
+    expect(start.physicsJumped).toBe(false);
+
+    // ...then the liftoff beat lands: the bot leaves the ground at exactly 38 over
+    // the same gravity the player's Rapier body uses → identical single-jump height.
+    const liftoff = advanceBotJump({
+      ...start, jump: false, grounded: true, vy: 0, anim: { launchFrames: 6 }, delta: 0.1,
+    });
+    expect(liftoff.jumpVel).toBe(GROUND_JUMP);
+    expect(liftoff.jumpVel).toBe(38);
+    expect(liftoff.phase).toBe('air');
+  });
+
+  it('double jumps in the air with the player\'s air velocity and phase', () => {
+    const s = advanceBotJump({
+      phase: 'air', vy: 4, grounded: false,
+      jump: true, prevJump: false, maxJumps: 2,
+      anim: { doublejumpFrames: 20 }, delta: 0.016,
+    });
+
+    expect(s.jumpVel).toBe(AIR_JUMP);
+    expect(s.jumpVel).toBe(35);
+    expect(s.phase).toBe('doublejump'); // PlayerModel plays the doublejump clip for this
+    expect(s.jumpCount).toBe(1);
+    expect(s.timer).toBeCloseTo(
+      Math.max(PLAYER_BASELINE.movement.doubleJumpDuration, 20 / 30) - 0.016,
+      5,
+    );
+  });
+
+  it('ignores a held jump in the air — only a re-press chains, like the player', () => {
+    const s = advanceBotJump({
+      phase: 'air', vy: 4, grounded: false,
+      jump: true, prevJump: true, maxJumps: 2, delta: 0.016,
+    });
+
+    expect(s.jumpVel).toBeNull();
+    expect(s.jumpCount).toBe(0);
+    expect(s.phase).toBe('air');
+  });
+
+  it('stops at the base budget: one ground jump + one air jump (maxJumps 2)', () => {
+    const first = advanceBotJump({
+      phase: 'air', jumpCount: 0, grounded: false,
+      jump: true, prevJump: false, maxJumps: 2, delta: 0.016,
+    });
+    expect(first.jumpVel).toBe(AIR_JUMP);
+    expect(first.jumpCount).toBe(1);
+
+    // The budget is spent — the next tap is refused until the bot lands.
+    // (Per-frame inputs aren't part of the returned state — re-supply them.)
+    const second = advanceBotJump({
+      ...first, grounded: false, jump: true, prevJump: false, maxJumps: 2, delta: 0.016,
+    });
+    expect(second.jumpVel).toBeNull();
+    expect(second.jumpCount).toBe(1);
+  });
+
+  it('uses every jump a jump power-up grants (gold coin → 5 total)', () => {
+    // Same helper the player uses: gold jump coin = maxJumps 5 →
+    // one ground jump + FOUR air jumps before the budget runs out.
+    const maxJumps = getMaxJumps({ category: 'jump', rarity: 'gold' });
+    expect(maxJumps).toBe(5);
+
+    let s = {
+      phase: 'air', timer: 0, jumpCount: 0, physicsJumped: true,
+      vy: 6, grounded: false, maxJumps, anim: {}, delta: 0.05,
+    };
+    // Persisted machine state + per-frame inputs, the way BotPlayer drives it
+    const step = (state, jump, prevJump) => ({ ...state, ...advanceBotJump({ ...state, jump, prevJump }) });
+    let airJumps = 0;
+    for (let tap = 0; tap < 6; tap++) {
+      s = step(s, true, false);
+      if (s.jumpVel === AIR_JUMP) airJumps++;
+      s = step(s, false, true); // release frame between taps
+    }
+
+    expect(airJumps).toBe(4);
+    expect(s.jumpCount).toBe(4);
+  });
+
+  it('plays the land phase on touchdown and resets the budget', () => {
+    const s = advanceBotJump({
+      phase: 'air', jumpCount: 1, vy: -12, grounded: true,
+      jump: false, anim: { landFrames: 9 }, delta: 0.016,
+    });
+
+    expect(s.phase).toBe('land');
+    expect(s.jumpCount).toBe(0);
+    expect(s.timer).toBeCloseTo(9 / (30 * 1.6) - 0.016, 5);
+  });
+
+  it('finishes the launch liftoff after falling off a ledge mid-launch', () => {
+    const s = advanceBotJump({
+      phase: 'launch', physicsJumped: false, timer: 0.06,
+      grounded: false, jump: false, anim: { launchFrames: 6 }, delta: 0.1,
+    });
+
+    expect(s.jumpVel).toBe(GROUND_JUMP);
+    expect(s.phase).toBe('air');
   });
 });

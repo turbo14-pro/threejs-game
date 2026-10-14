@@ -9,7 +9,7 @@
  * can reuse the human movement / physics / dash / slide pipeline without changes there.
  */
 
-import { POWERUP_EFFECTS } from '../../config/playerConfig';
+import { POWERUP_EFFECTS, PLAYER_BASELINE } from '../../config/playerConfig';
 
 // Difficulty presets — 0 (easy) → 1 (ruthless)
 export const BOT_DIFFICULTY = {
@@ -32,9 +32,13 @@ export const BOT_TUNING = {
   playerAggroBonus: 20,  // score weighting that makes a bot strongly prefer the human
                          // over any equidistant target (drives attack likelihood)
   jumpClearance: 2.2,    // height difference that makes a bot prefer to jump
+  jumpAirClearance: 0.5, // once airborne the target only needs to be slightly above —
+                         // lets follow-up taps chain a double/multi-jump while climbing
+                         // (the 2.2 ground clearance goes false mid-climb, which left
+                         // targets roughly one single-jump short unreachable)
   turnHardDistance: 2.0, // distance under which steering eases off to avoid overshoot
   jumpDwell: 0.35,       // target must stay above jumpClearance this long before the bot commits
-  jumpCooldown: 0.6,     // a bot won't chain-jump (prevents mirroring a player's repeated jumps)
+  jumpCooldown: 0.6,     // seconds between committed jump taps — the cadence a double/multi-jump chain rides on
   powerupSeekDistance: 7, // a token closer than this is worth breaking off to collect (normal+ only)
   aimError: 0.7,        // max radians of steering error at accuracy 0 (≈40°) — bots swerve & whiff
   aimWobbleSpeed: 2.4,  // how fast the aim error oscillates (rad/s) so it reads as imprecision
@@ -461,6 +465,8 @@ export function computeBotInput(snapshot = {}) {
     botScore = 0,
     healthRatio = 1,
     personality = null,
+    grounded = true, // BotPlayer passes its probe result so a mid-climb bot can keep
+                     // jumping (jumpAirClearance) instead of losing intent mid-air
   } = snapshot;
 
   const botPos = toVector(bot);
@@ -506,8 +512,12 @@ export function computeBotInput(snapshot = {}) {
     && distance <= BOT_TUNING.strikeDistance
     && distance > BOT_TUNING.turnHardDistance
     && (time % dashWindow) < 0.1;
-  // Hop when the target is meaningfully above us (chasing onto a platform)
-  input.jump = profile.jump && !fleeing && (targetPos.y - botPos.y) > BOT_TUNING.jumpClearance;
+  // Hop when the target is meaningfully above us (chasing onto a platform).
+  // On the ground that means a real height gap (jumpClearance); once airborne the
+  // gap shrinks as we climb, so relax to jumpAirClearance — otherwise the intent
+  // dies mid-climb and the follow-up tap that performs the double jump never fires.
+  const jumpClearance = grounded === false ? BOT_TUNING.jumpAirClearance : BOT_TUNING.jumpClearance;
+  input.jump = profile.jump && !fleeing && (targetPos.y - botPos.y) > jumpClearance;
 
   // --- AIM: face the way we are travelling, matching PlayerController's
   // `targetRotationY = Math.atan2(direction.x, direction.z)`.
@@ -607,6 +617,107 @@ export function buildBotRoster({ count = 0, difficulty = BOT_DIFFICULTY.normal, 
   }));
 }
 
+// ---------------------------------------------------------------------------
+// BOT JUMP STATE MACHINE
+// A frame-exact mirror of PlayerController's jump handling (lines ~627-715) so a
+// bot jumps with the SAME physics and animation vocabulary as the human:
+//   1. Ground jump   → 'launch' phase, liftoff velocity PLAYER_BASELINE.jumpVelocity (38)
+//   2. Air jump      → edge-triggered re-press (`jump && !prevJump`) while
+//                      `jumpCount < maxJumps - 1`, velocity airJumpVelocity (35),
+//                      'doublejump' phase — the clip PlayerModel plays for it
+//   3. Touchdown     → 'land' phase, then 'none'
+//   4. Budget        → jumpCount resets every grounded frame; maxJumps comes from
+//                      getMaxJumps(powerUp), so a jump coin raises the count (3-6)
+//                      exactly as it does for the player.
+// Timings (launch/land/doublejump frames) come from the same animations.json the
+// player's PlayerModel consumes, passed in via `anim`.
+// Pure: state in → new state out. BotPlayer owns ground probing + integration and
+// passes `jumpVel` (the velocity to apply this frame, or null) straight through.
+// ---------------------------------------------------------------------------
+export function advanceBotJump({
+  phase = 'none',
+  timer = 0,
+  jumpCount = 0,
+  physicsJumped = true,
+  vy = 0,
+  grounded = true,
+  jump = false,
+  prevJump = false,
+  maxJumps = PLAYER_BASELINE.movement.maxJumps,
+  anim = {},
+  delta = 0,
+} = {}) {
+  const { jumpVelocity, airJumpVelocity, doubleJumpDuration } = PLAYER_BASELINE.movement;
+  // Same fallbacks PlayerController uses when the animation config isn't loaded yet
+  const launchFrames = anim.launchFrames ?? 6;
+  const landFrames = anim.landFrames ?? 10;
+  const doublejumpFrames = anim.doublejumpFrames ?? 15;
+  // DYNAMIC LIFTOFF: a beat of launch animation, then the velocity (mirrors
+  // `Math.max(0.05, (config.launchFrames - 6) / 30)`)
+  const liftoffDelay = Math.max(0.05, (launchFrames - 6) / 30);
+  let jumpVel = null;
+
+  if (grounded) {
+    jumpCount = 0; // reset every grounded frame — same as the player
+    // Touchdown → land animation (the player's `veryCloseToGround` sensor and the
+    // bot's ground probe are the same castShape, so grounded is equivalent here)
+    if ((phase === 'air' || phase === 'doublejump') && vy <= 0.1) {
+      phase = 'land';
+      timer = landFrames / (30 * 1.6);
+    }
+
+    if (phase === 'land' || phase === 'none') {
+      if (jump && Math.abs(vy) < 2.0) {
+        phase = 'launch';
+        timer = launchFrames / 30;
+        physicsJumped = false;
+      } else if (phase === 'land') {
+        timer -= delta;
+        // A bot that keeps moving on touchdown skips the land pose, like the player
+        if (timer <= 0 || anim.moving) phase = 'none';
+      }
+    }
+
+    if (phase === 'launch') {
+      timer -= delta;
+      if (!physicsJumped && timer <= liftoffDelay) {
+        jumpVel = jumpVelocity;
+        physicsJumped = true;
+      }
+      if (timer <= 0) phase = 'air';
+    }
+  } else {
+    if (phase === 'none' || phase === 'land') phase = 'air';
+
+    // DOUBLE JUMP: edge-triggered (a held input alone never chains — the brain's
+    // dwell+cooldown gate emits it as one-frame taps) and budgeted by maxJumps.
+    if ((phase === 'air' || phase === 'launch' || phase === 'doublejump')
+      && jump && !prevJump && jumpCount < maxJumps - 1) {
+      jumpVel = airJumpVelocity;
+      jumpCount += 1;
+      phase = 'doublejump';
+      timer = Math.max(doubleJumpDuration, doublejumpFrames / 30);
+    }
+
+    if (phase === 'doublejump') {
+      timer -= delta;
+      if (timer <= 0) phase = 'air';
+    }
+
+    if (phase === 'launch') {
+      // Dynamic liftoff even if the bot walked off a ledge mid-launch
+      timer -= delta;
+      if (!physicsJumped && timer <= liftoffDelay) {
+        jumpVel = jumpVelocity;
+        physicsJumped = true;
+      }
+      if (timer <= 0) phase = 'air';
+    }
+  }
+
+  return { phase, timer, jumpCount, physicsJumped, jumpVel };
+}
+
 /**
  * A tiny stateful wrapper so the React renderer can drive a bot across frames without
  * re-deriving everything in the component body. Optional — `computeBotInput` is usable alone.
@@ -640,10 +751,17 @@ export class BotBrain {
     // momentary jump. Require the height gap to persist for `jumpDwell` and enforce a
     // per-bot `jumpCooldown` so repeated jumps aren't echoed. (computeBotInput is pure
     // and still reports the raw intent; this is where the runtime commits to it.)
+    // Because a commit re-arms dwell AND cooldown, a held intent comes out as a
+    // ONE-FRAME tap every `jumpCooldown` seconds — exactly the re-press the player's
+    // edge-triggered double jump needs. Mid-air the clearance relaxes (same rule as
+    // computeBotInput) so taps keep arriving while the bot climbs toward a higher target.
     const botY = snapshot.bot?.y ?? 0;
     const tgtY = snapshot.target?.y ?? 0;
     const gap = tgtY - botY;
-    if (gap > BOT_TUNING.jumpClearance) {
+    const jumpClearance = snapshot.grounded === false
+      ? BOT_TUNING.jumpAirClearance
+      : BOT_TUNING.jumpClearance;
+    if (gap > jumpClearance) {
       if (this._gapSince == null) this._gapSince = this.time;
     } else {
       this._gapSince = null;
@@ -708,14 +826,19 @@ export class BotBrain {
    * silently falls back to idle. Emitting 'left'/'right'/'back' here is what made
    * bots glide around the arena on the idle animation whenever their target was
    * off to the side. Always report 'for' so a moving bot plays walk_for/run_for.
+   *
+   * `jumpPhase` (optional) forwards the caller's jump state machine phase —
+   * 'launch' | 'air' | 'doublejump' | 'land' — straight to PlayerModel so bots
+   * play the same clips as the player. When omitted, falls back to the coarse
+   * grounded/airborne mapping.
    */
-  getAnimationState(input = { x: 0, y: 0 }, grounded = true) {
+  getAnimationState(input = { x: 0, y: 0 }, grounded = true, jumpPhase = null) {
     const moving = Math.abs(input.x || 0) > 0.01 || Math.abs(input.y || 0) > 0.01;
     return {
       mv: moving,
       dir: 'for',
       spr: !!input.sprint,
-      jp: grounded ? 'none' : 'air',
+      jp: jumpPhase ?? (grounded ? 'none' : 'air'),
       // Drive the slide-tackle clip. The brain commits to a lunge via input.slide
       // (inside attack range); without forwarding this the bot's impact lands but
       // the model keeps playing walk/run — the slide animation never shows.

@@ -16,12 +16,13 @@ import {
   selectTarget,
   getBotPowerUpCombatBoost,
   resolveImpact,
+  advanceBotJump,
 } from './BotAI.jsx';
 import { registerBot, unregisterBot, getBotCandidates, damageBot, applyBotKnockback, getBotVelocity } from './botRegistry.js';
 import { getLocalPlayerWorldPos, getLocalPlayerWorldVel, getActivePowerUps } from '../World/items/PowerUpCoin.jsx';
 import { BOT_DIFFICULTY } from './BotAI.jsx';
 import { SKINS } from '../../data/registries';
-import { POWERUP_DURATIONS, POWERUP_EFFECTS } from '../../config/playerConfig';
+import { POWERUP_DURATIONS, POWERUP_EFFECTS, getMaxJumps } from '../../config/playerConfig';
 
 /**
  * THE BOT PLAYER
@@ -40,9 +41,9 @@ import { POWERUP_DURATIONS, POWERUP_EFFECTS } from '../../config/playerConfig';
  */
 
 // Matches the arena's gravity in GameCanvas.jsx (<Physics gravity={[0, -90.81, 0]}>)
+// Same gravity + the same jump velocities as PlayerController (advanceBotJump
+// reads PLAYER_BASELINE) is what makes a bot's single jump reach the player's height.
 const BOT_GRAVITY = 90.81;
-// Matches PlayerController's single-jump impulse
-const BOT_JUMP_SPEED = 38;
 // Cruising speeds (units/sec) between PlayerController's walk (8) and sprint (30)
 const BOT_SPRINT_SPEED = 22;
 const BOT_WALK_SPEED = 11;
@@ -113,6 +114,12 @@ export default function BotPlayer({ bot }) {
     powerUp: null, // { category, rarity } the bot is currently holding
     powerUpUntil: 0, // clock time the current power-up expires
     vel: new THREE.Vector3(), // horizontal velocity (units/sec), for Newtonian impact
+    // --- Jump state machine (advanceBotJump — mirrors PlayerController) ---
+    jumpPhase: 'none', // none | launch | air | doublejump | land (drives PlayerModel)
+    jumpTimer: 0,      // seconds left in the current launch/doublejump/land phase
+    jumpCount: 0,      // air jumps used since the last landing
+    physicsJumped: true, // launch liftoff velocity already emitted (nothing pending)
+    prevJumpInput: false, // last frame's jump input — edge detection for air jumps
     lastDebug: null,
   });
 
@@ -126,6 +133,9 @@ export default function BotPlayer({ bot }) {
   // radius, so the sweep's time-of-impact is exactly how far the body centre may travel.
   const wallShape = useMemo(() => (rapier ? new rapier.Ball(1.0) : null), [rapier]);
   const addMatchScore = useGameStore(s => s.addMatchScore);
+  // Same animation frame config the player's PlayerController reads — launch/land/
+  // doublejump timings for advanceBotJump come from the very JSON the model plays.
+  const animConfig = useGameStore(state => state.player.playerAnimations);
 
   // Publish this bot so other bots can target it and deal damage to it
   useEffect(() => {
@@ -160,8 +170,9 @@ export default function BotPlayer({ bot }) {
       },
       // Power-up pickup: mirror the player's single-slot powerUp with an expiry so
       // the buff auto-clears. `speed` boosts movement; `slide` boosts the lunge
-      // speed and hit knockback (see getBotPowerUpCombatBoost in useFrame). The
-      // remaining categories (jump/dash) are held but inert for bots.
+      // speed and hit knockback (see getBotPowerUpCombatBoost in useFrame); `jump`
+      // raises the bot's jump budget via getMaxJumps in the VERTICAL block; `dash`
+      // remains inert for bots.
       collectPowerUp: (category, rarity) => {
         const s = stateRef.current;
         const now = nowRef.current;
@@ -207,6 +218,11 @@ export default function BotPlayer({ bot }) {
       s.downUntil = 0;
       s.fellOff = false;
       s.grounded = true;
+      s.jumpPhase = 'none';
+      s.jumpTimer = 0;
+      s.jumpCount = 0;
+      s.physicsJumped = true;
+      s.prevJumpInput = false;
       s.powerUp = null; // buffs don't survive a respawn
       s.powerUpUntil = 0;
       // Fresh random name tag every respawn — try to avoid repeating the old one
@@ -255,6 +271,9 @@ export default function BotPlayer({ bot }) {
       targetScore: store.matchScore.player,
       botScore: store.matchScore.bots,
       healthRatio: s.health / BOT_COMBAT.maxHealth,
+      // Lets the brain keep jump intent alive mid-climb (jumpAirClearance) so the
+      // dwell+cooldown gate keeps emitting taps for the double/multi-jump chain.
+      grounded: s.grounded,
     });
     const debug = brain.lastDebug;
     const distance = debug?.distance ?? null;
@@ -288,17 +307,54 @@ export default function BotPlayer({ bot }) {
       s.grounded = groundY !== null && feetAboveGround >= -0.1 && feetAboveGround <= MAX_STICK_DOWN;
     }
 
-    // --- VERTICAL ---
-    const canJump = input.jump && s.grounded && s.vy <= 0;
-    if (canJump) {
-      s.vy = BOT_JUMP_SPEED;
-      s.grounded = false;
-      s.pos.y += s.vy * step;
-    } else if (groundY !== null && s.vy <= 0 && (s.pos.y - BODY_OFFSET_Y - groundY) <= MAX_STICK_DOWN) {
+    // --- VERTICAL: jump state machine + integration (mirrors PlayerController) ---
+    // 1. Settle onto the surface FIRST so the machine sees resting values (vy = 0)
+    //    on the touchdown frame — the player gets that from physics contact, and a
+    //    jump tap landing exactly on the touchdown frame must not be dropped by the
+    //    |vy| < 2 ground-jump gate.
+    const stickToGround = groundY !== null && s.vy <= 0
+      && (s.pos.y - BODY_OFFSET_Y - groundY) <= MAX_STICK_DOWN;
+    if (stickToGround) {
       s.pos.y = groundY + BODY_OFFSET_Y;
       s.vy = 0;
       s.grounded = true;
-    } else {
+    }
+
+    // 2. Advance the shared jump machine: same phases, same velocities (38 ground /
+    //    35 air — PLAYER_BASELINE), same edge-triggered air jumps.
+    //    `getMaxJumps(s.powerUp)` gives a jump power-up coin the same extra jumps
+    //    it grants the player.
+    const jumpState = advanceBotJump({
+      phase: s.jumpPhase,
+      timer: s.jumpTimer,
+      jumpCount: s.jumpCount,
+      physicsJumped: s.physicsJumped,
+      vy: s.vy,
+      grounded: s.grounded,
+      jump: input.jump,
+      prevJump: s.prevJumpInput,
+      maxJumps: getMaxJumps(s.powerUp),
+      anim: {
+        launchFrames: animConfig?.jump?.launchFrames,
+        landFrames: animConfig?.jump?.landFrames,
+        doublejumpFrames: animConfig?.doublejump?.frames,
+        moving: Math.abs(input.x || 0) > 0.01 || Math.abs(input.y || 0) > 0.01,
+      },
+      delta: step,
+    });
+    s.jumpPhase = jumpState.phase;
+    s.jumpTimer = jumpState.timer;
+    s.jumpCount = jumpState.jumpCount;
+    s.physicsJumped = jumpState.physicsJumped;
+    s.prevJumpInput = input.jump;
+
+    // 3. Integrate: a liftoff velocity wins; otherwise stick to the ground or fall
+    //    under the arena's gravity — same as before, minus the bespoke jump block.
+    if (jumpState.jumpVel != null) {
+      s.vy = jumpState.jumpVel;
+      s.grounded = false;
+      s.pos.y += s.vy * step;
+    } else if (!stickToGround) {
       s.vy -= BOT_GRAVITY * step;
       s.pos.y += s.vy * step;
       s.grounded = false;
@@ -496,7 +552,9 @@ export default function BotPlayer({ bot }) {
     bodyRef.current.setNextKinematicTranslation(s.pos);
 
     // --- ANIMATION: only re-render on an actual change, not every frame ---
-    const next = brain.getAnimationState(input, s.grounded);
+    // jumpPhase forwards the machine's phase (launch/air/doublejump/land) so bots
+    // play the same jump clips the player does, not just a coarse airborne flag.
+    const next = brain.getAnimationState(input, s.grounded, s.jumpPhase);
     setAnim(prev => (
       prev.mv === next.mv && prev.dir === next.dir && prev.spr === next.spr && prev.jp === next.jp && prev.sl === next.sl
         ? prev
