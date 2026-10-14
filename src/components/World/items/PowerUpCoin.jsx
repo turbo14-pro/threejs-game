@@ -10,6 +10,13 @@ export const setLocalPlayerWorldPos = (v) => _playerPos.copy(v);
 // Read-only accessor so CPU bots can chase the human player without duplicating position state
 export const getLocalPlayerWorldPos = () => _playerPos;
 
+// The player's horizontal velocity, published alongside position so bots can run a
+// Newtonian impact resolution (who's driving into whom) instead of blindly
+// knocking back anything they touch. units/sec.
+const _playerVel = new THREE.Vector3();
+export const setLocalPlayerWorldVel = (v) => _playerVel.set(v?.x ?? 0, v?.y ?? 0, v?.z ?? 0);
+export const getLocalPlayerWorldVel = () => _playerVel;
+
 // Live registry of hovering power-up tokens so CPU bots can seek them out.
 // PowerUpManager owns spawn state locally, so each PowerUpCoin publishes its
 // ground-plane position here on mount and removes it on collect/unmount.

@@ -11,9 +11,10 @@ import {
 
 // botRegistry is module-level shared state, so every test registers fresh ids and
 // tears them down. The fakes mirror the api shape BotPlayer.jsx registers:
-//   { getPosition, health, takeDamage, applyKnockback, collectPowerUp }
-const makeFake = (pos, health = 100) => ({
+//   { getPosition, getVelocity, health, takeDamage, applyKnockback, collectPowerUp }
+const makeFake = (pos, health = 100, vel = { x: 0, z: 0 }) => ({
   getPosition: () => pos,
+  getVelocity: () => vel,
   health,
   takeDamage: vi.fn(),
   applyKnockback: vi.fn(),
@@ -27,8 +28,8 @@ afterEach(() => {
 });
 
 describe('botRegistry — candidate listing', () => {
-  it('exposes living bots as target candidates', () => {
-    registerBot('bot-0', makeFake({ x: 1, y: 2, z: 3 }));
+  it('exposes living bots as target candidates (with velocity for impact)', () => {
+    registerBot('bot-0', makeFake({ x: 1, y: 2, z: 3 }, 100, { x: 5, z: -2 }));
     registerBot('bot-1', makeFake({ x: 4, y: 5, z: 6 }));
 
     const list = getBotCandidates(null);
@@ -36,10 +37,17 @@ describe('botRegistry — candidate listing', () => {
     expect(list).toHaveLength(2);
     expect(list).toEqual(
       expect.arrayContaining([
-        { id: 'bot-0', kind: 'bot', x: 1, y: 2, z: 3, health: 100 },
-        { id: 'bot-1', kind: 'bot', x: 4, y: 5, z: 6, health: 100 },
+        { id: 'bot-0', kind: 'bot', x: 1, y: 2, z: 3, health: 100, vx: 5, vz: -2 },
+        { id: 'bot-1', kind: 'bot', x: 4, y: 5, z: 6, health: 100, vx: 0, vz: 0 },
       ]),
     );
+  });
+
+  it('reports a single bot velocity, or null when unknown', () => {
+    registerBot('bot-0', makeFake({ x: 0, y: 0, z: 0 }, 100, { x: 9, z: 3 }));
+
+    expect(getBotVelocity('bot-0')).toEqual({ x: 9, z: 3 });
+    expect(getBotVelocity('ghost')).toBeNull();
   });
 
   it('skips the excluded id and any downed bot (health <= 0)', () => {

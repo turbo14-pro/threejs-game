@@ -132,6 +132,7 @@ export const useGameStore = create(
         notification: null, // { category, rarity, id } or null
 
         // --- ACTIONS ---
+        setPendingTeleportTarget: (target) => set({ pendingTeleportTarget: target }),
         setDashBlur: (val) => set({ dashBlur: val }),
         setPlayerMovement: (moving, dashing) => set({ playerIsMoving: moving, playerIsDashing: dashing }),
         setIsStunned: (val) => set({ isStunned: val }),
@@ -233,7 +234,7 @@ export const useGameStore = create(
           }
           if (!placed) { tx = 0; tz = 80; } // fallback
           
-          const ty = 15; // 15 metres above arena floor
+          const ty = 15; // 15 metres above arena floor (spawn 15m above floor)
           
           // Trigger teleport via existing mechanism
           set({ teleportCount: store.teleportCount + 1 });

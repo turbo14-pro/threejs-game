@@ -6,9 +6,9 @@ import * as THREE from 'three';
 import PlayerModel from './PlayerModel.jsx';
 import { useGameStore } from '../../store/useGameStore';
 import { PLAYER_BASELINE, canUseDash, getDashConfig, getMaxJumps, getPowerUpEffect, getActionIntensity, shouldEndDash } from '../../config/playerConfig';
-import { setLocalPlayerWorldPos } from '../World/items/PowerUpCoin.jsx';
-import { damageBot, applyBotKnockback } from './botRegistry.js';
-import { BOT_COMBAT } from './BotAI.jsx';
+import { setLocalPlayerWorldPos, setLocalPlayerWorldVel } from '../World/items/PowerUpCoin.jsx';
+import { damageBot, applyBotKnockback, getBotVelocity } from './botRegistry.js';
+import { BOT_COMBAT, resolveImpact } from './BotAI.jsx';
 import { soundManager } from '../../utils/SoundManager';
 
 const direction = new THREE.Vector3();
@@ -215,10 +215,7 @@ export default function PlayerController({ sendUpdate }) {
             tx = target.x;
             tz = target.z;
             ty = target.y;
-            // Clear the target after using it
-            useGameStore.getState().pendingTeleportTarget = null;
-            // Actually need to use set — let's do it properly via store action
-            // For simplicity, we'll rely on the subscriber to clear it
+            // DON'T clear here — useFrame needs it; clear only after confirm
           } else {
             // Replicate cereal box positions (must match Arena.jsx seededRandom(42))
             const seededRandom = (seed) => {
@@ -269,7 +266,7 @@ export default function PlayerController({ sendUpdate }) {
               break;
             }
             if (!placed) { tx = 0; tz = 80; }
-            ty = 5; // default teleport y position
+            ty = 15; // 15m above arena floor
           }
 
           // Store target — useFrame will apply it outside the physics step
@@ -362,6 +359,9 @@ export default function PlayerController({ sendUpdate }) {
 
     // Update shared player position for power-up distance pickup
     setLocalPlayerWorldPos(translation);
+    // Publish horizontal velocity so CPU bots can run a Newtonian impact resolution
+    // (who's driving into whom) instead of blindly knocking back whatever they touch.
+    setLocalPlayerWorldVel(worldVelocityRef.current);
     // Only update debug ripple position when debug mode is active
     if (useGameStore.getState().debugRipple.enabled) {
       useGameStore.getState().setRippleDebugPosition({ x: translation.x, y: translation.y, z: translation.z });
@@ -371,16 +371,27 @@ export default function PlayerController({ sendUpdate }) {
     if (isNaN(translation.x) || isNaN(translation.y) || isNaN(translation.z)) return;
 
     // Apply pending teleport OUTSIDE the physics step (setTranslation during step is ignored)
+    // Persistent loop: keep firing until physics confirms the player is at target
     if (pendingTeleport.current) {
       const t = pendingTeleport.current;
-      pendingTeleport.current = null;
-      rigidBodyRef.current.wakeUp();
-      rigidBodyRef.current.setTranslation({ x: t.x, y: t.y, z: t.z }, true);
-      rigidBodyRef.current.setLinvel({ x: 0, y: 0, z: 0 }, true);
-      rigidBodyRef.current.setAngvel({ x: 0, y: 0, z: 0 }, true);
-      console.log(`🚀 Teleport applied: (${t.x.toFixed(1)}, ${t.y}, ${t.z.toFixed(1)})`);
-      if (sendUpdate) sendUpdate({ pos: [t.x, t.y, t.z], force: true });
-      return; // skip this frame — physics will settle next frame
+      const current = rigidBodyRef.current.translation();
+      const dx = current.x - t.x, dy = current.y - t.y, dz = current.z - t.z;
+      const dist = Math.sqrt(dx*dx + dy*dy + dz*dz);
+
+      // Only clear when actually at target (within 0.5m) — otherwise re-apply
+      if (dist < 0.5) {
+        pendingTeleport.current = null;
+        useGameStore.getState().setPendingTeleportTarget(null); // clear store target
+        console.log(`✅ Teleport confirmed at (${t.x.toFixed(1)}, ${t.y}, ${t.z.toFixed(1)})`);
+      } else {
+        // Re-apply: wake, translate, zero velocity — loop keeps firing
+        rigidBodyRef.current.wakeUp();
+        rigidBodyRef.current.setTranslation({ x: t.x, y: t.y, z: t.z }, true);
+        rigidBodyRef.current.setLinvel({ x: 0, y: 0, z: 0 }, true);
+        rigidBodyRef.current.setAngvel({ x: 0, y: 0, z: 0 }, true);
+        console.log(`🔁 Teleport re-applied (dist ${dist.toFixed(1)}m): (${t.x.toFixed(1)}, ${t.y}, ${t.z.toFixed(1)})`);
+        if (sendUpdate) sendUpdate({ pos: [t.x, t.y, t.z], force: true });
+      }
     }
 
     // Check power-up expiration
@@ -1108,11 +1119,29 @@ export default function PlayerController({ sendUpdate }) {
         // the bot registry so the bot takes damage + kinematic knockback like it
         // would from another bot, and log the impact the same way the human-vs-human
         // path does.
-        console.log("🤖 Slide IMPACT! Bot hit:", other.userData?.name);
-        applyBotKnockback(other.userData.id, hitDir, BLAST_POWER);
-        damageBot(other.userData.id, BOT_COMBAT.hitDamage, 'local');
-        addShockwave(shockwavePos, shockwaveIntensity);
-        triggerRipple();
+        //
+        // Newtonian resolution: only blast the bot if WE are the aggressor — i.e.
+        // our velocity is driving into it (position + direction + speed). If the bot
+        // is the one sliding into us, its own slide-attack system owns our knockback,
+        // so we must NOT also launch it here (that double-launch is the reported bug:
+        // "player slides into a sliding bot and still gets knocked back").
+        const botVel = getBotVelocity(other.userData.id) || { x: 0, z: 0 };
+        const impact = resolveImpact(
+          { x: attackerPos.x, z: attackerPos.z, vx: worldVelocityRef.current.x, vz: worldVelocityRef.current.z },
+          { x: victimPos.x, z: victimPos.z, vx: botVel.x, vz: botVel.z },
+        );
+        if (impact.aggressor === 'a') {
+          console.log("🤖 Slide IMPACT! Player drove into bot:", other.userData?.name,
+            `(closing ${impact.closingSpeed.toFixed(1)} m/s)`);
+          applyBotKnockback(other.userData.id, impact.knockDir, BLAST_POWER);
+          damageBot(other.userData.id, BOT_COMBAT.hitDamage, 'local');
+          addShockwave(shockwavePos, shockwaveIntensity);
+          triggerRipple();
+        } else {
+          // The bot is driving into us — defer. Its slide system applies our knockback.
+          console.log("🛡️ Bot drove into player:", other.userData?.name,
+            `(closing ${impact.closingSpeed.toFixed(1)} m/s) — deferring to the bot's impact`);
+        }
       } else {
         // Dynamic (networked human) victims respond to a real physics impulse
         other.applyImpulse({

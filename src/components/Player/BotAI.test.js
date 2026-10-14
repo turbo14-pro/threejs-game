@@ -16,6 +16,7 @@ import {
   pickRandomBotNames,
   randomBotName,
   randomTableRespawn,
+  resolveImpact,
   selectTarget,
   TABLE_RESPAWN_BOUNDS,
   TABLE_RESPAWN_EXCLUSIONS,
@@ -695,4 +696,86 @@ describe('BotAI — slide pacing (bots slide less often)', () => {
 
 
 
+});
+
+describe('BotAI — Newtonian impact resolution (resolveImpact)', () => {
+  // a at origin, b at +X. Normal points +X (a → b).
+  const A = { x: 0, y: 0, z: 0 };
+  const B = { x: 5, y: 0, z: 0 };
+
+  it('names the moving body the aggressor and pushes the still victim away', () => {
+    // a drives toward b along +X; b is stationary.
+    const r = resolveImpact({ ...A, vx: 30, vz: 0 }, { ...B, vx: 0, vz: 0 });
+
+    expect(r.aggressor).toBe('a');
+    expect(r.victim).toBe('b');
+    expect(r.closingSpeed).toBeGreaterThan(0);
+    // Victim b is pushed further +X (away from a).
+    expect(r.knockDir.x).toBeCloseTo(1);
+    expect(r.knockDir.z).toBeCloseTo(0);
+    expect(r.impact).toBeGreaterThan(0);
+    expect(r.impact).toBeLessThanOrEqual(1);
+  });
+
+  it('flips the aggressor when the other body is the one moving in', () => {
+    // b drives toward a along −X; a is stationary. From a's frame a is 'a', b is 'b'.
+    const r = resolveImpact({ ...A, vx: 0, vz: 0 }, { ...B, vx: -30, vz: 0 });
+
+    expect(r.aggressor).toBe('b');
+    expect(r.victim).toBe('a');
+    // Victim a is pushed along −X (away from b).
+    expect(r.knockDir.x).toBeCloseTo(-1);
+  });
+
+  it('the reported bug: a player sliding INTO a bot is the aggressor, not the bot', () => {
+    // Player (a) slides toward the bot (b) at +X. Bot is sliding AWAY (−X) or sideways,
+    // so historically it still launched the player. Now the player must be the aggressor.
+    const playerDrivingIn = resolveImpact(
+      { ...A, vx: 35, vz: 0 },   // player sliding toward the bot
+      { ...B, vx: -10, vz: 0 },  // bot sliding away / another direction
+    );
+    expect(playerDrivingIn.aggressor).toBe('a'); // player wins → bot should NOT knock the player
+
+    // And a bot sliding sideways (pure +Z) into a still player is still the aggressor.
+    const botSideways = resolveImpact(
+      { ...A, vx: 0, vz: 0 },    // still player
+      { ...B, vx: 0, vz: 30 },   // bot moving +Z... but b is at +X, so its +Z velocity
+    );                           // is perpendicular → low closing along the normal
+    // Perpendicular motion contributes ~0 closing along the a→b normal, so with the
+    // player still, closing speed is below threshold → no aggressor (no cheap knockback).
+    expect(botSideways.aggressor).toBeNull();
+  });
+
+  it('a faster body wins a head-on clash', () => {
+    const r = resolveImpact({ ...A, vx: 20, vz: 0 }, { ...B, vx: -35, vz: 0 });
+    // b drives in harder → b is the aggressor.
+    expect(r.aggressor).toBe('b');
+    expect(r.closingSpeed).toBeGreaterThan(50);
+  });
+
+  it('reports no aggressor when neither body is closing (both still / moving apart)', () => {
+    const still = resolveImpact({ ...A, vx: 0, vz: 0 }, { ...B, vx: 0, vz: 0 });
+    expect(still.aggressor).toBeNull();
+    expect(still.impact).toBe(0);
+
+    // Moving apart: a goes −X, b goes +X → gap grows, no closing.
+    const apart = resolveImpact({ ...A, vx: -20, vz: 0 }, { ...B, vx: 20, vz: 0 });
+    expect(apart.aggressor).toBeNull();
+    expect(apart.closingSpeed).toBe(0);
+  });
+
+  it('scales impact strength with closing speed and clamps to 1', () => {
+    const gentle = resolveImpact({ ...A, vx: 8, vz: 0 }, { ...B, vx: 0, vz: 0 });
+    const hard = resolveImpact({ ...A, vx: 40, vz: 0 }, { ...B, vx: 0, vz: 0 });
+    const insane = resolveImpact({ ...A, vx: 400, vz: 0 }, { ...B, vx: 0, vz: 0 });
+
+    expect(hard.impact).toBeGreaterThan(gentle.impact);
+    expect(insane.impact).toBe(1); // clamped
+  });
+
+  it('returns a safe empty result for coincident bodies', () => {
+    const r = resolveImpact({ ...A, vx: 30, vz: 0 }, { ...A, vx: 0, vz: 0 });
+    expect(r.aggressor).toBeNull();
+    expect(r.impact).toBe(0);
+  });
 });

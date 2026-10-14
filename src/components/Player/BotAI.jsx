@@ -112,6 +112,74 @@ export function getBotPowerUpCombatBoost(powerUp) {
   };
 }
 
+// ---------------------------------------------------------------------------
+// NEWTONIAN IMPACT RESOLUTION
+// Decides who wins a body-on-body collision from POSITION (contact normal),
+// DIRECTION (each body's travel vector) and SPEED (closing velocity). The body
+// driving into the other is the aggressor and deals the knockback; the other is
+// the victim. This is what stops a bot from auto-knocking a player who slid into
+// it — previously the bot attacked anything within hitRange regardless of who was
+// actually moving into whom. Pure + unit-tested; both PlayerController and
+// BotPlayer resolve their impacts through here so they always agree.
+//
+// @param {object} a { x, z, vx, vz }  (vx/vz = horizontal velocity, units/sec)
+// @param {object} b { x, z, vx, vz }
+// @param {object} [opts] { minClosingSpeed, referenceSpeed }
+// @returns {{
+//   contact: {x,z},        // unit normal from a → b
+//   closingSpeed: number,  // how fast the gap is shrinking (>=0)
+//   aggressor: 'a'|'b'|null,
+//   victim: 'a'|'b'|null,
+//   knockDir: {x,z},       // unit direction to push the VICTIM (away from aggressor)
+//   impact: number         // 0..1 normalized strength (closingSpeed / referenceSpeed)
+// }}
+// ---------------------------------------------------------------------------
+export function resolveImpact(a, b, opts = {}) {
+  const minClosing = opts.minClosingSpeed ?? 2;
+  const refSpeed = opts.referenceSpeed ?? 40;
+
+  const ax = a?.x ?? 0, az = a?.z ?? 0, avx = a?.vx ?? 0, avz = a?.vz ?? 0;
+  const bx = b?.x ?? 0, bz = b?.z ?? 0, bvx = b?.vx ?? 0, bvz = b?.vz ?? 0;
+
+  const dx = bx - ax, dz = bz - az;
+  const dist = Math.hypot(dx, dz);
+
+  const empty = {
+    contact: { x: 1, z: 0 },
+    closingSpeed: 0,
+    aggressor: null,
+    victim: null,
+    knockDir: { x: 0, z: 0 },
+    impact: 0,
+  };
+  if (!(dist > 1e-4)) return empty; // coincident — no meaningful normal
+
+  const nx = dx / dist, nz = dz / dist;          // unit normal a → b
+  const aAlong = avx * nx + avz * nz;            // a's velocity toward b (+ = into b)
+  const bAlong = bvx * nx + bvz * nz;            // b's velocity along a→b (− = into a)
+  const aDrive = Math.max(0, aAlong);            // a pushing into b
+  const bDrive = Math.max(0, -bAlong);           // b pushing into a
+  const closingSpeed = aDrive + bDrive;
+
+  if (closingSpeed < minClosing) {
+    return { ...empty, contact: { x: nx, z: nz }, closingSpeed };
+  }
+
+  const aggressor = aDrive >= bDrive ? 'a' : 'b';
+  const victim = aggressor === 'a' ? 'b' : 'a';
+  const sign = aggressor === 'a' ? 1 : -1;       // push victim along ±normal (away from aggressor)
+  const impact = Math.min(1, closingSpeed / refSpeed);
+
+  return {
+    contact: { x: nx, z: nz },
+    closingSpeed,
+    aggressor,
+    victim,
+    knockDir: { x: nx * sign, z: nz * sign },
+    impact,
+  };
+}
+
 
 // --- ARENA GEOMETRY -----------------------------------------------------------
 // From Arena.jsx: the battle table's top surface is y=0 (RigidBody [0,-1,0] + 600x2x600),

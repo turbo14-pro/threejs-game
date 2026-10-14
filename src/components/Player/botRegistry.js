@@ -15,7 +15,7 @@ const bots = new Map();
 export const registerBot = (id, api) => { bots.set(id, api); };
 export const unregisterBot = (id) => { bots.delete(id); };
 
-/** All other bots as target candidates: [{ id, kind: 'bot', x, y, z, health }] */
+/** All other bots as target candidates: [{ id, kind: 'bot', x, y, z, health, vx, vz }] */
 export const getBotCandidates = (excludeId) => {
   const list = [];
   for (const [id, api] of bots) {
@@ -25,9 +25,17 @@ export const getBotCandidates = (excludeId) => {
     // Skip bots that are downed or eliminated so they're not targeted/attacked
     const health = typeof api.health === 'number' ? api.health : 1;
     if (health <= 0) continue;
-    list.push({ id, kind: 'bot', x: pos.x, y: pos.y, z: pos.z, health });
+    const vel = api.getVelocity?.() || { x: 0, z: 0 };
+    list.push({ id, kind: 'bot', x: pos.x, y: pos.y, z: pos.z, health, vx: vel.x, vz: vel.z });
   }
   return list;
+};
+
+/** A single bot's current horizontal velocity (units/sec), or null if unknown. */
+export const getBotVelocity = (id) => {
+  const api = bots.get(id);
+  if (api && typeof api.getVelocity === 'function') return api.getVelocity();
+  return null;
 };
 
 /** Deliver a hit from an attacker to a bot victim. */

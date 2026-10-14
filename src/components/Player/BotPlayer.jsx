@@ -15,9 +15,10 @@ import {
   randomTableRespawn,
   selectTarget,
   getBotPowerUpCombatBoost,
+  resolveImpact,
 } from './BotAI.jsx';
-import { registerBot, unregisterBot, getBotCandidates, damageBot, applyBotKnockback } from './botRegistry.js';
-import { getLocalPlayerWorldPos, getActivePowerUps } from '../World/items/PowerUpCoin.jsx';
+import { registerBot, unregisterBot, getBotCandidates, damageBot, applyBotKnockback, getBotVelocity } from './botRegistry.js';
+import { getLocalPlayerWorldPos, getLocalPlayerWorldVel, getActivePowerUps } from '../World/items/PowerUpCoin.jsx';
 import { BOT_DIFFICULTY } from './BotAI.jsx';
 import { SKINS } from '../../data/registries';
 import { POWERUP_DURATIONS, POWERUP_EFFECTS } from '../../config/playerConfig';
@@ -111,6 +112,7 @@ export default function BotPlayer({ bot }) {
     fellOff: false, // latched while falling off the table — cleared on respawn
     powerUp: null, // { category, rarity } the bot is currently holding
     powerUpUntil: 0, // clock time the current power-up expires
+    vel: new THREE.Vector3(), // horizontal velocity (units/sec), for Newtonian impact
     lastDebug: null,
   });
 
@@ -133,6 +135,9 @@ export default function BotPlayer({ bot }) {
         y: stateRef.current.pos.y,
         z: stateRef.current.pos.z,
       }),
+      // Horizontal velocity so other bodies can run a Newtonian impact resolution
+      // (who's driving into whom) against this bot.
+      getVelocity: () => ({ x: stateRef.current.vel.x, z: stateRef.current.vel.z }),
       get health() { return stateRef.current.health; },
       takeDamage: (amount) => {
         const s = stateRef.current;
@@ -406,6 +411,17 @@ export default function BotPlayer({ bot }) {
       s.pos.z += moveZ;
     }
 
+    // --- VELOCITY: track this frame's horizontal displacement as a velocity so a
+    // Newtonian impact (below) can tell who's driving into whom. Knockback coast
+    // counts too — a launched bot is moving fast even with no steering input. ---
+    if (step > 1e-5) {
+      s.vel.set(
+        (moveX + s.knockVec.x * step) / step,
+        0,
+        (moveZ + s.knockVec.z * step) / step,
+      );
+    }
+
     // --- SLIDE ATTACK: the lunge stays armed for slideLinger after the slide input
     // drops (at lunge speed the strike window is shorter than a single frame), and
     // the impact applies to BOTH bots and the human player ---
@@ -419,22 +435,49 @@ export default function BotPlayer({ bot }) {
     if (canHit) {
       s.lastHitAt = now;
       s.slideArmedUntil = 0; // one hit per lunge
-      const dir = new THREE.Vector3(target.x - s.pos.x, 0, target.z - s.pos.z).normalize();
-      if (target.kind === 'player') {
-        store.triggerKnockback({ x: dir.x, y: 0, z: dir.z }, combatBoost.knockbackForce);
-        store.damagePlayer(BOT_COMBAT.hitDamage);
-      } else {
-        damageBot(target.id, BOT_COMBAT.hitDamage);
-        applyBotKnockback(target.id, dir, combatBoost.knockbackForce);
-      }
-      // --- BOT ATTACK REPORT: who tackled whom, for how much, at what range ---
-      const victim = target.kind === 'player' ? 'PLAYER' : `bot:${target.id}`;
-      const boosted = combatBoost.knockbackForce > BOT_COMBAT.knockbackForce;
-      console.log(
-        `🗡️  [BOT ATTACK] ${bot.name} slide-tackled ${victim} ` +
-        `for ${BOT_COMBAT.hitDamage} dmg @ ${distance.toFixed(1)}m` +
-        `(knockback ${Math.round(combatBoost.knockbackForce)}${boosted ? ', slide-boosted' : ''})`
+
+      // --- NEWTONIAN RESOLUTION: only the body driving into the other deals the
+      // knockback. Consider position (contact normal), each body's direction and
+      // speed. If the TARGET is the aggressor (e.g. the player slid into us), the
+      // bot must NOT knock them back — the player's own collision handler owns
+      // that impact. This is the fix for "player slides into a sliding bot and
+      // still gets launched". ---
+      const targetVel = target.kind === 'player'
+        ? getLocalPlayerWorldVel()
+        : (getBotVelocity(target.id) || { x: 0, z: 0 });
+      const impact = resolveImpact(
+        { x: s.pos.x, z: s.pos.z, vx: s.vel.x, vz: s.vel.z },
+        { x: target.x, z: target.z, vx: targetVel.x, vz: targetVel.z },
       );
+      const botIsAggressor = impact.aggressor === 'a';
+
+      if (botIsAggressor) {
+        // Push the victim away from us along the contact normal; scale by closing speed.
+        const dir = { x: impact.knockDir.x, y: 0, z: impact.knockDir.z };
+        const force = combatBoost.knockbackForce * (0.5 + 0.5 * impact.impact);
+        if (target.kind === 'player') {
+          store.triggerKnockback({ x: dir.x, y: 0, z: dir.z }, force);
+          store.damagePlayer(BOT_COMBAT.hitDamage);
+        } else {
+          damageBot(target.id, BOT_COMBAT.hitDamage);
+          applyBotKnockback(target.id, dir, force);
+        }
+        // --- BOT ATTACK REPORT: who tackled whom, for how much, at what range ---
+        const victim = target.kind === 'player' ? 'PLAYER' : `bot:${target.id}`;
+        const boosted = combatBoost.knockbackForce > BOT_COMBAT.knockbackForce;
+        console.log(
+          `🗡️  [BOT ATTACK] ${bot.name} slide-tackled ${victim} ` +
+          `for ${BOT_COMBAT.hitDamage} dmg @ ${distance.toFixed(1)}m ` +
+          `(closing ${impact.closingSpeed.toFixed(1)} m/s, knockback ${Math.round(force)}${boosted ? ', slide-boosted' : ''})`
+        );
+      } else {
+        // We're the victim of this collision — the aggressor's own system applies
+        // our knockback, so we deliberately do nothing here (avoids double-hit).
+        console.log(
+          `🛡️  [BOT] ${bot.name} was driven into by ${target.kind === 'player' ? 'PLAYER' : `bot:${target.id}`} ` +
+          `@ ${distance.toFixed(1)}m — deferring knockback to the aggressor`
+        );
+      }
     }
 
     // --- TAG SCORING: drives the bots' side of the adaptive difficulty ---

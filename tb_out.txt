@@ -1,0 +1,24 @@
+
+[1m[46m RUN [49m[22m [36mv4.1.2 [39m[90mU:/My Games/three.js[39m
+
+ [32m✓[39m src/utils/math.test.js [2m([22m[2m2 tests[22m[2m)[22m[32m 6[2mms[22m[39m
+ [32m✓[39m src/config/playerConfig.test.js [2m([22m[2m6 tests[22m[2m)[22m[32m 9[2mms[22m[39m
+ [31m❯[39m src/components/Player/botRegistry.test.js [2m([22m[2m10 tests[22m[2m | [22m[31m1 failed[39m[2m)[22m[32m 65[2mms[22m[39m
+[31m     [31m×[31m exposes living bots as target candidates[39m[32m 56[2mms[22m[39m
+     [32m✓[39m skips the excluded id and any downed bot (health <= 0)[32m 1[2mms[22m[39m
+     [32m✓[39m ignores bots that report a non-finite position[32m 0[2mms[22m[39m
+     [32m✓[39m routes damage to the victim only[32m 1[2mms[22m[39m
+     [32m✓[39m routes knockback direction/force to the victim[32m 1[2mms[22m[39m
+     [32m✓[39m is a safe no-op for an unknown id[32m 1[2mms[22m[39m
+     [32m✓[39m returns only living bots inside the radius[32m 1[2mms[22m[39m
+     [32m✓[39m returns all living bots when no radius is given[32m 0[2mms[22m[39m
+     [32m✓[39m hands the category + rarity to the closest living bot[32m 1[2mms[22m[39m
+     [32m✓[39m is a safe no-op for an unknown id or a bot without the hook[32m 1[2mms[22m[39m
+ [32m✓[39m src/components/Player/BotAI.test.js [2m([22m[2m69 tests[22m[2m)[22m[32m 177[2mms[22m[39m
+ [32m✓[39m src/store/useGameStore.test.js [2m([22m[2m6 tests[22m[2m)[22m[32m 13[2mms[22m[39m
+
+[2m Test Files [22m [1m[31m1 failed[39m[22m[2m | [22m[1m[32m4 passed[39m[22m[90m (5)[39m
+[2m      Tests [22m [1m[31m1 failed[39m[22m[2m | [22m[1m[32m92 passed[39m[22m[90m (93)[39m
+[2m   Start at [22m 14:32:35
+[2m   Duration [22m 3.92s[2m (transform 851ms, setup 0ms, import 1.74s, tests 270ms, environment 11.97s)[22m
+

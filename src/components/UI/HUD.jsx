@@ -65,7 +65,20 @@ export default function HUD() {
   };
 
   const handleRespawn = () => {
-    useGameStore.getState().respawnToLobby();
+    // Restart: teleport to start location (platform 1 / arena start), exit menu into gameplay
+    const store = useGameStore.getState();
+    // Set teleport target to start position (platform 1 area, 15m above for spawn drop)
+    store.setPendingTeleportTarget({ x: 0, y: 103, z: 0 }); // lobby / platform 1 start
+    store.setGameState('PLAYING');
+    // Trigger teleport mechanism
+    store.triggerWorldReset(); // increments teleportCount
+    // Exit menu immediately
+    setIsPaused(false);
+    // Lock pointer
+    try {
+      const canvas = document.querySelector('canvas');
+      if (canvas) canvas.requestPointerLock();
+    } catch (e) {}
   };
 
   const rippleDebugLabel = useMemo(() => {

@@ -1,0 +1,43 @@
+
+[31m⎯⎯⎯⎯⎯⎯⎯[39m[1m[41m Failed Tests 1 [49m[22m[31m⎯⎯⎯⎯⎯⎯⎯[39m
+
+[41m[1m FAIL [22m[49m src/components/Player/botRegistry.test.js[2m > [22mbotRegistry — candidate listing[2m > [22mexposes living bots as target candidates
+[31m[1mAssertionError[22m: expected [ …(2) ] to deeply equal ArrayContaining{…}[39m
+
+[32m- Expected[39m
+[31m+ Received[39m
+
+[32m- ArrayContaining [[39m
+[31m+ [[39m
+[2m    {[22m
+[2m      "health": 100,[22m
+[2m      "id": "bot-0",[22m
+[2m      "kind": "bot",[22m
+[31m+     "vx": 0,[39m
+[31m+     "vz": 0,[39m
+[2m      "x": 1,[22m
+[2m      "y": 2,[22m
+[2m      "z": 3,[22m
+[2m    },[22m
+[2m    {[22m
+[2m      "health": 100,[22m
+[2m      "id": "bot-1",[22m
+[2m      "kind": "bot",[22m
+[31m+     "vx": 0,[39m
+[31m+     "vz": 0,[39m
+[2m      "x": 4,[22m
+[2m      "y": 5,[22m
+[2m      "z": 6,[22m
+[2m    },[22m
+[2m  ][22m
+
+[36m [2m❯[22m src/components/Player/botRegistry.test.js:[2m37:18[22m[39m
+    [90m 35|[39m
+    [90m 36|[39m     [34mexpect[39m(list)[33m.[39m[34mtoHaveLength[39m([34m2[39m)[33m;[39m
+    [90m 37|[39m     [34mexpect[39m(list)[33m.[39m[34mtoEqual[39m(
+    [90m   |[39m                  [31m^[39m
+    [90m 38|[39m       expect[33m.[39m[34marrayContaining[39m([
+    [90m 39|[39m         { id[33m:[39m [32m'bot-0'[39m[33m,[39m kind[33m:[39m [32m'bot'[39m[33m,[39m x[33m:[39m [34m1[39m[33m,[39m y[33m:[39m [34m2[39m[33m,[39m z[33m:[39m [34m3[39m[33m,[39m health[33m:[39m [34m100[39m }[33m,[39m
+
+[31m[2m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯[22m[39m
+
