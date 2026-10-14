@@ -62,14 +62,47 @@ class SoundManager {
   }
 
   // Play a 3D sound attached to a specific object
-  playPositional(name, parent, volume = 1.0, refDistance = 5, loop = false) {
+  playPositional(name, parent, volume = 50, refDistance = 10, rolloffFactor = 1.0, loop = false) {
     if (!this.listener || !this.sounds.has(name)) return null;
 
     const sound = new THREE.PositionalAudio(this.listener);
     sound.setBuffer(this.sounds.get(name));
-    sound.setVolume(volume);
     sound.setVolume(volume * (this.masterVolume || 1.0));
+    sound.setRefDistance(refDistance);
+    sound.setRolloffFactor(rolloffFactor);
+    sound.setDistanceModel('inverse');
     sound.setLoop(loop);
+
+    // Short reverb via delay + feedback loop (room effect)
+    const ctx = this.listener.context;
+    const delay = ctx.createDelay();
+    delay.delayTime.value = 0.08;
+    const feedback = ctx.createGain();
+    feedback.gain.value = 0.3;
+    const wet = ctx.createGain();
+    wet.gain.value = 0.25;
+    const panner = sound.getOutput ? sound.getOutput() : sound;
+    panner.connect(delay);
+    delay.connect(feedback);
+    feedback.connect(delay);
+    delay.connect(wet);
+    wet.connect(ctx.destination);
+
+    // Distant echo for loud sounds (volume >= 80 on 1-100 scale)
+    if (volume >= 80) {
+      const echo = new THREE.PositionalAudio(this.listener);
+      echo.setBuffer(this.sounds.get(name));
+      echo.setVolume(volume * 0.15 * (this.masterVolume || 1.0));
+      echo.setRefDistance(refDistance * 3);
+      echo.setRolloffFactor(rolloffFactor * 2);
+      echo.setDistanceModel('inverse');
+      echo.setLoop(loop);
+      parent.add(echo);
+      this.instances.add(echo);
+      echo.onEnded = () => { parent.remove(echo); this.instances.delete(echo); };
+      setTimeout(() => echo.play(), 120);
+    }
+
     sound.play();
 
     parent.add(sound);

@@ -1,0 +1,11 @@
+const fs = require('fs');
+let f = fs.readFileSync('src/components/Player/PlayerController.jsx', 'utf8');
+f = f.replace("import { soundManager } from '../../utils/SoundManager';", "import { soundManager } from '../../utils/SoundManager';\nimport { useGamepad } from '../../hooks/useGamepad.js';");
+f = f.replace('    const keys = getKeys();', '    const keys = getKeys();\n    const { poll } = useGamepad();\n    const gp = poll ? poll(0.016) : null;');
+f = f.replace('      moveX = (keys.right ? 1 : 0) - (keys.left ? 1 : 0) + (mobileInput.x || 0);', '      moveX = (keys.right ? 1 : 0) - (keys.left ? 1 : 0) + (mobileInput.x || 0) + (gp ? gp.axes.lx : 0);');
+f = f.replace('      moveZ = (keys.backward ? 1 : 0) - (keys.forward ? 1 : 0) - (mobileInput.y || 0);', '      moveZ = (keys.backward ? 1 : 0) - (keys.forward ? 1 : 0) - (mobileInput.y || 0) - (gp ? gp.axes.ly : 0);');
+f = f.replace('    walkingInput = !!(keys.walk || mobileInput.walk);', '    walkingInput = !!(keys.walk || mobileInput.walk || (gp && gp.buttons[10] && gp.buttons[10].pressed));');
+f = f.replace('    jumpingInput = !!(keys.jump || mobileInput.jump);', '    jumpingInput = !!(keys.jump || mobileInput.jump || (gp && gp.edges[0]));');
+f = f.replace('    slidingInput = !!(keys.slide || mobileInput.slide);', '    slidingInput = !!(keys.slide || mobileInput.slide || (gp && gp.axes.rtPressed));');
+fs.writeFileSync('src/components/Player/PlayerController.jsx', f);
+console.log('PlayerController updated');

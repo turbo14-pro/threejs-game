@@ -15,10 +15,6 @@ export default function SoundListener() {
     soundManager.init(camera);
 
     // Pre-load common sounds (even if files are missing, it sets up the slots)
-    soundManager.load('footstep', '/audio/footstep.mp3');
-    soundManager.load('jump', '/audio/jump.mp3');
-    soundManager.load('land', '/audio/land.mp3');
-    soundManager.load('splat', '/audio/splat.mp3');
     soundManager.load('running', '/audio/running.ogg');
     soundManager.load('walk', '/audio/walk.ogg');
     soundManager.load('metal-hit', '/audio/metal-hit.ogg');

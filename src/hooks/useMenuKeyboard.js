@@ -17,6 +17,27 @@ export function useMenuKeyboard({ enabled, screen, onBack }) {
     const getActions = () => Array.from(menu.querySelectorAll(MENU_ACTION_SELECTOR));
     getActions()[0]?.focus();
 
+    // Right-stick / arrow navigation for .menu-content focus
+    const handleGamepadNav = () => {
+      const gp = navigator.getGamepads ? navigator.getGamepads() : [];
+      const g = gp.find(p => p && p.connected);
+      if (!g) return;
+      const rx = g.axes[2] || 0; // right stick X
+      const ry = g.axes[3] || 0; // right stick Y
+      if (Math.abs(rx) < 0.15 && Math.abs(ry) < 0.15) return;
+      const actions = getActions();
+      if (!actions.length) return;
+      const currentIndex = actions.indexOf(document.activeElement);
+      let nextIndex = currentIndex;
+      if (Math.abs(ry) > Math.abs(rx)) {
+        nextIndex = ry > 0 ? currentIndex - 1 : currentIndex + 1; // up/down
+      } else {
+        nextIndex = rx > 0 ? currentIndex + 1 : currentIndex - 1; // left/right
+      }
+      nextIndex = (nextIndex + actions.length) % actions.length;
+      actions[nextIndex].focus();
+    };
+
     const handleKeyDown = (event) => {
       const target = event.target;
       const targetIsEditable = target instanceof HTMLElement
@@ -71,7 +92,11 @@ export function useMenuKeyboard({ enabled, screen, onBack }) {
     };
 
     window.addEventListener('keydown', handleKeyDown, true);
-    return () => window.removeEventListener('keydown', handleKeyDown, true);
+    const navInterval = setInterval(handleGamepadNav, 150);
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown, true);
+      clearInterval(navInterval);
+    };
   }, [enabled, screen]);
 
   return menuRef;

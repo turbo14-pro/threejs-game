@@ -10,6 +10,7 @@ import { setLocalPlayerWorldPos, setLocalPlayerWorldVel } from '../World/items/P
 import { damageBot, applyBotKnockback, getBotVelocity } from './botRegistry.js';
 import { BOT_COMBAT, resolveImpact } from './BotAI.jsx';
 import { soundManager } from '../../utils/SoundManager';
+import { useGamepad } from '../../hooks/useGamepad.js';
 
 const direction = new THREE.Vector3();
 const frontVector = new THREE.Vector3();
@@ -25,6 +26,7 @@ export default function PlayerController({ sendUpdate }) {
   const [, getKeys] = useKeyboardControls();
   const gameState = useGameStore(state => state.game.state);
   const mobileInput = useGameStore(state => state.mobileInput);
+  const { poll } = useGamepad();
   const teleportCount = useGameStore(state => state.teleportCount);
   const matchPhase = useGameStore(state => state.game.phase);
   const countdown = useGameStore(state => state.game.countdown);
@@ -335,7 +337,7 @@ export default function PlayerController({ sendUpdate }) {
         z: currentVel.z
       }, true);
       
-      soundManager.playPositional('hit', playerGroupRef.current, 1.0);
+      soundManager.playPositional('hit', playerGroupRef.current, 0.3);
 
       // Yield control for 1.2s to allow the flight to finish
       setTimeout(() => setIsStunned(false), 1200);
@@ -357,6 +359,29 @@ export default function PlayerController({ sendUpdate }) {
     }
 
     const keys = getKeys();
+    const gp = poll ? poll(0.016) : null;
+    // Button 9 = menu toggle (edge detect)
+    if (gp && gp.buttons[9] && gp.buttons[9].pressed && gp.edges && gp.edges[9]) {
+      const current = useGameStore.getState().game.state;
+      if (current === 'MENU') {
+        useGameStore.getState().setGameState('PLAYING');
+        soundManager.setMasterVolume(1.0);
+        try { gl.domElement.requestPointerLock(); } catch (e) {}
+      } else {
+        useGameStore.getState().setGameState('MENU');
+        soundManager.setMasterVolume(0.0);
+      }
+    }
+    // Gamepad right stick look (retains mouse)
+    if (gp && (Math.abs(gp.axes.rx) > 0.15 || gp.axes.rtPressed || Math.abs(gp.axes.rt) > 0.15)) {
+      rotationX.current -= gp.axes.rx * 0.05; // up/down
+      rotationY.current -= (gp.axes.rt || 0) * 0.05; // left/right via rt
+      rotationX.current = Math.max(-Math.PI / 3, Math.min(Math.PI / 4, rotationX.current));
+    }
+    if (gp) {
+      const active = (Math.abs(gp.axes.lx) > 0.15 || Math.abs(gp.axes.ly) > 0.15 || Math.abs(gp.axes.rx) > 0.15 || Math.abs(gp.axes.ry) > 0.15 || Math.abs(gp.axes.rt) > 0.15 || gp.axes.rtPressed || gp.edges.length > 0 || gp.buttons.some(b => b.pressed));
+      if (active) console.log("[Gamepad] axes:", {lx: gp.axes.lx.toFixed(2), ly: gp.axes.ly.toFixed(2), rx: gp.axes.rx.toFixed(2), ry: gp.axes.ry.toFixed(2), rt: gp.axes.rt.toFixed(2), rtPressed: gp.axes.rtPressed}, "edges:", gp.edges, "buttons:", gp.buttons.map((b,i)=>b.pressed?i:null).filter(x=>x!==null));
+    }
     const translation = rigidBodyRef.current.translation();
 
     // Update shared player position for power-up distance pickup
@@ -443,19 +468,21 @@ export default function PlayerController({ sendUpdate }) {
       return;
     }
 
+    // Suspend player control when menu is open
+    const menuOpen = useGameStore.getState().game.state === 'MENU';
     // Input Aggregation (Keyboard + Mobile) — locked during dash
     let moveX, moveZ, walkingInput, jumpingInput, slidingInput;
-    if (isDashing.current) {
+    if (isDashing.current || menuOpen) {
       moveX = 0; moveZ = 0;
       walkingInput = false; jumpingInput = false; slidingInput = false;
     } else {
-      moveX = (keys.right ? 1 : 0) - (keys.left ? 1 : 0) + (mobileInput.x || 0);
-      moveZ = (keys.backward ? 1 : 0) - (keys.forward ? 1 : 0) - (mobileInput.y || 0);
-      walkingInput = !!(keys.walk || mobileInput.walk);
-      jumpingInput = !!(keys.jump || mobileInput.jump);
-      slidingInput = !!(keys.slide || mobileInput.slide);
+      moveX = (keys.right ? 1 : 0) - (keys.left ? 1 : 0) + (mobileInput.x || 0) + (gp ? gp.axes.lx : 0);
+      moveZ = (keys.backward ? 1 : 0) - (keys.forward ? 1 : 0) - (mobileInput.y || 0) + (gp ? gp.axes.ly : 0);
+      walkingInput = !!(keys.walk || mobileInput.walk || (gp && gp.buttons[6] && gp.buttons[6].pressed));
+      jumpingInput = !!(keys.jump || mobileInput.jump || (gp && gp.buttons[2] && gp.buttons[2].pressed));
+      slidingInput = !!(keys.slide || mobileInput.slide || (gp && gp.buttons[7] && gp.buttons[7].pressed));
     }
-    const dashInput = !!(keys.dash || mobileInput.dash);
+    const dashInput = !!(keys.dash || mobileInput.dash || (gp && gp.buttons[1] && gp.buttons[1].pressed));
 
     // Dash cooldown
     if (dashCooldown.current > 0) dashCooldown.current -= delta;
@@ -766,8 +793,8 @@ export default function PlayerController({ sendUpdate }) {
     const shouldWalk = currentlyGrounded && moving && currentPhase === 'none' && walkingInput && playerGroupRef.current;
     if (shouldWalk && !walkingSoundRef.current) {
       console.log('[SoundDebug] walking loop START');
-      walkingSoundRef.current = soundManager.playPositional('walk', playerGroupRef.current, 1.0, 2, true);
-      if (!walkingSoundRef.current) walkingSoundRef.current = soundManager.playGlobal('walk', 1.0, true);
+      walkingSoundRef.current = soundManager.playPositional('walk', playerGroupRef.current, 0.3, 2, true);
+      if (!walkingSoundRef.current) walkingSoundRef.current = soundManager.playGlobal('walk', 0.3, true);
     } else if (!shouldWalk && walkingSoundRef.current) {
       console.log('[SoundDebug] walking loop STOP');
       if (walkingSoundRef.current.isPlaying) walkingSoundRef.current.stop();
@@ -779,9 +806,9 @@ export default function PlayerController({ sendUpdate }) {
     const shouldRun = currentlyGrounded && moving && currentPhase === 'none' && playerGroupRef.current;
     if (shouldRun && !runningSoundRef.current) {
       if (!soundManager.listener && camera) soundManager.init(camera);
-      runningSoundRef.current = soundManager.playPositional('running', playerGroupRef.current, 1.0, 1.5, true);
+      runningSoundRef.current = soundManager.playPositional('running', playerGroupRef.current, 0.5, 1.5, true);
       if (!runningSoundRef.current) {
-        runningSoundRef.current = soundManager.playGlobal('running', 1.0, true);
+        runningSoundRef.current = soundManager.playGlobal('running', 0.5, true);
       }
       console.log('[SoundDebug] play result:', !!runningSoundRef.current, 'isPlaying:', runningSoundRef.current?.isPlaying);
     } else if (!shouldRun && runningSoundRef.current) {
@@ -1104,7 +1131,7 @@ export default function PlayerController({ sendUpdate }) {
     setTimeout(() => impactTracker.current.delete(uniqueId), 2000);
 
     if (isTinCan) {
-      soundManager.playPositional('metal-hit', playerGroupRef.current, 1.0, 3, false);
+      soundManager.playPositional('metal-ground', playerGroupRef.current, 0.2, 3, false);
     }
 
     // Only react to sliding attacks (not when we are the victim)

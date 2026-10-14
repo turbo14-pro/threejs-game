@@ -138,6 +138,24 @@ export function TinCanPhysics({ position, rotation, color, mass = 1, linearDampi
   const radius = 4;
   const rigidRef = useRef();
 
+  const groundHitRef = useRef(false);
+
+  // Ground impact sound: detect when can lands on arena floor
+  useFrame(() => {
+    if (!rigidRef.current) return;
+    const y = rigidRef.current.translation().y;
+    const vel = rigidRef.current.linvel();
+    // Near floor (y ~ 5 = half height) and downward velocity just dropped
+    if (y < 8 && y > 2 && vel.y < -1 && !groundHitRef.current) {
+      groundHitRef.current = true;
+      const impactVol = Math.min(Math.round(Math.abs(vel.y),2)/6, 10);
+      console.log("🥫 TinCan bounce! velY:", Math.abs(vel.y), "vol:", impactVol);
+      try { if (soundManager && soundManager.listener && impactVol > 1) soundManager.playPositional('metal-ground', rigidRef.current, impactVol, 15, 1.0, false); } catch (e) {}
+    } else if (y > 10) {
+      groundHitRef.current = false; // Reset when airborne
+    }
+  });
+
   // Respawn if the can falls below the arena
   useFrame(() => {
     if (!rigidRef.current) return;
@@ -153,7 +171,7 @@ export function TinCanPhysics({ position, rotation, color, mass = 1, linearDampi
   const handleCollision = useCallback((e) => {
     if (!rigidRef.current) return;
     const other = e.other.rigidBody;
-    if (!other || other.userData?.type !== 'player' || !other.userData?.isSliding) return;
+    if (!other) return; // All physics bodies (player, bot, ground, can) trigger sound
 
     const canPos = rigidRef.current.translation();
     const playerPos = other.translation();
@@ -179,9 +197,11 @@ export function TinCanPhysics({ position, rotation, color, mass = 1, linearDampi
     // Scale force by player speed (min threshold so even slow hits move the can)
     const slideMultiplier = other.userData?.slideMultiplier || 1;
     const force = Math.max(speed * 800 * slideMultiplier, 25);
-    console.log("🥫 TinCan hit! speed:", speed, "multiplier:", slideMultiplier, "force:", force);
+
     // Sound is non-blocking; guard so it never interferes with physics
-    try { if (soundManager && soundManager.listener) soundManager.playPositional('metal-ground', rigidRef.current, 1.0, 3, false); } catch (e) {}
+    const impactVol = Math.min(Math.round(speed, 2),10); 
+    console.log("🥫 TinCan hit! speed:", speed, "multiplier:", slideMultiplier, "force:", force, "vol:", impactVol);
+    try { if (soundManager && soundManager.listener && vol > 0) soundManager.playPositional('metal-ground', rigidRef.current, impactVol, 15, 1.0, false); } catch (e) {}
 
     rigidRef.current.applyImpulse({
       x: finalDir.x * force,

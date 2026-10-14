@@ -18,7 +18,7 @@ const applyCharacterMaterials = (material) => {
   const isDark = material.name.toLowerCase().includes('dark');
 
   material.onBeforeCompile = (shader) => {
-    shader.uniforms.rimIntensity = { value: 0.6 };
+    shader.uniforms.rimIntensity = { value: 1 };
     shader.uniforms.bumpScale = { value: isDark ? 0.2 : 0.0 }; // stronger bump for dark material
 
     shader.fragmentShader = `
