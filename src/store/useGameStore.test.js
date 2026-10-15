@@ -1,5 +1,58 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { useGameStore } from './useGameStore.js';
+import { BOT_DIFFICULTY, BOT_NAME_POOL } from '../components/Player/BotAI.jsx';
+
+describe('CPU bot store state', () => {
+  beforeEach(() => {
+    useGameStore.setState({
+      bots: [],
+      botCount: 0,
+      botDifficulty: BOT_DIFFICULTY.normal,
+      matchScore: { player: 0, bots: 0 },
+    });
+  });
+
+  it('always runs 3 bots on normal skill — the setters are locked no-ops', () => {
+    useGameStore.getState().setBotCount(1);
+    useGameStore.getState().setBotDifficulty(BOT_DIFFICULTY.insane);
+
+    const { bots, botCount, botDifficulty } = useGameStore.getState();
+    expect(botCount).toBe(3);
+    expect(botDifficulty).toBe(BOT_DIFFICULTY.normal);
+    expect(bots).toHaveLength(3);
+    // Names are random from the food-fighter pool (unique within the batch)
+    expect(bots.map(b => b.name).every(name => BOT_NAME_POOL.includes(name))).toBe(true);
+    expect(new Set(bots.map(b => b.name)).size).toBe(3);
+    expect(bots.every(b => b.difficulty === BOT_DIFFICULTY.normal)).toBe(true);
+  });
+
+  it('credits match score to the side that earned it', () => {
+    useGameStore.getState().addMatchScore('bots', 2);
+    useGameStore.getState().addMatchScore('player');
+
+    expect(useGameStore.getState().matchScore).toEqual({ player: 1, bots: 2 });
+  });
+
+  it('never lets a match score go negative', () => {
+    useGameStore.getState().addMatchScore('player', -5);
+
+    expect(useGameStore.getState().matchScore.player).toBe(0);
+  });
+
+  it('awards the player a point for collecting a power-up, which drives bot difficulty', () => {
+    useGameStore.getState().collectPowerUp('speed', 'gold');
+
+    expect(useGameStore.getState().matchScore.player).toBe(1);
+  });
+
+  it('resets both match scores', () => {
+    useGameStore.getState().addMatchScore('player', 3);
+    useGameStore.getState().addMatchScore('bots', 4);
+    useGameStore.getState().resetMatchScore();
+
+    expect(useGameStore.getState().matchScore).toEqual({ player: 0, bots: 0 });
+  });
+});
 
 describe('Ripple debug state', () => {
   beforeEach(() => {

@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import './style.css';
+import { debugLog, debugWarn, debugError } from './utils/debugLog.js';
 
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { DRACOLoader } from 'three/examples/jsm/loaders/DRACOLoader.js';
@@ -182,7 +183,7 @@ textureLoader.load('/skybox/skybox-kitchen.webp', (tex) => {
     skyboxMesh.scale.y = 0.7;
     scene.add(skyboxMesh);
 
-    console.log('Skybox loaded.');
+    debugLog('Skybox loaded.');
 });
 
 
@@ -355,7 +356,7 @@ gltfLoader.setDRACOLoader(dracoLoader);
 
 async function startGame(charType) {
     currentState = 'GAME';
-    console.log(`Starting game with: ${charType}`);
+    debugLog(`Starting game with: ${charType}`);
     
     // Hide menus
     document.getElementById('char-selection')?.classList.add('hidden');
@@ -415,7 +416,7 @@ async function startGame(charType) {
         
         respawnPlayer();
     } catch (error) {
-        console.warn(`Could not load ${charType}.glb, using placeholder.`, error);
+        debugWarn(`Could not load ${charType}.glb, using placeholder.`, error);
         if (statusVal) statusVal.innerText = `${charType.toUpperCase()} (ERROR)`;
         createPlaceholder();
     }
@@ -556,7 +557,7 @@ function updateController(dt) {
     if (mixer) {
         const nextAction = animations[targetAnimGroup] || animations[targetAnimGroup.substring(1)];
         if (nextAction && currentAction !== nextAction) {
-            console.log(`Switching animation to: ${targetAnimGroup}`);
+            debugLog(`Switching animation to: ${targetAnimGroup}`);
             if (currentAction) currentAction.fadeOut(0.2);
             currentAction = nextAction;
             currentAction.reset().fadeIn(0.2).play();
@@ -579,7 +580,7 @@ function updateController(dt) {
     if (player.position.y > 90) {
         scene.traverse(obj => {
             if (obj.name === "spawnButton" && player.position.distanceTo(obj.position) < 3) {
-                console.log('Stepped on spawn button!');
+                debugLog('Stepped on spawn button!');
                 player.position.set((Math.random() - 0.5) * 80, 40, (Math.random() - 0.5) * 80);
                 velocity.set(0, 0, 0);
             }
@@ -679,9 +680,9 @@ function switchMenu(fromId, toId) {
     if (from && to) {
         from.classList.add('hidden');
         to.classList.remove('hidden');
-        console.log(`Menu switch: ${fromId} -> ${toId}`);
+        debugLog(`Menu switch: ${fromId} -> ${toId}`);
     } else {
-        console.error(`Menu error: ${fromId} or ${toId} not found`);
+        debugError(`Menu error: ${fromId} or ${toId} not found`);
     }
 }
 
@@ -701,14 +702,14 @@ if (backBtn) {
 const pauseMenu = document.getElementById('pause-menu');
 
 const resumeGame = () => {
-    console.log("Resuming game...");
+    debugLog("Resuming game...");
     if (document.pointerLockElement !== canvas) {
         canvas.requestPointerLock();
     }
 };
 
 const respawnAndResume = () => {
-    console.log("Respawning and resuming...");
+    debugLog("Respawning and resuming...");
     respawnPlayer();
     resumeGame();
 };
@@ -717,7 +718,7 @@ const respawnAndResume = () => {
 // This is the most reliable way to sync UI with browser state.
 document.addEventListener('pointerlockchange', () => {
     const isLocked = document.pointerLockElement === canvas;
-    console.log("Pointer lock changed. Locked:", isLocked, "CurrentState:", currentState);
+    debugLog("Pointer lock changed. Locked:", isLocked, "CurrentState:", currentState);
     
     if (isLocked) {
         pauseMenu.classList.add('hidden');
@@ -727,13 +728,13 @@ document.addEventListener('pointerlockchange', () => {
 });
 
 document.addEventListener('pointerlockerror', () => {
-    console.error("Pointer lock error! Ensure you've clicked inside the window.");
+    debugError("Pointer lock error! Ensure you've clicked inside the window.");
 });
 
 // Button Handlers
 const resumeHandler = (e) => {
     if (e) e.stopPropagation();
-    console.log("Direct resume call from event:", e?.type);
+    debugLog("Direct resume call from event:", e?.type);
     resumeGame();
 };
 
@@ -753,7 +754,7 @@ document.getElementById('quit-btn').addEventListener('click', () => {
 document.querySelectorAll('.char-btn[data-char]').forEach(btn => {
     btn.addEventListener('click', (e) => {
         const char = btn.dataset.char;
-        console.log(`Character selected: ${char}`);
+        debugLog(`Character selected: ${char}`);
         
         // Step 1: Request Lock (Must be first in user interaction)
         canvas.requestPointerLock();

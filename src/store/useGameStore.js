@@ -8,6 +8,7 @@ import {
   POWERUP_DURATIONS,
   POWERUP_DESCRIPTIONS,
 } from '../config/playerConfig';
+import { BOT_DIFFICULTY, buildBotRoster } from '../components/Player/BotAI.jsx';
 
 // Re-export for backward compatibility with existing imports
 export { POWERUP_EFFECTS, POWERUP_DURATIONS, POWERUP_DESCRIPTIONS };
@@ -22,6 +23,11 @@ const SHADOW_TYPE_MAP = {
 };
 
 export const getShadowMapType = (shadowQuality) => SHADOW_TYPE_MAP[shadowQuality] ?? THREE.PCFSoftShadowMap;
+
+// Bots present on the arena before any lobby selection (see "spawn from the start").
+// Every match runs exactly 3 bots on normal skill — the lobby has no selectors.
+const DEFAULT_BOT_COUNT = 3;
+const DEFAULT_BOT_DIFFICULTY = BOT_DIFFICULTY.normal;
 
 /**
  * THE MAIN BRAIN (Game Store)
@@ -69,10 +75,19 @@ export const useGameStore = create(
         respawnCount: 0, // Used to trigger lobby respawn
         mobileInput: { x: 0, y: 0, jump: false, sprint: false, slide: false, dash: false },
         cameraInput: { x: 0, y: 0 },
+        pendingTeleportTarget: null, // { x, y, z } set by spawnPlayerAtRandomLocation
         
         // --- MULTIPLAYER ---
         remotePlayers: {}, // { id: { pos, rot, skin, username } }
         lastServerState: null, // { pos, tick } for local player reconciliation
+
+        // --- CPU BOTS ---
+        // Fixed roster: every match runs 3 bots on normal skill. The lobby has
+        // no selectors, so the count and difficulty are constants, not state.
+        bots: buildBotRoster({ count: DEFAULT_BOT_COUNT, difficulty: DEFAULT_BOT_DIFFICULTY }),
+        botCount: DEFAULT_BOT_COUNT,    // always 3
+        botDifficulty: DEFAULT_BOT_DIFFICULTY, // always normal
+        matchScore: { player: 0, bots: 0 }, // drives adaptive bot difficulty
         
         // --- VISUAL SETTINGS ---
         performancePreset: 'High', // Lowest, Low, Medium, High, Ultra, Custom
@@ -117,6 +132,7 @@ export const useGameStore = create(
         notification: null, // { category, rarity, id } or null
 
         // --- ACTIONS ---
+        setPendingTeleportTarget: (target) => set({ pendingTeleportTarget: target }),
         setDashBlur: (val) => set({ dashBlur: val }),
         setPlayerMovement: (moving, dashing) => set({ playerIsMoving: moving, playerIsDashing: dashing }),
         setIsStunned: (val) => set({ isStunned: val }),
@@ -157,6 +173,74 @@ export const useGameStore = create(
             game: { ...s.game, phase: 'BATTLE', countdown: 0 },
             teleportCount: s.teleportCount + 1
           }));
+        },
+        
+        // Spawn player at random location 15m above arena floor
+        spawnPlayerAtRandomLocation: () => {
+          Logger.info('Player', 'Spawning player at random location');
+          const store = get();
+          
+          // Generate random position within arena bounds, avoiding platforms
+          const TABLE_HALF = 280;
+          const PLATFORM_ZONES = [
+            { cx: 0, cz: 0, rx: 50, rz: 35 },   // Platform 1
+            { cx: 0, cz: -45, rx: 40, rz: 20 }, // Platform 2
+            { cx: 0, cz: -22.5, rx: 12, rz: 15 }, // Bridge
+          ];
+          const SAFE_DIST = 22;
+          
+          let tx, tz, placed = false;
+          for (let attempt = 0; attempt < 200; attempt++) {
+            tx = (Math.random() - 0.5) * TABLE_HALF * 2;
+            tz = (Math.random() - 0.5) * TABLE_HALF * 2;
+            let inZone = false;
+            for (const z of PLATFORM_ZONES) {
+              if (Math.abs(tx - z.cx) < z.rx && Math.abs(tz - z.cz) < z.rz) { 
+                inZone = true; 
+                break; 
+              }
+            }
+            if (inZone) continue;
+            let tooClose = false;
+            // Check distance from cereal boxes (reuse logic from PlayerController)
+            const seededRandom = (seed) => {
+              let s = seed;
+              return () => { s = (s * 9301 + 49297) % 233280; return s / 233280; };
+            };
+            const rand = seededRandom(42);
+            const cerealPositions = [];
+            for (let i = 0; i < 20; i++) {
+              let bx, bz, valid = false, attempts = 0;
+              while (!valid && attempts < 100) {
+                bx = (rand() - 0.5) * 520;
+                bz = (rand() - 0.5) * 520;
+                attempts++;
+                if (Math.abs(bx) < 45 && bz > -75 && bz < 30) continue;
+                let ok = true;
+                for (const b of cerealPositions) {
+                  if (Math.hypot(bx - b.x, bz - b.z) < 42) { ok = false; break; }
+                }
+                if (ok) valid = true;
+              }
+              if (valid) cerealPositions.push({ x: bx, z: bz });
+            }
+            
+            for (const b of cerealPositions) {
+              if (Math.hypot(tx - b.x, tz - b.z) < SAFE_DIST) { tooClose = true; break; }
+            }
+            if (tooClose) continue;
+            placed = true;
+            break;
+          }
+          if (!placed) { tx = 0; tz = 80; } // fallback
+          
+          const ty = 15; // 15 metres above arena floor (spawn 15m above floor)
+          
+          // Trigger teleport via existing mechanism
+          set({ teleportCount: store.teleportCount + 1 });
+          
+          // Store the target position for useFrame to pick up
+          set({ pendingTeleportTarget: { x: tx, y: ty, z: tz } });
         },
 
         // Player Control
@@ -215,6 +299,26 @@ export const useGameStore = create(
           delete newPlayers[id];
           return { remotePlayers: newPlayers };
         }),
+
+        // --- CPU BOT ACTIONS ---
+        // Locked: every match runs 3 bots on normal skill. The setters are kept
+        // as no-ops so old callers/tests don't crash — they always rebuild the
+        // fixed roster.
+        setBotCount: () => set(() => ({
+          botCount: DEFAULT_BOT_COUNT,
+          bots: buildBotRoster({ count: DEFAULT_BOT_COUNT, difficulty: DEFAULT_BOT_DIFFICULTY }),
+        })),
+        setBotDifficulty: () => set(() => ({
+          botDifficulty: DEFAULT_BOT_DIFFICULTY,
+          bots: buildBotRoster({ count: DEFAULT_BOT_COUNT, difficulty: DEFAULT_BOT_DIFFICULTY }),
+        })),
+        addMatchScore: (side, amount = 1) => set((s) => ({
+          matchScore: {
+            ...s.matchScore,
+            [side]: Math.max(0, (s.matchScore[side] || 0) + amount)
+          }
+        })),
+        resetMatchScore: () => set({ matchScore: { player: 0, bots: 0 } }),
         
         // System
         triggerWorldReset: () => set({ teleportCount: get().teleportCount + 1 }),
@@ -225,7 +329,7 @@ export const useGameStore = create(
         })),
         setMobileInput: (input) => set({ mobileInput: { ...get().mobileInput, ...input } }),
         setCameraInput: (input) => set({ cameraInput: { ...get().cameraInput, ...input } }),
-        setSetting: (key, value) => set((s) => ({ 
+        setSetting: (key, value) => set((s) => ({
           settings: { ...s.settings, [key]: value },
           performancePreset: 'Custom'
         })),
@@ -301,6 +405,9 @@ export const useGameStore = create(
               expiresAt: Date.now() + (POWERUP_DURATIONS[rarity] || 120) * 1000
             }
           });
+          // Collecting a power-up counts as a point for the human, which nudges the
+          // CPU bots' adaptive difficulty upward while the player is ahead.
+          get().addMatchScore('player', 1);
           get().showNotification(category, rarity);
         },
 

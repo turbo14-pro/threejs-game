@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef } from 'react';
 import { useGameStore } from '../../store/useGameStore';
 
 export default function Joystick() {
@@ -6,10 +6,10 @@ export default function Joystick() {
   const [isActive, setIsActive] = useState(false);
   const [pos, setPos] = useState({ x: 0, y: 0 });
   const baseRef = useRef(null);
+  const touchIdRef = useRef(null);
 
-  const handleTouch = (e) => {
+  const handleTouch = (touch) => {
     if (!baseRef.current) return;
-    const touch = e.touches[0];
     const rect = baseRef.current.getBoundingClientRect();
     const centerX = rect.left + rect.width / 2;
     const centerY = rect.top + rect.height / 2;
@@ -35,18 +35,43 @@ export default function Joystick() {
     setMobileInput({ x: nx, y: -ny }); // Note: ny is inverted for 3D forward
   };
 
-  const endTouch = () => {
-    setIsActive(false);
-    setPos({ x: 0, y: 0 });
-    setMobileInput({ x: 0, y: 0 });
+  const handleTouchStart = (e) => {
+    if (touchIdRef.current !== null) return;
+    const touch = e.changedTouches[0];
+    if (!touch) return;
+    touchIdRef.current = touch.identifier;
+    setIsActive(true);
+    handleTouch(touch);
+  };
+
+  const handleTouchMove = (e) => {
+    for (const touch of e.changedTouches) {
+      if (touch.identifier === touchIdRef.current) {
+        handleTouch(touch);
+        return;
+      }
+    }
+  };
+
+  const endTouch = (e) => {
+    for (const touch of e.changedTouches) {
+      if (touch.identifier === touchIdRef.current) {
+        touchIdRef.current = null;
+        setIsActive(false);
+        setPos({ x: 0, y: 0 });
+        setMobileInput({ x: 0, y: 0 });
+        return;
+      }
+    }
   };
 
   return (
     <div 
       className="joystick-container"
-      onTouchStart={(e) => { setIsActive(true); handleTouch(e); }}
-      onTouchMove={handleTouch}
+      onTouchStart={handleTouchStart}
+      onTouchMove={handleTouchMove}
       onTouchEnd={endTouch}
+      onTouchCancel={endTouch}
     >
       <div className="joystick-base" ref={baseRef}>
         <div 

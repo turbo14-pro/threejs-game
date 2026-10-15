@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useGameStore } from '../../store/useGameStore';
+import { setDebugEnabled, isDebugEnabled } from '../../utils/debugLog';
 
 export default function Options({ onBack }) {
   const settings = useGameStore(state => state.settings);
@@ -8,6 +9,7 @@ export default function Options({ onBack }) {
   const setPerformancePreset = useGameStore(state => state.setPerformancePreset);
 
   const [advancedOpen, setAdvancedOpen] = useState(false);
+  const [debugEnabled, setDebugEnabledState] = useState(isDebugEnabled);
 
   // Auto-expand advanced settings if Custom is selected
   useEffect(() => {
@@ -18,6 +20,12 @@ export default function Options({ onBack }) {
 
   const toggleSetting = (key) => {
     setSetting(key, !settings[key]);
+  };
+
+  const toggleDebug = () => {
+    const enabled = !isDebugEnabled();
+    setDebugEnabled(enabled);
+    setDebugEnabledState(enabled);
   };
 
   return (
@@ -156,6 +164,15 @@ export default function Options({ onBack }) {
                 <span className="option-desc">Show collision wireframes</span>
               </div>
               <div className={`premium-toggle ${settings.physicsDebug ? 'active' : ''}`}><div className="toggle-knob" /></div>
+            </div>
+
+            {/* DEBUG MODE */}
+            <div className="option-item" onClick={toggleDebug}>
+              <div className="option-info">
+                <span className="option-name">Debug Mode</span>
+                <span className="option-desc">Enable global debug logging</span>
+              </div>
+              <div className={`premium-toggle ${debugEnabled ? 'active' : ''}`}><div className="toggle-knob" /></div>
             </div>
 
           </div>

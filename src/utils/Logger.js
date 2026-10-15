@@ -12,6 +12,8 @@
  *   Logger.error('Network', 'Failed to connect', errorObject);
  */
 
+import { debugLog, debugWarn, debugError } from './debugLog.js';
+
 const PREFIX = '[FFF]'; // Food Fight Frenzy
 
 export const Logger = {
@@ -23,9 +25,9 @@ export const Logger = {
    */
   info(tag, message, data) {
     if (data !== undefined) {
-      console.info(`${PREFIX}[${tag}] ${message}`, data);
+      debugLog.info(`${PREFIX}[${tag}] ${message}`, data);
     } else {
-      console.info(`${PREFIX}[${tag}] ${message}`);
+      debugLog.info(`${PREFIX}[${tag}] ${message}`);
     }
   },
 
@@ -34,9 +36,9 @@ export const Logger = {
    */
   warn(tag, message, data) {
     if (data !== undefined) {
-      console.warn(`${PREFIX}[${tag}] ⚠ ${message}`, data);
+      debugWarn(`${PREFIX}[${tag}] ⚠ ${message}`, data);
     } else {
-      console.warn(`${PREFIX}[${tag}] ⚠ ${message}`);
+      debugWarn(`${PREFIX}[${tag}] ⚠ ${message}`);
     }
   },
 
@@ -45,20 +47,20 @@ export const Logger = {
    */
   error(tag, message, data) {
     if (data !== undefined) {
-      console.error(`${PREFIX}[${tag}] ✖ ${message}`, data);
+      debugError(`${PREFIX}[${tag}] ✖ ${message}`, data);
     } else {
-      console.error(`${PREFIX}[${tag}] ✖ ${message}`);
+      debugError(`${PREFIX}[${tag}] ✖ ${message}`);
     }
   },
 
   /**
    * One-time speed/performance report.
    * Call this to dump FPS, draw calls, and memory into the console.
-   * @param {import('three').WebGLRenderer} renderer 
+   * @param {import('three').WebGLRenderer} renderer
    */
   perfReport(renderer) {
     if (!renderer) {
-      console.warn(`${PREFIX}[Perf] No renderer provided for speed report.`);
+      debugWarn(`${PREFIX}[Perf] No renderer provided for speed report.`);
       return;
     }
     const info = renderer.info;
@@ -69,15 +71,15 @@ export const Logger = {
         }
       : 'Not available (Chrome only)';
 
-    console.group(`${PREFIX}[Perf] === Speed Report ===`);
-    console.table({
+    debugLog.group(`${PREFIX}[Perf] === Speed Report ===`);
+    debugLog.table({
       'Draw Calls': info.render.calls,
       'Triangles': info.render.triangles,
       'Textures': info.memory.textures,
       'Geometries': info.memory.geometries,
       'Programs (shaders)': info.programs?.length ?? 'unknown',
     });
-    console.log('Memory:', mem);
-    console.groupEnd();
+    debugLog('Memory:', mem);
+    debugLog.groupEnd();
   }
 };

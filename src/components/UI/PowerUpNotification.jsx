@@ -45,6 +45,9 @@ export function PowerUpNotification() {
       top: 60,
       left: '50%',
       transform: 'translateX(-50%)',
+      width: 'max-content',
+      maxWidth: 'calc(100vw - 32px)',
+      boxSizing: 'border-box',
       zIndex: 200,
       display: 'flex',
       alignItems: 'center',
@@ -63,9 +66,15 @@ export function PowerUpNotification() {
       <img
         src={desc.icon}
         alt={desc.label}
-        style={{ width: 32, height: 32, filter: `drop-shadow(0 0 6px ${desc.color})` }}
+        style={{
+          width: 32,
+          height: 32,
+          flexShrink: 0,
+          objectFit: 'contain',
+          filter: `drop-shadow(0 0 6px ${desc.color})`,
+        }}
       />
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 2, minWidth: 0 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
           <span style={{
             fontSize: 13,
@@ -81,6 +90,7 @@ export function PowerUpNotification() {
             fontWeight: 700,
             color: desc.color,
             textShadow: `0 0 8px ${desc.color}88`,
+            whiteSpace: 'nowrap',
           }}>
             {desc.label}
           </span>
@@ -89,6 +99,7 @@ export function PowerUpNotification() {
           fontSize: 12,
           color: '#ccc',
           fontFamily: 'monospace',
+          overflowWrap: 'anywhere',
         }}>
           {hint}
         </div>

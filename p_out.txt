@@ -1,0 +1,35 @@
+{
+  "report": {
+    "hasCanvas": true,
+    "storeExposed": false,
+    "before": null,
+    "mid": null
+  },
+  "errors": [
+    "[warning] [.WebGL-0x56a404a62900]GL Driver Message (OpenGL, Performance, GL_CLOSE_PATH_NV, High): GPU stall due to ReadPixels",
+    "[warning] [.WebGL-0x56a400a17800]GL Driver Message (OpenGL, Performance, GL_CLOSE_PATH_NV, High): GPU stall due to ReadPixels",
+    "[warning] THREE.WebGLShadowMap: PCFSoftShadowMap has been deprecated. Using PCFShadowMap instead.",
+    "[warning] THREE.WebGLShadowMap: PCFSoftShadowMap has been deprecated. Using PCFShadowMap instead.",
+    "[warning] [.WebGL-0x56a404a62900]GL Driver Message (OpenGL, Performance, GL_CLOSE_PATH_NV, High): GPU stall due to ReadPixels",
+    "[warning] [.WebGL-0x56a404a62900]GL Driver Message (OpenGL, Performance, GL_CLOSE_PATH_NV, High): GPU stall due to ReadPixels (this message will no longer repeat)",
+    "[warning] THREE.PropertyBinding: No target node found for track: hips.position.",
+    "[warning] THREE.PropertyBinding: No target node found for track: hips.quaternion.",
+    "[warning] THREE.PropertyBinding: No target node found for track: leftUpArm.quaternion.",
+    "[warning] THREE.PropertyBinding: No target node found for track: leftHand.quaternion.",
+    "[warning] THREE.PropertyBinding: No target node found for track: leftHand001.quaternion.",
+    "[warning] THREE.PropertyBinding: No target node found for track: rightshoulder.position.",
+    "[warning] THREE.PropertyBinding: No target node found for track: rightshoulder.quaternion.",
+    "[warning] THREE.PropertyBinding: No target node found for track: rightUpArm.quaternion.",
+    "[warning] THREE.PropertyBinding: No target node found for track: righthand.quaternion.",
+    "[warning] THREE.PropertyBinding: No target node found for track: righthand001.quaternion.",
+    "[warning] THREE.PropertyBinding: No target node found for track: leftLegUp.quaternion.",
+    "[warning] THREE.PropertyBinding: No target node found for track: leftFoot.quaternion.",
+    "[warning] THREE.PropertyBinding: No target node found for track: rightLegUp.quaternion.",
+    "[warning] THREE.PropertyBinding: No target node found for track: rightFoot.quaternion.",
+    "[warning] THREE.PropertyBinding: No target node found for track: hips.position.",
+    "[warning] THREE.PropertyBinding: No target node found for track: hips.quaternion.",
+    "[warning] THREE.PropertyBinding: No target node found for track: leftUpArm.quaternion.",
+    "[warning] THREE.PropertyBinding: No target node found for track: leftHand.quaternion.",
+    "[warning] THREE.PropertyBinding: No target node found for track: leftHand001.quaternion."
+  ]
+}

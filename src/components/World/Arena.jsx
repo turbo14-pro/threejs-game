@@ -1,11 +1,14 @@
 import React, { useMemo, useEffect, useRef } from 'react';
 import * as THREE from 'three';
 import { RigidBody, CuboidCollider } from '@react-three/rapier';
+import { useFrame } from '@react-three/fiber';
+import { getLocalPlayerWorldPos } from '../World/items/PowerUpCoin.jsx';
 import { useGLTF, useTexture, Text as TextDrei, Instances, Instance } from '@react-three/drei';
 import * as BufferGeometryUtils from 'three/examples/jsm/utils/BufferGeometryUtils';
 
 
 import { useGameStore } from '../../store/useGameStore';
+import { debugLog } from '../../utils/debugLog.js';
 import * as SkeletonUtils from 'three/examples/jsm/utils/SkeletonUtils.js';
 import ArenaLightRays from './LightRays';
 import { useCerealBoxAssets, CerealBoxMesh, CerealBoxPhysics } from './Obsticles/CerealBox.jsx';
@@ -355,6 +358,23 @@ export default function Arena() {
     return cans;
   });
 
+  const buttonTriggered = useRef(false);
+  useFrame(() => {
+    if (matchPhase === 'BATTLE') return;
+    const playerPos = getLocalPlayerWorldPos();
+    if (!playerPos || !playerPos.x) return;
+    const dx = playerPos.x - 0;
+    const dz = playerPos.z - 8;
+    const dist = Math.sqrt(dx * dx + dz * dz);
+    if (dist < 4 && !buttonTriggered.current) {
+      buttonTriggered.current = true;
+      debugLog('START BUTTON: DISTANCE TRIGGER — spawning (dist:', dist.toFixed(1), ')');
+      useGameStore.getState().spawnPlayerAtRandomLocation();
+    } else if (dist >= 6) {
+      buttonTriggered.current = false;
+    }
+  });
+
   return (
     <>
       {/* 1. Main Kitchen Table */}
@@ -455,7 +475,7 @@ export default function Arena() {
         padOffset={[-5, 0, 0]} 
       />
 
-      {/* START BUTTON (Central on Platform 1) */}
+      {/* START BUTTON (Central on Platform 1) — direct distance-based trigger */}
       {matchPhase !== 'BATTLE' && (
         <group position={[0, 101, 8]}>
           <TextDrei
@@ -470,18 +490,10 @@ export default function Arena() {
           >
             JOIN BATTLE
           </TextDrei>
-          <RigidBody
-            type="fixed"
-            sensor
-            onIntersectionEnter={() => startMatchSequence()}
-            position={[0, 0.5, 0]}
-          >
-            <CuboidCollider args={[2, 0.5, 2]} />
-            <mesh>
-              <boxGeometry args={[4, 0.2, 4]} />
-              <meshStandardMaterial color="#ffcc00" emissive="#ffcc00" emissiveIntensity={2} toneMapped={false} />
-            </mesh>
-          </RigidBody>
+          <mesh position={[0, 0.5, 0]}>
+            <boxGeometry args={[6, 0.2, 6]} />
+            <meshStandardMaterial color="#ffcc00" emissive="#ffcc00" emissiveIntensity={2} toneMapped={false} transparent opacity={0.6} />
+          </mesh>
         </group>
       )}
 

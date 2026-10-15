@@ -4,6 +4,7 @@ import { HalfFloatType, Uniform, Vector2, Vector3 } from 'three';
 import { BlendFunction, Effect } from 'postprocessing';
 import { useThree, useFrame } from '@react-three/fiber';
 import { useGameStore } from '../../store/useGameStore';
+import { debugLog } from '../../utils/debugLog.js';
 import { ShockwaveEffect } from './Effects/ShockwaveEffect';
 import { PostEffectsActivator } from './PostEffectsActivator';
 
@@ -87,7 +88,7 @@ function RippleDisplacementEffect() {
         // Also trigger the blue ShockWave ring at the player's position
         const wp = storeState.debugRipple.worldPosition;
         storeState.addShockwave([wp.x, wp.y, wp.z], 1.0);
-        console.log("🧪 DEBUG: Auto-triggered rippleTimer + shockwave = 0.8s");
+        debugLog("🧪 DEBUG: Auto-triggered rippleTimer + shockwave = 0.8s");
       }
     } else {
       debugTestTimer.current = 0;

@@ -45,7 +45,6 @@ export default function CameraJoystick() {
   }, []);
 
   const handleTouchStart = useCallback((e) => {
-    e.preventDefault();
     e.stopPropagation();
     if (touchIdRef.current !== null) return;
 
@@ -61,7 +60,6 @@ export default function CameraJoystick() {
   }, []);
 
   const handleTouchMove = useCallback((e) => {
-    e.preventDefault();
     e.stopPropagation();
 
     for (let i = 0; i < e.changedTouches.length; i++) {
@@ -99,7 +97,6 @@ export default function CameraJoystick() {
   }, [setCameraInput, processInput]);
 
   const handleTouchEnd = useCallback((e) => {
-    e.preventDefault();
     e.stopPropagation();
 
     for (let i = 0; i < e.changedTouches.length; i++) {

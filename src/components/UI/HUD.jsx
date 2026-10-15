@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { useGameStore } from '../../store/useGameStore';
+import { useMenuKeyboard } from '../../hooks/useMenuKeyboard.js';
 import Joystick from './Joystick.jsx';
 import CameraJoystick from './CameraJoystick.jsx';
 import Options from './Options.jsx';
@@ -22,6 +23,18 @@ export default function HUD() {
   const [showControls, setShowControls] = useState(false); // Added Controls state
   const [showTutorial, setShowTutorial] = useState(true);
   const [isTouchDevice, setIsTouchDevice] = useState(false);
+  const menuScreen = showOptions ? 'OPTIONS' : showControls ? 'CONTROLS' : showHelp ? 'HELP' : 'PAUSED';
+  const menuRef = useMenuKeyboard({
+    enabled: isPaused,
+    screen: menuScreen,
+    onBack: isPaused && menuScreen !== 'PAUSED'
+      ? () => {
+          if (showOptions) setShowOptions(false);
+          else if (showControls) setShowControls(false);
+          else setShowHelp(false);
+        }
+      : undefined,
+  });
 
 
   useEffect(() => {
@@ -65,7 +78,20 @@ export default function HUD() {
   };
 
   const handleRespawn = () => {
-    useGameStore.getState().respawnToLobby();
+    // Restart: teleport to start location (platform 1 / arena start), exit menu into gameplay
+    const store = useGameStore.getState();
+    // Set teleport target to start position (platform 1 area, 15m above for spawn drop)
+    store.setPendingTeleportTarget({ x: 0, y: 103, z: 0 }); // lobby / platform 1 start
+    store.setGameState('PLAYING');
+    // Trigger teleport mechanism
+    store.triggerWorldReset(); // increments teleportCount
+    // Exit menu immediately
+    setIsPaused(false);
+    // Lock pointer
+    try {
+      const canvas = document.querySelector('canvas');
+      if (canvas) canvas.requestPointerLock();
+    } catch (e) {}
   };
 
   const rippleDebugLabel = useMemo(() => {
@@ -201,7 +227,7 @@ export default function HUD() {
       {/* Pause Menu Overlay */}
       {isPaused && (
         <div className="menu-overlay">
-          <div className="menu-content" style={{ pointerEvents: 'auto' }}>
+          <div className="menu-content" ref={menuRef} style={{ pointerEvents: 'auto' }}>
             {showOptions ? (
               <Options onBack={() => setShowOptions(false)} />
             ) : showControls ? (

@@ -6,8 +6,11 @@ import * as THREE from 'three';
 import PlayerModel from './PlayerModel.jsx';
 import { useGameStore } from '../../store/useGameStore';
 import { PLAYER_BASELINE, canUseDash, getDashConfig, getMaxJumps, getPowerUpEffect, getActionIntensity, shouldEndDash } from '../../config/playerConfig';
-import { setLocalPlayerWorldPos } from '../World/items/PowerUpCoin.jsx';
+import { setLocalPlayerWorldPos, setLocalPlayerWorldVel } from '../World/items/PowerUpCoin.jsx';
+import { damageBot, applyBotKnockback, getBotVelocity } from './botRegistry.js';
+import { BOT_COMBAT, resolveImpact } from './BotAI.jsx';
 import { soundManager } from '../../utils/SoundManager';
+import { useGamepad } from '../../hooks/useGamepad.js';
 
 const direction = new THREE.Vector3();
 const frontVector = new THREE.Vector3();
@@ -23,6 +26,7 @@ export default function PlayerController({ sendUpdate }) {
   const [, getKeys] = useKeyboardControls();
   const gameState = useGameStore(state => state.game.state);
   const mobileInput = useGameStore(state => state.mobileInput);
+  const { poll } = useGamepad();
   const teleportCount = useGameStore(state => state.teleportCount);
   const matchPhase = useGameStore(state => state.game.phase);
   const countdown = useGameStore(state => state.game.countdown);
@@ -77,7 +81,7 @@ export default function PlayerController({ sendUpdate }) {
 
         // Increase threshold to 0.5m to allow for tick-rate jitter
         if (diff > 0.5) {
-          console.log(`[Reconciliation] Desync detected at tick ${serverState.tick}! Diff: ${diff.toFixed(2)}m. Snapping...`);
+          debugLog(`[Reconciliation] Desync detected at tick ${serverState.tick}! Diff: ${diff.toFixed(2)}m. Snapping...`);
           
           // Authoritative Snap
           rigidBodyRef.current.setTranslation({ 
@@ -111,6 +115,8 @@ export default function PlayerController({ sendUpdate }) {
   const worldVelocityRef = useRef(new THREE.Vector3());
   const preImpactVelocity = useRef(new THREE.Vector3());
   const isSlidingRef = useRef(false); // Mirror isSliding state for collision handler (avoids stale closure)
+  const runningSoundRef = useRef(null); // Positional loop for running footsteps
+  const walkingSoundRef = useRef(null); // Positional loop for walking
 
   // Load animation configuration dynamically
   useEffect(() => {
@@ -118,7 +124,7 @@ export default function PlayerController({ sendUpdate }) {
     fetch('/skins/animations.json')
       .then(res => res.json())
       .then(d => setPlayerAnimations(d.Melee))
-      .catch(err => console.error("PlayerController failed to load animations.json", err));
+      .catch(err => debugError("PlayerController failed to load animations.json", err));
   }, [animConfig, setPlayerAnimations]); // Lock animation states during jump phase
 
   // Camera & Zoom State
@@ -204,66 +210,78 @@ export default function PlayerController({ sendUpdate }) {
       state => state.teleportCount,
       (count) => {
         if (count > 0) {
-          console.log("🚀 Teleport fired, count:", count);
+          debugLog("🚀 Teleport fired, count:", count);
+          if (soundManager && soundManager.listener) soundManager.playPositional('teleport', playerGroupRef.current, 1, 10, 1.0, false);
 
-          // Replicate cereal box positions (must match Arena.jsx seededRandom(42))
-          const seededRandom = (seed) => {
-            let s = seed;
-            return () => { s = (s * 9301 + 49297) % 233280; return s / 233280; };
-          };
-          const rand = seededRandom(42);
-          const cerealPositions = [];
-          for (let i = 0; i < 20; i++) {
-            let bx, bz, valid = false, attempts = 0;
-            while (!valid && attempts < 100) {
-              bx = (rand() - 0.5) * 520;
-              bz = (rand() - 0.5) * 520;
-              attempts++;
-              if (Math.abs(bx) < 45 && bz > -75 && bz < 30) continue;
-              let ok = true;
-              for (const b of cerealPositions) {
-                if (Math.hypot(bx - b.x, bz - b.z) < 42) { ok = false; break; }
+          // Use custom spawn target if set by spawnPlayerAtRandomLocation, otherwise generate random
+          let tx, tz, ty;
+          const target = useGameStore.getState().pendingTeleportTarget;
+          if (target) {
+            tx = target.x;
+            tz = target.z;
+            ty = target.y;
+            // DON'T clear here — useFrame needs it; clear only after confirm
+          } else {
+            // Replicate cereal box positions (must match Arena.jsx seededRandom(42))
+            const seededRandom = (seed) => {
+              let s = seed;
+              return () => { s = (s * 9301 + 49297) % 233280; return s / 233280; };
+            };
+            const rand = seededRandom(42);
+            const cerealPositions = [];
+            for (let i = 0; i < 20; i++) {
+              let bx, bz, valid = false, attempts = 0;
+              while (!valid && attempts < 100) {
+                bx = (rand() - 0.5) * 520;
+                bz = (rand() - 0.5) * 520;
+                attempts++;
+                if (Math.abs(bx) < 45 && bz > -75 && bz < 30) continue;
+                let ok = true;
+                for (const b of cerealPositions) {
+                  if (Math.hypot(bx - b.x, bz - b.z) < 42) { ok = false; break; }
+                }
+                if (ok) valid = true;
               }
-              if (ok) valid = true;
+              if (valid) cerealPositions.push({ x: bx, z: bz });
             }
-            if (valid) cerealPositions.push({ x: bx, z: bz });
-          }
 
-          const TABLE_HALF = 280;
-          const PLATFORM_ZONES = [
-            { cx: 0, cz: 0, rx: 50, rz: 35 },
-            { cx: 0, cz: -45, rx: 40, rz: 20 },
-            { cx: 0, cz: -22.5, rx: 12, rz: 15 },
-          ];
-          const SAFE_DIST = 22;
+            const TABLE_HALF = 280;
+            const PLATFORM_ZONES = [
+              { cx: 0, cz: 0, rx: 50, rz: 35 },
+              { cx: 0, cz: -45, rx: 40, rz: 20 },
+              { cx: 0, cz: -22.5, rx: 12, rz: 15 },
+            ];
+            const SAFE_DIST = 22;
 
-          let tx, tz, placed = false;
-          for (let attempt = 0; attempt < 200; attempt++) {
-            tx = (Math.random() - 0.5) * TABLE_HALF * 2;
-            tz = (Math.random() - 0.5) * TABLE_HALF * 2;
-            let inZone = false;
-            for (const z of PLATFORM_ZONES) {
-              if (Math.abs(tx - z.cx) < z.rx && Math.abs(tz - z.cz) < z.rz) { inZone = true; break; }
+            let placed = false;
+            for (let attempt = 0; attempt < 200; attempt++) {
+              tx = (Math.random() - 0.5) * TABLE_HALF * 2;
+              tz = (Math.random() - 0.5) * TABLE_HALF * 2;
+              let inZone = false;
+              for (const z of PLATFORM_ZONES) {
+                if (Math.abs(tx - z.cx) < z.rx && Math.abs(tz - z.cz) < z.rz) { inZone = true; break; }
+              }
+              if (inZone) continue;
+              let tooClose = false;
+              for (const b of cerealPositions) {
+                if (Math.hypot(tx - b.x, tz - b.z) < SAFE_DIST) { tooClose = true; break; }
+              }
+              if (tooClose) continue;
+              placed = true;
+              break;
             }
-            if (inZone) continue;
-            let tooClose = false;
-            for (const b of cerealPositions) {
-              if (Math.hypot(tx - b.x, tz - b.z) < SAFE_DIST) { tooClose = true; break; }
-            }
-            if (tooClose) continue;
-            placed = true;
-            break;
+            if (!placed) { tx = 0; tz = 80; }
+            ty = 15; // 15m above arena floor
           }
-          if (!placed) { tx = 0; tz = 80; }
 
           // Store target — useFrame will apply it outside the physics step
-          pendingTeleport.current = { x: tx, y: 5, z: tz };
+          pendingTeleport.current = { x: tx, y: ty, z: tz };
 
           // Lock pointer and set game state to playing
           try {
             gl.domElement.requestPointerLock();
           } catch (e) {
-            console.warn("Pointer lock request failed (needs user gesture)");
+            debugWarn("Pointer lock request failed (needs user gesture)");
           }
           useGameStore.getState().setGameState('PLAYING');
         }
@@ -278,7 +296,7 @@ export default function PlayerController({ sendUpdate }) {
       state => state.respawnCount,
       (count) => {
         if (count > 0 && rigidBodyRef.current) {
-          console.log("🔄 Respawning Player to Platform 1", count);
+          debugLog("🔄 Respawning Player to Platform 1", count);
           pendingRespawn.current = true;
         }
       }
@@ -292,7 +310,7 @@ export default function PlayerController({ sendUpdate }) {
   // will update our skin in the global list without overwriting our position.
   useEffect(() => {
     if (sendUpdate && selectedSkin) {
-      console.log("👗 Sending Skin Update to Server:", selectedSkin);
+      debugLog("👗 Sending Skin Update to Server:", selectedSkin);
       sendUpdate({ skin: selectedSkin });
     }
   }, [selectedSkin, sendUpdate]);
@@ -320,7 +338,7 @@ export default function PlayerController({ sendUpdate }) {
         z: currentVel.z
       }, true);
       
-      soundManager.playPositional('hit', playerGroupRef.current, 0.5);
+      soundManager.playPositional('hit', playerGroupRef.current, 1);
 
       // Yield control for 1.2s to allow the flight to finish
       setTimeout(() => setIsStunned(false), 1200);
@@ -328,13 +346,53 @@ export default function PlayerController({ sendUpdate }) {
   }, [knockbackCount]);
 
   useFrame((state, delta) => {
-    if (gameState !== 'PLAYING' || !rigidBodyRef.current || !playerGroupRef.current) return;
+    if (gameState !== 'PLAYING' || !rigidBodyRef.current || !playerGroupRef.current) {
+      // Publish the player's world position even when the match isn't live. Power-up
+      // pickup is distance-based against this value, so if it stays stale while the
+      // menu camera orbits, coins spawned before START can never be collected.
+      if (rigidBodyRef.current) {
+        const t = rigidBodyRef.current.translation();
+        if (Number.isFinite(t.x) && Number.isFinite(t.y) && Number.isFinite(t.z)) {
+          setLocalPlayerWorldPos(t);
+        }
+      }
+      return;
+    }
 
     const keys = getKeys();
+    const gp = poll ? poll(0.016) : null;
+    // Button 9 = pause / resume (like ESC) — decaptures mouse, loads pause menu, disables movement
+    if (gp && gp.buttons[9] && gp.buttons[9].pressed && gp.edges && gp.edges[9]) {
+      const current = useGameStore.getState().game.state;
+      if (current === 'MENU') {
+        // Resume: close menu, restore sound, lock pointer
+        useGameStore.getState().setGameState('PLAYING');
+        soundManager.setMasterVolume(1.0);
+        try { gl.domElement.requestPointerLock(); } catch (e) {}
+      } else {
+        // Pause: open menu, mute sound, exit pointer lock
+        useGameStore.getState().setGameState('MENU');
+        soundManager.setMasterVolume(0.0);
+        if (document.pointerLockElement) document.exitPointerLock();
+      }
+    }
+    // Gamepad right stick look (retains mouse)
+    if (gp && (Math.abs(gp.axes.rx) > 0.15 || gp.axes.rtPressed || Math.abs(gp.axes.rt) > 0.15)) {
+      rotationX.current -= gp.axes.rx * 0.05; // up/down
+      rotationY.current -= (gp.axes.rt || 0) * 0.05; // left/right via rt
+      rotationX.current = Math.max(-Math.PI / 3, Math.min(Math.PI / 4, rotationX.current));
+    }
+    if (gp) {
+      const active = (Math.abs(gp.axes.lx) > 0.15 || Math.abs(gp.axes.ly) > 0.15 || Math.abs(gp.axes.rx) > 0.15 || Math.abs(gp.axes.ry) > 0.15 || Math.abs(gp.axes.rt) > 0.15 || gp.axes.rtPressed || gp.edges.length > 0 || gp.buttons.some(b => b.pressed));
+      if (active) debugLog("[Gamepad] axes:", {lx: gp.axes.lx.toFixed(2), ly: gp.axes.ly.toFixed(2), rx: gp.axes.rx.toFixed(2), ry: gp.axes.ry.toFixed(2), rt: gp.axes.rt.toFixed(2), rtPressed: gp.axes.rtPressed}, "edges:", gp.edges, "buttons:", gp.buttons.map((b,i)=>b.pressed?i:null).filter(x=>x!==null));
+    }
     const translation = rigidBodyRef.current.translation();
 
     // Update shared player position for power-up distance pickup
     setLocalPlayerWorldPos(translation);
+    // Publish horizontal velocity so CPU bots can run a Newtonian impact resolution
+    // (who's driving into whom) instead of blindly knocking back whatever they touch.
+    setLocalPlayerWorldVel(worldVelocityRef.current);
     // Only update debug ripple position when debug mode is active
     if (useGameStore.getState().debugRipple.enabled) {
       useGameStore.getState().setRippleDebugPosition({ x: translation.x, y: translation.y, z: translation.z });
@@ -344,16 +402,27 @@ export default function PlayerController({ sendUpdate }) {
     if (isNaN(translation.x) || isNaN(translation.y) || isNaN(translation.z)) return;
 
     // Apply pending teleport OUTSIDE the physics step (setTranslation during step is ignored)
+    // Persistent loop: keep firing until physics confirms the player is at target
     if (pendingTeleport.current) {
       const t = pendingTeleport.current;
-      pendingTeleport.current = null;
-      rigidBodyRef.current.wakeUp();
-      rigidBodyRef.current.setTranslation({ x: t.x, y: t.y, z: t.z }, true);
-      rigidBodyRef.current.setLinvel({ x: 0, y: 0, z: 0 }, true);
-      rigidBodyRef.current.setAngvel({ x: 0, y: 0, z: 0 }, true);
-      console.log(`🚀 Teleport applied: (${t.x.toFixed(1)}, ${t.y}, ${t.z.toFixed(1)})`);
-      if (sendUpdate) sendUpdate({ pos: [t.x, t.y, t.z], force: true });
-      return; // skip this frame — physics will settle next frame
+      const current = rigidBodyRef.current.translation();
+      const dx = current.x - t.x, dy = current.y - t.y, dz = current.z - t.z;
+      const dist = Math.sqrt(dx*dx + dy*dy + dz*dz);
+
+      // Only clear when actually at target (within 0.5m) — otherwise re-apply
+      if (dist < 0.5) {
+        pendingTeleport.current = null;
+        useGameStore.getState().setPendingTeleportTarget(null); // clear store target
+        debugLog(`✅ Teleport confirmed at (${t.x.toFixed(1)}, ${t.y}, ${t.z.toFixed(1)})`);
+      } else {
+        // Re-apply: wake, translate, zero velocity — loop keeps firing
+        rigidBodyRef.current.wakeUp();
+        rigidBodyRef.current.setTranslation({ x: t.x, y: t.y, z: t.z }, true);
+        rigidBodyRef.current.setLinvel({ x: 0, y: 0, z: 0 }, true);
+        rigidBodyRef.current.setAngvel({ x: 0, y: 0, z: 0 }, true);
+        debugLog(`🔁 Teleport re-applied (dist ${dist.toFixed(1)}m): (${t.x.toFixed(1)}, ${t.y}, ${t.z.toFixed(1)})`);
+        if (sendUpdate) sendUpdate({ pos: [t.x, t.y, t.z], force: true });
+      }
     }
 
     // Check power-up expiration
@@ -379,9 +448,9 @@ export default function PlayerController({ sendUpdate }) {
       try {
         gl.domElement.requestPointerLock();
       } catch (e) {
-        console.warn("Pointer lock request failed");
+        debugWarn("Pointer lock request failed");
       }
-      console.log("🔄 Respawn applied → Platform 1");
+      debugLog("🔄 Respawn applied → Platform 1");
       if (sendUpdate) sendUpdate({ pos: [0, 103, 0], force: true });
       return;
     }
@@ -403,19 +472,21 @@ export default function PlayerController({ sendUpdate }) {
       return;
     }
 
+    // Suspend player control when menu is open
+    const menuOpen = useGameStore.getState().game.state === 'MENU';
     // Input Aggregation (Keyboard + Mobile) — locked during dash
     let moveX, moveZ, walkingInput, jumpingInput, slidingInput;
-    if (isDashing.current) {
+    if (isDashing.current || menuOpen) {
       moveX = 0; moveZ = 0;
       walkingInput = false; jumpingInput = false; slidingInput = false;
     } else {
-      moveX = (keys.right ? 1 : 0) - (keys.left ? 1 : 0) + (mobileInput.x || 0);
-      moveZ = (keys.backward ? 1 : 0) - (keys.forward ? 1 : 0) - (mobileInput.y || 0);
-      walkingInput = !!(keys.walk || mobileInput.walk);
-      jumpingInput = !!(keys.jump || mobileInput.jump);
-      slidingInput = !!(keys.slide || mobileInput.slide);
+      moveX = (keys.right ? 1 : 0) - (keys.left ? 1 : 0) + (mobileInput.x || 0) + (gp ? gp.axes.lx : 0);
+      moveZ = (keys.backward ? 1 : 0) - (keys.forward ? 1 : 0) - (mobileInput.y || 0) + (gp ? gp.axes.ly : 0);
+      walkingInput = !!(keys.walk || mobileInput.walk || (gp && gp.buttons[6] && gp.buttons[6].pressed));
+      jumpingInput = !!(keys.jump || mobileInput.jump || (gp && gp.buttons[2] && gp.buttons[2].pressed));
+      slidingInput = !!(keys.slide || mobileInput.slide || (gp && gp.buttons[7] && gp.buttons[7].pressed));
     }
-    const dashInput = !!(keys.dash || mobileInput.dash);
+    const dashInput = !!(keys.dash || mobileInput.dash || (gp && gp.buttons[1] && gp.buttons[1].pressed));
 
     // Dash cooldown
     if (dashCooldown.current > 0) dashCooldown.current -= delta;
@@ -535,7 +606,7 @@ export default function PlayerController({ sendUpdate }) {
     
     // DEBUG: Only log if we are moving or if we just stopped
     if (moving || isMoving) {
-      // console.log(`[Move Debug] moveX: ${moveX.toFixed(2)}, moveZ: ${moveZ.toFixed(2)}, moving: ${moving}`);
+      // debugLog(`[Move Debug] moveX: ${moveX.toFixed(2)}, moveZ: ${moveZ.toFixed(2)}, moving: ${moving}`);
     }
 
     // 2. SLIDE LOGIC
@@ -596,7 +667,7 @@ export default function PlayerController({ sendUpdate }) {
         currentPhase = 'land';
         const landDuration = (animConfig?.jump?.landFrames || 10) / (30 * 1.6);
         jumpTimer.current = landDuration;
-        soundManager.playPositional('land', playerGroupRef.current, 0.5);
+        soundManager.playPositional('land', playerGroupRef.current, 1.0);
       }
 
       if (currentPhase === 'land' || currentPhase === 'none') {
@@ -606,7 +677,7 @@ export default function PlayerController({ sendUpdate }) {
           jumpTimer.current = config.launchFrames / 30; // Use JSON values
           physicsJumpTriggered.current = false;
           setJumpTransitionId((value) => value + 1);
-          soundManager.playPositional('jump', playerGroupRef.current, 0.4);
+          soundManager.playPositional('jump', playerGroupRef.current, 1.0);
         } else if (currentPhase === 'land') {
           jumpTimer.current -= delta;
           if (jumpTimer.current <= 0 || (direction.lengthSq() > 0.01 && currentlyGrounded)) {
@@ -649,7 +720,7 @@ export default function PlayerController({ sendUpdate }) {
         jumpTimer.current = Math.max(PLAYER_BASELINE.movement.doubleJumpDuration, frames / 30);
         setJumpTransitionId((value) => value + 1);
         
-        soundManager.playPositional('jump', playerGroupRef.current, 0.3); // Add double jump sound
+        soundManager.playPositional('jump', playerGroupRef.current, 1.0); // Add double jump sound
       }
 
       if (currentPhase === 'doublejump') {
@@ -709,6 +780,10 @@ export default function PlayerController({ sendUpdate }) {
     if (walkingInput !== isWalking) setIsWalking(walkingInput);
     // Keep ref in sync for collision handler (avoids stale closure)
     isSlidingRef.current = isSliding;
+    // Propagate sliding state to physics body so TinCan can read it
+    if (rigidBodyRef.current) {
+      rigidBodyRef.current.userData = { ...rigidBodyRef.current.userData, isSliding: isSlidingRef.current };
+    }
     
     // Update store with current movement state for post-effects system
     useGameStore.getState().setPlayerMovement(moving, isDashing.current);
@@ -717,9 +792,40 @@ export default function PlayerController({ sendUpdate }) {
     if (currentlyGrounded && moving && currentPhase === 'none') {
       const footstepDelay = walkingInput ? 400 : 250; // Faster frequency when sprinting
       if (Date.now() - lastFootstepTime.current > footstepDelay) {
-        soundManager.playPositional('footstep', playerGroupRef.current, 0.2, 3);
+        soundManager.playPositional('footstep', playerGroupRef.current, 1.0, 3);
         lastFootstepTime.current = Date.now();
       }
+    }
+
+    // WALKING LOOP (slower, lower volume)
+    const shouldWalk = currentlyGrounded && moving && currentPhase === 'none' && walkingInput && playerGroupRef.current;
+    if (shouldWalk && !walkingSoundRef.current) {
+      debugLog('[SoundDebug] walking loop START');
+      walkingSoundRef.current = soundManager.playPositional('walk', playerGroupRef.current, 0.8, 2, 1.0, true);
+      if (!walkingSoundRef.current) walkingSoundRef.current = soundManager.playGlobal('walk', 0.8, true);
+    } else if (!shouldWalk && walkingSoundRef.current) {
+      debugLog('[SoundDebug] walking loop STOP');
+      if (walkingSoundRef.current.isPlaying) walkingSoundRef.current.stop();
+      if (playerGroupRef.current && walkingSoundRef.current.parent === playerGroupRef.current) playerGroupRef.current.remove(walkingSoundRef.current);
+      walkingSoundRef.current = null;
+    }
+
+    // RUNNING LOOP (4-step cycle from running.ogg) — start/stop, not restart
+    const shouldRun = currentlyGrounded && moving && currentPhase === 'none' && playerGroupRef.current;
+    if (shouldRun && !runningSoundRef.current) {
+      if (!soundManager.listener && camera) soundManager.init(camera);
+      runningSoundRef.current = soundManager.playPositional('running', playerGroupRef.current, 1, 1.5, 1.0, true);
+      if (!runningSoundRef.current) {
+        runningSoundRef.current = soundManager.playGlobal('running', 1, true);
+      }
+      debugLog('[SoundDebug] play result:', !!runningSoundRef.current, 'isPlaying:', runningSoundRef.current?.isPlaying);
+    } else if (!shouldRun && runningSoundRef.current) {
+      debugLog('[SoundDebug] running loop STOP');
+      if (runningSoundRef.current.isPlaying) runningSoundRef.current.stop();
+      if (playerGroupRef.current && runningSoundRef.current.parent === playerGroupRef.current) {
+        playerGroupRef.current.remove(runningSoundRef.current);
+      }
+      runningSoundRef.current = null;
     }
 
     // Contextual movement: Backwards logic
@@ -821,7 +927,7 @@ export default function PlayerController({ sendUpdate }) {
     // Apply camera joystick input from store (touch devices)
     const camInput = useGameStore.getState().cameraInput;
     if (camInput.x !== 0 || camInput.y !== 0) {
-      rotationY.current += camInput.x + 0.2; // Add a small auto-rotation to keep the camera moving
+      rotationY.current += camInput.x;
       rotationX.current += camInput.y;
       rotationX.current = Math.max(-Math.PI / 3, Math.min(Math.PI / 4, rotationX.current));
       // Reset after applying so it doesn't compound
@@ -901,7 +1007,7 @@ export default function PlayerController({ sendUpdate }) {
       }
     } catch (e) {
       // Fallback: single ray from player center
-      console.warn('[Camera] castShape error:', e.message);
+      debugWarn('[Camera] castShape error:', e.message);
       const fbOrigin = { x: playerPos.x, y: playerPos.y + targetYOffset, z: playerPos.z };
       const ray = new rapier.Ray(fbOrigin, rayDirection);
       const backupHit = world.castRay(ray, smoothZoom.current, false, null, 0x00010001, null, rigidBodyRef.current);
@@ -1006,8 +1112,10 @@ export default function PlayerController({ sendUpdate }) {
       z: direction.z * force
     }, true);
 
-    // Visual/Audio Feedback
-    soundManager.playPositional('hit', playerGroupRef.current, 0.5);
+    // Visual/Audio Feedback — volume 1, no force multiplier
+    if (force > 0) {
+      soundManager.playPositional('hit', playerGroupRef.current, 1);
+    }
   };
 
   const impactTracker = useRef(new Set());
@@ -1019,10 +1127,11 @@ export default function PlayerController({ sendUpdate }) {
     const other = e.other.rigidBody;
     if (!other || !other.userData) return;
 
-    // Only process impacts with players or tin cans
+        // Only process impacts with players, tin cans, and bot opponents
     const isPlayer = other.userData?.type === 'player';
+    const isBot = other.userData?.type === 'bot-player';
     const isTinCan = other.userData?.type === 'tinCan';
-    if (!isPlayer && !isTinCan) return;
+    if (!isPlayer && !isBot && !isTinCan) return;
 
     // Avoid duplicate ripple triggers for the same object within a short window
     const uniqueId = other.userData?.id ?? `tinCan_${e.contactPoint?.x}`;
@@ -1031,10 +1140,14 @@ export default function PlayerController({ sendUpdate }) {
     // Clean up the id after a brief window so future collisions can be detected again
     setTimeout(() => impactTracker.current.delete(uniqueId), 2000);
 
+    if (isTinCan) {
+      soundManager.playPositional('metal-hit', playerGroupRef.current, 1, 10, 1.0, false);
+    }
+
     // Only react to sliding attacks (not when we are the victim)
     if (isSlidingRef.current) {
-      console.log("🛠️ LOCAL COLLISION: sliding:", isSlidingRef.current, "target:", other.userData?.id);
-      console.log("💥 Slide IMPACT! Launching Victim...");
+      debugLog("🛠️ LOCAL COLLISION: sliding:", isSlidingRef.current, "target:", other.userData?.id);
+      debugLog("💥 Slide IMPACT! Launching Victim...");
 
       // 1. PHYSICAL KICK (Newtonian Interaction)
       // We apply an impulse to the other body locally on our screen
@@ -1063,41 +1176,73 @@ export default function PlayerController({ sendUpdate }) {
       const UPWARD_POP = hasSpeedPowerUp
         ? PLAYER_BASELINE.knockback.speedUpwardPop
         : PLAYER_BASELINE.knockback.baseUpwardPop;
-      console.log("🚀 BLASTING Victim with Force:", BLAST_POWER, "Up:", UPWARD_POP);
+                  debugLog("🚀 BLASTING Victim with Force:", BLAST_POWER, "Up:", UPWARD_POP);
 
-      other.applyImpulse({
-        x: hitDir.x * BLAST_POWER,
-        y: UPWARD_POP,
-        z: hitDir.z * BLAST_POWER
-      }, true);
-
-      // Trigger visual effects instantly for attacker
+      // Visual effects at the contact point (shared by both bot and human victims)
       const contactPoint = e.contactPoint;
       // Fallback to player position if contactPoint is not available from Rapier
-      const shockwavePos = contactPoint 
+      const shockwavePos = contactPoint
         ? [contactPoint.x, contactPoint.y, contactPoint.z]
         : [attackerPos.x, attackerPos.y, attackerPos.z];
       const currentPowerUp = useGameStore.getState().powerUp;
       const shockwaveIntensity = getActionIntensity('slideImpact', currentPowerUp?.rarity || 'none');
-      addShockwave(shockwavePos, shockwaveIntensity);
-      // Trigger screen-space ripple displacement
-      console.log("💥 Calling triggerRipple() from collision handler");
-      triggerRipple();
 
-      // Send network message for server validation
-      if (sendUpdate) {
-        sendUpdate({
-          type: 'impact',
-          victimId: other.userData.id,
-          dir: [hitDir.x, hitDir.y, hitDir.z],
-          position: contactPoint ? [contactPoint.x, contactPoint.y, contactPoint.z] : null,
-          slideMultiplier
-        });
+      if (isBot) {
+        // Bots are kinematic (their position is driven by BotPlayer, not physics),
+        // so `applyImpulse` would have no visible effect. Route the impact through
+        // the bot registry so the bot takes damage + kinematic knockback like it
+        // would from another bot, and log the impact the same way the human-vs-human
+        // path does.
+        //
+        // Newtonian resolution: only blast the bot if WE are the aggressor — i.e.
+        // our velocity is driving into it (position + direction + speed). If the bot
+        // is the one sliding into us, its own slide-attack system owns our knockback,
+        // so we must NOT also launch it here (that double-launch is the reported bug:
+        // "player slides into a sliding bot and still gets knocked back").
+        const botVel = getBotVelocity(other.userData.id) || { x: 0, z: 0 };
+        const impact = resolveImpact(
+          { x: attackerPos.x, z: attackerPos.z, vx: worldVelocityRef.current.x, vz: worldVelocityRef.current.z },
+          { x: victimPos.x, z: victimPos.z, vx: botVel.x, vz: botVel.z },
+        );
+        if (impact.aggressor === 'a') {
+          debugLog("🤖 Slide IMPACT! Player drove into bot:", other.userData?.name,
+            `(closing ${impact.closingSpeed.toFixed(1)} m/s)`);
+          applyBotKnockback(other.userData.id, impact.knockDir, BLAST_POWER);
+          damageBot(other.userData.id, BOT_COMBAT.hitDamage, 'local');
+          addShockwave(shockwavePos, shockwaveIntensity);
+          triggerRipple();
+        } else {
+          // The bot is driving into us — defer. Its slide system applies our knockback.
+          debugLog("🛡️ Bot drove into player:", other.userData?.name,
+            `(closing ${impact.closingSpeed.toFixed(1)} m/s) — deferring to the bot's impact`);
+        }
+      } else {
+        // Dynamic (networked human) victims respond to a real physics impulse
+        other.applyImpulse({
+          x: hitDir.x * BLAST_POWER,
+          y: UPWARD_POP,
+          z: hitDir.z * BLAST_POWER
+        }, true);
+
+        // Trigger visual effects instantly for attacker
+        debugLog("💥 Calling triggerRipple() from collision handler");
+        triggerRipple();
+
+        // Send network message for server validation
+        if (sendUpdate) {
+          sendUpdate({
+            type: 'impact',
+            victimId: other.userData.id,
+            dir: [hitDir.x, hitDir.y, hitDir.z],
+            position: contactPoint ? [contactPoint.x, contactPoint.y, contactPoint.z] : null,
+            slideMultiplier
+          });
+        }
       }
     } // end isSliding
     // 2. I am the VICTIM (A sliding player hit me!)
     else if (other.userData?.isSliding) {
-      console.log("🛡️ Newtonian Victim-side Knockback!");
+      debugLog("🛡️ Newtonian Victim-side Knockback!");
 
       const attackerPos = other.translation();
       const victimPos = rigidBodyRef.current.translation();
@@ -1123,7 +1268,11 @@ export default function PlayerController({ sendUpdate }) {
       // Calculate speed from attacker's velocity since we're the victim
       const attackerSpeed = new THREE.Vector3(attackerVel.x, 0, attackerVel.z).length();
       const force = Math.max(attackerSpeed * 800 * slideMultiplier, 25);
-      console.log("🥫 Victim hit! attackerSpeed:", attackerSpeed, "multiplier:", slideMultiplier, "force:", force);
+      // hit.ogg slide impact — volume 1, no force multiplier
+      if (force > 0) {
+        soundManager.playPositional('hit', playerGroupRef.current, 1);
+      }
+      debugLog("🥫 Victim hit! attackerSpeed:", attackerSpeed, "multiplier:", slideMultiplier, "force:", force);
 
       rigidBodyRef.current.applyImpulse({
         x: finalDir.x * force,

@@ -8,8 +8,7 @@ import * as BufferGeometryUtils from 'three/examples/jsm/utils/BufferGeometryUti
 import { useGameStore } from '../../store/useGameStore';
 
 /**
- * Performant "Smooth" Shader - Adds soft rim lighting and shadow filling 
- * while preserving original colors.
+ * Add a soft, bright rim light while preserving the character's base colors.
  */
 const applyCharacterMaterials = (material) => {
   material.dithering = true;
@@ -18,11 +17,13 @@ const applyCharacterMaterials = (material) => {
   const isDark = material.name.toLowerCase().includes('dark');
 
   material.onBeforeCompile = (shader) => {
-    shader.uniforms.rimIntensity = { value: 0.3 };
+    shader.uniforms.rimIntensity = { value: 2.0 };
+    shader.uniforms.rimColor = { value: new THREE.Color(0.8, 0.9, 1.0) };
     shader.uniforms.bumpScale = { value: isDark ? 0.2 : 0.0 }; // stronger bump for dark material
 
     shader.fragmentShader = `
       uniform float rimIntensity;
+      uniform vec3 rimColor;
       uniform float bumpScale;
       float getNoise(vec2 p) {
         return fract(sin(dot(p, vec2(12.989, 78.233))) * 43758.545) - 0.5;
@@ -42,13 +43,13 @@ const applyCharacterMaterials = (material) => {
       }
       `
     ).replace(
-      '#include <dithering_fragment>',
+      '#include <emissive_fragment>',
       `
-      vec3 rimNormal = normalize(normal); 
+      #include <emissive_fragment>
+      vec3 rimNormal = normalize(normal);
       vec3 viewDir = normalize(-vViewPosition);
-      float rim = pow(1.0 - max(dot(rimNormal, viewDir), 0.0), 4.0) * rimIntensity;
-      gl_FragColor.rgb += diffuseColor.rgb * rim;
-      #include <dithering_fragment>
+      float rim = pow(1.0 - clamp(dot(rimNormal, viewDir), 0.0, 1.0), 2.5) * rimIntensity;
+      totalEmissiveRadiance += rimColor * rim;
       `
     );
   };
@@ -114,6 +115,10 @@ const PlayerModel = ({ isMoving, moveDir, isSprinting, jumpPhase = 'none', isSli
       if (node.isMesh) {
         node.castShadow = true;
         node.receiveShadow = true;
+        const applyMaterial = (material) => applyCharacterMaterials(material.clone());
+        node.material = Array.isArray(node.material)
+          ? node.material.map(applyMaterial)
+          : applyMaterial(node.material);
       }
     });
     return c;
@@ -272,11 +277,19 @@ const PlayerModel = ({ isMoving, moveDir, isSprinting, jumpPhase = 'none', isSli
 
   useFrame((state, delta) => {
     if (mixer) mixer.update(delta);
-    // Keep blob shadow on the ground — counteract the player's Y movement
+    // Keep the blob shadow glued to the ground under the character: the shadow
+    // mesh is a child of the model group, so subtract the world Y to cancel the
+    // body's height. Below the table (y < -1, e.g. falling off or hidden while
+    // downed) the shadow hides instead of floating at table height.
     if (blobShadowRef.current && clone) {
       const worldPos = new THREE.Vector3();
       clone.getWorldPosition(worldPos);
-      blobShadowRef.current.position.y = -worldPos.y + 0.05;
+      if (worldPos.y < -1) {
+        blobShadowRef.current.visible = false;
+      } else {
+        blobShadowRef.current.visible = true;
+        blobShadowRef.current.position.y = -worldPos.y + 0.05;
+      }
     }
   });
 

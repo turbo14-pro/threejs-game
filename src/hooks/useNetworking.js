@@ -1,6 +1,7 @@
 import { useEffect, useRef } from 'react';
 import geckos from '@geckos.io/client';
 import { useGameStore } from '../store/useGameStore';
+import { debugLog, debugWarn, debugError } from '../utils/debugLog.js';
 
 /**
  * THE MULTIPLAYER HOOK
@@ -24,7 +25,7 @@ export function useNetworking() {
         try {
           channelRef.current.close();
         } catch (e) {
-          console.warn("Error closing Geckos channel during MENU transition:", e);
+          debugWarn("Error closing Geckos channel during MENU transition:", e);
         }
         channelRef.current = null;
         setNetworkStatus('OFFLINE');
@@ -39,9 +40,9 @@ export function useNetworking() {
       ? import.meta.env.VITE_SERVER_URL_LOCAL
       : import.meta.env.VITE_SERVER_URL_PRODUCTION;
     
-    console.log('%c 📡 [Network Trace] Starting Connection Sequence...', 'color: #00ff88; font-weight: bold;');
-    console.log('   > Mode:', isDev ? 'DEVELOPMENT' : 'PRODUCTION');
-    console.log('   > Raw Env URL:', rawEnvUrl);
+    debugLog('%c 📡 [Network Trace] Starting Connection Sequence...', 'color: #00ff88; font-weight: bold;');
+    debugLog('   > Mode:', isDev ? 'DEVELOPMENT' : 'PRODUCTION');
+    debugLog('   > Raw Env URL:', rawEnvUrl);
 
     // CLEANING THE URL: Remove any trailing ports or slashes
     const baseAddress = rawEnvUrl.replace(':9208', '').replace(/\/$/, '');
@@ -49,8 +50,8 @@ export function useNetworking() {
     // In dev we hit the raw port 9208. In prod, Nginx handles SSL on port 443.
     const targetPort = isDev ? 9208 : 443;
     
-    console.log('   > Base Address:', baseAddress);
-    console.log('   > Target Port:', targetPort);
+    debugLog('   > Base Address:', baseAddress);
+    debugLog('   > Target Port:', targetPort);
 
     // Tell the UI we are looking for the server
     setNetworkStatus('CONNECTING');
@@ -64,26 +65,26 @@ export function useNetworking() {
     });
     channelRef.current = channel;
 
-    console.log('   > Geckos Instance Created with STUN. Waiting for handshake...');
+    debugLog('   > Geckos Instance Created with STUN. Waiting for handshake...');
 
     channel.onConnect(error => {
       if (error) {
-        console.error('%c ❌ [Network Trace] Handshake Failed!', 'color: #ff4444; font-weight: bold;');
-        console.error('   > Error Message:', error.message);
-        console.error('   > Error Type:', error.name || 'Unknown');
-        console.error('   > Target URL:', baseAddress);
-        console.error('   > Target Port:', targetPort);
-        console.error('   > Is Dev Mode:', isDev);
-        console.error('   > Raw Env URL:', rawEnvUrl);
-        console.error('   > Check if the browser is blocking HTTP to an IP address (Mixed Content).');
-        console.error('   > Check if your system clock is correct (SSL certificate validation depends on accurate time).');
-        console.error('   > Try accessing https://ff-server-9208.duckdns.org in your browser to see if you get a certificate warning.');
+        debugError('%c ❌ [Network Trace] Handshake Failed!', 'color: #ff4444; font-weight: bold;');
+        debugError('   > Error Message:', error.message);
+        debugError('   > Error Type:', error.name || 'Unknown');
+        debugError('   > Target URL:', baseAddress);
+        debugError('   > Target Port:', targetPort);
+        debugError('   > Is Dev Mode:', isDev);
+        debugError('   > Raw Env URL:', rawEnvUrl);
+        debugError('   > Check if the browser is blocking HTTP to an IP address (Mixed Content).');
+        debugError('   > Check if your system clock is correct (SSL certificate validation depends on accurate time).');
+        debugError('   > Try accessing https://ff-server-9208.duckdns.org in your browser to see if you get a certificate warning.');
         setNetworkStatus('ERROR');
         return;
       }
 
-      console.log('%c ✅ [Network Trace] Handshake Success!', 'color: #00ff88; font-weight: bold;');
-      console.log('   > Connection ID:', channel.id);
+      debugLog('%c ✅ [Network Trace] Handshake Success!', 'color: #00ff88; font-weight: bold;');
+      debugLog('   > Connection ID:', channel.id);
       setNetworkId(channel.id);
       setNetworkStatus('ONLINE');
 
@@ -119,7 +120,7 @@ export function useNetworking() {
         
         // 1. If it's me, trigger local knockback
         if (data.victimId === localId) {
-          console.log("🛡️ Received IMPACT! Applying knockback.");
+          debugLog("🛡️ Received IMPACT! Applying knockback.");
           triggerKnockback({ x: data.dir[0], y: data.dir[1], z: data.dir[2] }, 250 * (data.slideMultiplier || 1));
           triggerRipple();
           if (data.position) {
@@ -153,7 +154,7 @@ export function useNetworking() {
         try {
           channelRef.current.close();
         } catch(e) {
-          console.warn("Error closing Geckos channel:", e);
+          debugWarn("Error closing Geckos channel:", e);
         }
       }
     };
@@ -172,5 +173,4 @@ export function useNetworking() {
 
   return { sendUpdate };
 }
-
 
