@@ -4,6 +4,7 @@ import { RigidBody, CylinderCollider } from '@react-three/rapier';
 import { useTexture } from '@react-three/drei';
 import { soundManager } from '../../../utils/SoundManager';
 import { useFrame } from '@react-three/fiber';
+import { debugLog } from '../../../utils/debugLog.js';
 
 useTexture.preload('/materials/sonicboom-beans.webp');
 
@@ -139,18 +140,30 @@ export function TinCanPhysics({ position, rotation, color, mass = 1, linearDampi
   const rigidRef = useRef();
 
   const groundHitRef = useRef(false);
+  const lastSoundTime = useRef(0); // cooldown to prevent rapid re-fire on micro-bounces
 
   // Ground impact sound: detect when can lands on arena floor
   useFrame(() => {
     if (!rigidRef.current) return;
     const y = rigidRef.current.translation().y;
     const vel = rigidRef.current.linvel();
+    // Don't make sounds if the can is 15m below the arena
+    if (y < -15) {
+      groundHitRef.current = false;
+      return;
+    }
     // Near floor (y ~ 5 = half height) and downward velocity just dropped
-    if (y < 8 && y > 2 && vel.y < -1 && !groundHitRef.current) {
+    if (vel.y < -1 && !groundHitRef.current) {
+      const now = Date.now();
+      if (now - lastSoundTime.current < 300) { // 300ms margin against rapid micro-bounces
+        groundHitRef.current = true;
+        return;
+      }
+      lastSoundTime.current = now;
       groundHitRef.current = true;
-      const impactVol = Math.min(Math.round(Math.abs(vel.y),2)/6, 10);
-      console.log("🥫 TinCan bounce! velY:", Math.abs(vel.y), "vol:", impactVol);
-      try { if (soundManager && soundManager.listener && impactVol > 1) soundManager.playPositional('metal-ground', rigidRef.current, impactVol, 15, 1.0, false); } catch (e) {}
+      const impactVol = Math.min(Math.round(Math.abs(vel.y),2)/30, 1);
+      debugLog("🥫 TinCan bounce! velY:", Math.abs(vel.y), "vol:", impactVol);
+      try { if (soundManager && soundManager.listener) soundManager.playPositional('metal-ground', rigidRef.current, impactVol, 15, 1.0, false); } catch (e) {}
     } else if (y > 10) {
       groundHitRef.current = false; // Reset when airborne
     }
@@ -164,6 +177,8 @@ export function TinCanPhysics({ position, rotation, color, mass = 1, linearDampi
       rigidRef.current.setTranslation({ x: position[0], y: 30, z: position[2] }, true);
       rigidRef.current.setLinvel({ x: 0, y: 0, z: 0 }, true);
       rigidRef.current.setAngvel({ x: 0, y: 0, z: 0 }, true);
+      groundHitRef.current = false; // Prevent sound on respawn before hitting ground
+      return;
     }
   });
 
@@ -171,43 +186,64 @@ export function TinCanPhysics({ position, rotation, color, mass = 1, linearDampi
   const handleCollision = useCallback((e) => {
     if (!rigidRef.current) return;
     const other = e.other.rigidBody;
-    if (!other) return; // All physics bodies (player, bot, ground, can) trigger sound
+    if (!other) return;
 
     const canPos = rigidRef.current.translation();
     const playerPos = other.translation();
 
-    // Direction from player to can
-    const dir = new THREE.Vector3(
-      canPos.x - playerPos.x,
-      0,
-      canPos.z - playerPos.z
-    ).normalize();
+    // Only apply impact when the player is sliding; otherwise just push gently
+    const isSliding = other.userData?.isSliding || false;
 
-    // Player velocity contributes to the push direction
-    const playerVel = other.linvel();
-    const velDir = new THREE.Vector3(playerVel.x, 0, playerVel.z);
-    const speed = velDir.length();
+    if (isSliding) {
+      const now = Date.now();
+      if (now - lastSoundTime.current < 300) return;
+      lastSoundTime.current = now;
 
-    // Blend: 70% direction-away + 30% player velocity direction
-    const finalDir = new THREE.Vector3()
-      .copy(dir).multiplyScalar(0.7)
-      .addScaledVector(velDir.normalize(), 0.3)
-      .normalize();
+      const hitVol = Math.max(Math.min(Math.round(Math.abs(other.linvel().y),2)/30, 1), 0);
+      try { if (soundManager && soundManager.listener && hitVol > 0.1) soundManager.playPositional('metal-ground', rigidRef.current, hitVol, 15, 1.0, false); } catch (e) {}
 
-    // Scale force by player speed (min threshold so even slow hits move the can)
-    const slideMultiplier = other.userData?.slideMultiplier || 1;
-    const force = Math.max(speed * 800 * slideMultiplier, 25);
+      // Direction from player to can
+      const dir = new THREE.Vector3(
+        canPos.x - playerPos.x,
+        0,
+        canPos.z - playerPos.z
+      ).normalize();
 
-    // Sound is non-blocking; guard so it never interferes with physics
-    const impactVol = Math.min(Math.round(speed, 2),10); 
-    console.log("🥫 TinCan hit! speed:", speed, "multiplier:", slideMultiplier, "force:", force, "vol:", impactVol);
-    try { if (soundManager && soundManager.listener && vol > 0) soundManager.playPositional('metal-ground', rigidRef.current, impactVol, 15, 1.0, false); } catch (e) {}
+      const playerVel = other.linvel();
+      const velDir = new THREE.Vector3(playerVel.x, 0, playerVel.z);
+      const speed = velDir.length();
 
-    rigidRef.current.applyImpulse({
-      x: finalDir.x * force,
-      y: force,  // slight upward pop
-      z: finalDir.z * force
-    }, true);
+      const finalDir = new THREE.Vector3()
+        .copy(dir).multiplyScalar(0.7)
+        .addScaledVector(velDir.normalize(), 0.3)
+        .normalize();
+
+      const slideMultiplier = other.userData?.slideMultiplier || 1;
+      const force = Math.max(speed * 800 * slideMultiplier, 25);
+
+      const impactVol = Math.max(Math.min(Math.round(speed, 2),1),0.1);
+      debugLog("🥫 TinCan hit! speed:", speed, "multiplier:", slideMultiplier, "force:", force, "vol:", impactVol);
+      try { if (soundManager && soundManager.listener) soundManager.playPositional('metal-ground', rigidRef.current, impactVol, 15, 1.0, false); } catch (e) {}
+
+      rigidRef.current.applyImpulse({
+        x: finalDir.x * force,
+        y: force,
+        z: finalDir.z * force
+      }, true);
+    } else {
+      // Non-slide collision: gentle push only, no impact sound/force
+      const dir = new THREE.Vector3(
+        canPos.x - playerPos.x,
+        0,
+        canPos.z - playerPos.z
+      ).normalize();
+      const gentleForce = 15;
+      rigidRef.current.applyImpulse({
+        x: dir.x * gentleForce,
+        y: 2,
+        z: dir.z * gentleForce
+      }, true);
+    }
   }, []);
 
   return (

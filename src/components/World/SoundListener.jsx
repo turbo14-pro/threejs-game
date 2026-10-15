@@ -19,6 +19,9 @@ export default function SoundListener() {
     soundManager.load('walk', '/audio/walk.ogg');
     soundManager.load('metal-hit', '/audio/metal-hit.ogg');
     soundManager.load('metal-ground', '/audio/metal-ground.ogg');
+    soundManager.load('hit', '/audio/hit.ogg');
+    soundManager.load('powerup', '/audio/powerup.ogg');
+    soundManager.load('teleport', '/audio/teleport.ogg');
 
     // Resume AudioContext on first user gesture (browser policy)
     const resume = () => { if (soundManager.listener?.context?.state === 'suspended') soundManager.listener.context.resume(); };

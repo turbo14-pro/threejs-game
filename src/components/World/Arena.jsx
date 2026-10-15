@@ -8,6 +8,7 @@ import * as BufferGeometryUtils from 'three/examples/jsm/utils/BufferGeometryUti
 
 
 import { useGameStore } from '../../store/useGameStore';
+import { debugLog } from '../../utils/debugLog.js';
 import * as SkeletonUtils from 'three/examples/jsm/utils/SkeletonUtils.js';
 import ArenaLightRays from './LightRays';
 import { useCerealBoxAssets, CerealBoxMesh, CerealBoxPhysics } from './Obsticles/CerealBox.jsx';
@@ -367,7 +368,7 @@ export default function Arena() {
     const dist = Math.sqrt(dx * dx + dz * dz);
     if (dist < 4 && !buttonTriggered.current) {
       buttonTriggered.current = true;
-      console.log('START BUTTON: DISTANCE TRIGGER — spawning (dist:', dist.toFixed(1), ')');
+      debugLog('START BUTTON: DISTANCE TRIGGER — spawning (dist:', dist.toFixed(1), ')');
       useGameStore.getState().spawnPlayerAtRandomLocation();
     } else if (dist >= 6) {
       buttonTriggered.current = false;

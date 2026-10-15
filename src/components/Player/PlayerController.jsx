@@ -81,7 +81,7 @@ export default function PlayerController({ sendUpdate }) {
 
         // Increase threshold to 0.5m to allow for tick-rate jitter
         if (diff > 0.5) {
-          console.log(`[Reconciliation] Desync detected at tick ${serverState.tick}! Diff: ${diff.toFixed(2)}m. Snapping...`);
+          debugLog(`[Reconciliation] Desync detected at tick ${serverState.tick}! Diff: ${diff.toFixed(2)}m. Snapping...`);
           
           // Authoritative Snap
           rigidBodyRef.current.setTranslation({ 
@@ -124,7 +124,7 @@ export default function PlayerController({ sendUpdate }) {
     fetch('/skins/animations.json')
       .then(res => res.json())
       .then(d => setPlayerAnimations(d.Melee))
-      .catch(err => console.error("PlayerController failed to load animations.json", err));
+      .catch(err => debugError("PlayerController failed to load animations.json", err));
   }, [animConfig, setPlayerAnimations]); // Lock animation states during jump phase
 
   // Camera & Zoom State
@@ -210,7 +210,8 @@ export default function PlayerController({ sendUpdate }) {
       state => state.teleportCount,
       (count) => {
         if (count > 0) {
-          console.log("🚀 Teleport fired, count:", count);
+          debugLog("🚀 Teleport fired, count:", count);
+          if (soundManager && soundManager.listener) soundManager.playPositional('teleport', playerGroupRef.current, 1, 10, 1.0, false);
 
           // Use custom spawn target if set by spawnPlayerAtRandomLocation, otherwise generate random
           let tx, tz, ty;
@@ -280,7 +281,7 @@ export default function PlayerController({ sendUpdate }) {
           try {
             gl.domElement.requestPointerLock();
           } catch (e) {
-            console.warn("Pointer lock request failed (needs user gesture)");
+            debugWarn("Pointer lock request failed (needs user gesture)");
           }
           useGameStore.getState().setGameState('PLAYING');
         }
@@ -295,7 +296,7 @@ export default function PlayerController({ sendUpdate }) {
       state => state.respawnCount,
       (count) => {
         if (count > 0 && rigidBodyRef.current) {
-          console.log("🔄 Respawning Player to Platform 1", count);
+          debugLog("🔄 Respawning Player to Platform 1", count);
           pendingRespawn.current = true;
         }
       }
@@ -309,7 +310,7 @@ export default function PlayerController({ sendUpdate }) {
   // will update our skin in the global list without overwriting our position.
   useEffect(() => {
     if (sendUpdate && selectedSkin) {
-      console.log("👗 Sending Skin Update to Server:", selectedSkin);
+      debugLog("👗 Sending Skin Update to Server:", selectedSkin);
       sendUpdate({ skin: selectedSkin });
     }
   }, [selectedSkin, sendUpdate]);
@@ -337,7 +338,7 @@ export default function PlayerController({ sendUpdate }) {
         z: currentVel.z
       }, true);
       
-      soundManager.playPositional('hit', playerGroupRef.current, 0.3);
+      soundManager.playPositional('hit', playerGroupRef.current, 1);
 
       // Yield control for 1.2s to allow the flight to finish
       setTimeout(() => setIsStunned(false), 1200);
@@ -360,16 +361,19 @@ export default function PlayerController({ sendUpdate }) {
 
     const keys = getKeys();
     const gp = poll ? poll(0.016) : null;
-    // Button 9 = menu toggle (edge detect)
+    // Button 9 = pause / resume (like ESC) — decaptures mouse, loads pause menu, disables movement
     if (gp && gp.buttons[9] && gp.buttons[9].pressed && gp.edges && gp.edges[9]) {
       const current = useGameStore.getState().game.state;
       if (current === 'MENU') {
+        // Resume: close menu, restore sound, lock pointer
         useGameStore.getState().setGameState('PLAYING');
         soundManager.setMasterVolume(1.0);
         try { gl.domElement.requestPointerLock(); } catch (e) {}
       } else {
+        // Pause: open menu, mute sound, exit pointer lock
         useGameStore.getState().setGameState('MENU');
         soundManager.setMasterVolume(0.0);
+        if (document.pointerLockElement) document.exitPointerLock();
       }
     }
     // Gamepad right stick look (retains mouse)
@@ -380,7 +384,7 @@ export default function PlayerController({ sendUpdate }) {
     }
     if (gp) {
       const active = (Math.abs(gp.axes.lx) > 0.15 || Math.abs(gp.axes.ly) > 0.15 || Math.abs(gp.axes.rx) > 0.15 || Math.abs(gp.axes.ry) > 0.15 || Math.abs(gp.axes.rt) > 0.15 || gp.axes.rtPressed || gp.edges.length > 0 || gp.buttons.some(b => b.pressed));
-      if (active) console.log("[Gamepad] axes:", {lx: gp.axes.lx.toFixed(2), ly: gp.axes.ly.toFixed(2), rx: gp.axes.rx.toFixed(2), ry: gp.axes.ry.toFixed(2), rt: gp.axes.rt.toFixed(2), rtPressed: gp.axes.rtPressed}, "edges:", gp.edges, "buttons:", gp.buttons.map((b,i)=>b.pressed?i:null).filter(x=>x!==null));
+      if (active) debugLog("[Gamepad] axes:", {lx: gp.axes.lx.toFixed(2), ly: gp.axes.ly.toFixed(2), rx: gp.axes.rx.toFixed(2), ry: gp.axes.ry.toFixed(2), rt: gp.axes.rt.toFixed(2), rtPressed: gp.axes.rtPressed}, "edges:", gp.edges, "buttons:", gp.buttons.map((b,i)=>b.pressed?i:null).filter(x=>x!==null));
     }
     const translation = rigidBodyRef.current.translation();
 
@@ -409,14 +413,14 @@ export default function PlayerController({ sendUpdate }) {
       if (dist < 0.5) {
         pendingTeleport.current = null;
         useGameStore.getState().setPendingTeleportTarget(null); // clear store target
-        console.log(`✅ Teleport confirmed at (${t.x.toFixed(1)}, ${t.y}, ${t.z.toFixed(1)})`);
+        debugLog(`✅ Teleport confirmed at (${t.x.toFixed(1)}, ${t.y}, ${t.z.toFixed(1)})`);
       } else {
         // Re-apply: wake, translate, zero velocity — loop keeps firing
         rigidBodyRef.current.wakeUp();
         rigidBodyRef.current.setTranslation({ x: t.x, y: t.y, z: t.z }, true);
         rigidBodyRef.current.setLinvel({ x: 0, y: 0, z: 0 }, true);
         rigidBodyRef.current.setAngvel({ x: 0, y: 0, z: 0 }, true);
-        console.log(`🔁 Teleport re-applied (dist ${dist.toFixed(1)}m): (${t.x.toFixed(1)}, ${t.y}, ${t.z.toFixed(1)})`);
+        debugLog(`🔁 Teleport re-applied (dist ${dist.toFixed(1)}m): (${t.x.toFixed(1)}, ${t.y}, ${t.z.toFixed(1)})`);
         if (sendUpdate) sendUpdate({ pos: [t.x, t.y, t.z], force: true });
       }
     }
@@ -444,9 +448,9 @@ export default function PlayerController({ sendUpdate }) {
       try {
         gl.domElement.requestPointerLock();
       } catch (e) {
-        console.warn("Pointer lock request failed");
+        debugWarn("Pointer lock request failed");
       }
-      console.log("🔄 Respawn applied → Platform 1");
+      debugLog("🔄 Respawn applied → Platform 1");
       if (sendUpdate) sendUpdate({ pos: [0, 103, 0], force: true });
       return;
     }
@@ -602,7 +606,7 @@ export default function PlayerController({ sendUpdate }) {
     
     // DEBUG: Only log if we are moving or if we just stopped
     if (moving || isMoving) {
-      // console.log(`[Move Debug] moveX: ${moveX.toFixed(2)}, moveZ: ${moveZ.toFixed(2)}, moving: ${moving}`);
+      // debugLog(`[Move Debug] moveX: ${moveX.toFixed(2)}, moveZ: ${moveZ.toFixed(2)}, moving: ${moving}`);
     }
 
     // 2. SLIDE LOGIC
@@ -776,6 +780,10 @@ export default function PlayerController({ sendUpdate }) {
     if (walkingInput !== isWalking) setIsWalking(walkingInput);
     // Keep ref in sync for collision handler (avoids stale closure)
     isSlidingRef.current = isSliding;
+    // Propagate sliding state to physics body so TinCan can read it
+    if (rigidBodyRef.current) {
+      rigidBodyRef.current.userData = { ...rigidBodyRef.current.userData, isSliding: isSlidingRef.current };
+    }
     
     // Update store with current movement state for post-effects system
     useGameStore.getState().setPlayerMovement(moving, isDashing.current);
@@ -792,11 +800,11 @@ export default function PlayerController({ sendUpdate }) {
     // WALKING LOOP (slower, lower volume)
     const shouldWalk = currentlyGrounded && moving && currentPhase === 'none' && walkingInput && playerGroupRef.current;
     if (shouldWalk && !walkingSoundRef.current) {
-      console.log('[SoundDebug] walking loop START');
-      walkingSoundRef.current = soundManager.playPositional('walk', playerGroupRef.current, 0.3, 2, true);
-      if (!walkingSoundRef.current) walkingSoundRef.current = soundManager.playGlobal('walk', 0.3, true);
+      debugLog('[SoundDebug] walking loop START');
+      walkingSoundRef.current = soundManager.playPositional('walk', playerGroupRef.current, 0.8, 2, 1.0, true);
+      if (!walkingSoundRef.current) walkingSoundRef.current = soundManager.playGlobal('walk', 0.8, true);
     } else if (!shouldWalk && walkingSoundRef.current) {
-      console.log('[SoundDebug] walking loop STOP');
+      debugLog('[SoundDebug] walking loop STOP');
       if (walkingSoundRef.current.isPlaying) walkingSoundRef.current.stop();
       if (playerGroupRef.current && walkingSoundRef.current.parent === playerGroupRef.current) playerGroupRef.current.remove(walkingSoundRef.current);
       walkingSoundRef.current = null;
@@ -806,13 +814,13 @@ export default function PlayerController({ sendUpdate }) {
     const shouldRun = currentlyGrounded && moving && currentPhase === 'none' && playerGroupRef.current;
     if (shouldRun && !runningSoundRef.current) {
       if (!soundManager.listener && camera) soundManager.init(camera);
-      runningSoundRef.current = soundManager.playPositional('running', playerGroupRef.current, 0.5, 1.5, true);
+      runningSoundRef.current = soundManager.playPositional('running', playerGroupRef.current, 1, 1.5, 1.0, true);
       if (!runningSoundRef.current) {
-        runningSoundRef.current = soundManager.playGlobal('running', 0.5, true);
+        runningSoundRef.current = soundManager.playGlobal('running', 1, true);
       }
-      console.log('[SoundDebug] play result:', !!runningSoundRef.current, 'isPlaying:', runningSoundRef.current?.isPlaying);
+      debugLog('[SoundDebug] play result:', !!runningSoundRef.current, 'isPlaying:', runningSoundRef.current?.isPlaying);
     } else if (!shouldRun && runningSoundRef.current) {
-      console.log('[SoundDebug] running loop STOP');
+      debugLog('[SoundDebug] running loop STOP');
       if (runningSoundRef.current.isPlaying) runningSoundRef.current.stop();
       if (playerGroupRef.current && runningSoundRef.current.parent === playerGroupRef.current) {
         playerGroupRef.current.remove(runningSoundRef.current);
@@ -999,7 +1007,7 @@ export default function PlayerController({ sendUpdate }) {
       }
     } catch (e) {
       // Fallback: single ray from player center
-      console.warn('[Camera] castShape error:', e.message);
+      debugWarn('[Camera] castShape error:', e.message);
       const fbOrigin = { x: playerPos.x, y: playerPos.y + targetYOffset, z: playerPos.z };
       const ray = new rapier.Ray(fbOrigin, rayDirection);
       const backupHit = world.castRay(ray, smoothZoom.current, false, null, 0x00010001, null, rigidBodyRef.current);
@@ -1104,8 +1112,10 @@ export default function PlayerController({ sendUpdate }) {
       z: direction.z * force
     }, true);
 
-    // Visual/Audio Feedback
-    soundManager.playPositional('hit', playerGroupRef.current, 0.5);
+    // Visual/Audio Feedback — volume 1, no force multiplier
+    if (force > 0) {
+      soundManager.playPositional('hit', playerGroupRef.current, 1);
+    }
   };
 
   const impactTracker = useRef(new Set());
@@ -1131,13 +1141,13 @@ export default function PlayerController({ sendUpdate }) {
     setTimeout(() => impactTracker.current.delete(uniqueId), 2000);
 
     if (isTinCan) {
-      soundManager.playPositional('metal-ground', playerGroupRef.current, 0.2, 3, false);
+      soundManager.playPositional('metal-hit', playerGroupRef.current, 1, 10, 1.0, false);
     }
 
     // Only react to sliding attacks (not when we are the victim)
     if (isSlidingRef.current) {
-      console.log("🛠️ LOCAL COLLISION: sliding:", isSlidingRef.current, "target:", other.userData?.id);
-      console.log("💥 Slide IMPACT! Launching Victim...");
+      debugLog("🛠️ LOCAL COLLISION: sliding:", isSlidingRef.current, "target:", other.userData?.id);
+      debugLog("💥 Slide IMPACT! Launching Victim...");
 
       // 1. PHYSICAL KICK (Newtonian Interaction)
       // We apply an impulse to the other body locally on our screen
@@ -1166,7 +1176,7 @@ export default function PlayerController({ sendUpdate }) {
       const UPWARD_POP = hasSpeedPowerUp
         ? PLAYER_BASELINE.knockback.speedUpwardPop
         : PLAYER_BASELINE.knockback.baseUpwardPop;
-                  console.log("🚀 BLASTING Victim with Force:", BLAST_POWER, "Up:", UPWARD_POP);
+                  debugLog("🚀 BLASTING Victim with Force:", BLAST_POWER, "Up:", UPWARD_POP);
 
       // Visual effects at the contact point (shared by both bot and human victims)
       const contactPoint = e.contactPoint;
@@ -1195,7 +1205,7 @@ export default function PlayerController({ sendUpdate }) {
           { x: victimPos.x, z: victimPos.z, vx: botVel.x, vz: botVel.z },
         );
         if (impact.aggressor === 'a') {
-          console.log("🤖 Slide IMPACT! Player drove into bot:", other.userData?.name,
+          debugLog("🤖 Slide IMPACT! Player drove into bot:", other.userData?.name,
             `(closing ${impact.closingSpeed.toFixed(1)} m/s)`);
           applyBotKnockback(other.userData.id, impact.knockDir, BLAST_POWER);
           damageBot(other.userData.id, BOT_COMBAT.hitDamage, 'local');
@@ -1203,7 +1213,7 @@ export default function PlayerController({ sendUpdate }) {
           triggerRipple();
         } else {
           // The bot is driving into us — defer. Its slide system applies our knockback.
-          console.log("🛡️ Bot drove into player:", other.userData?.name,
+          debugLog("🛡️ Bot drove into player:", other.userData?.name,
             `(closing ${impact.closingSpeed.toFixed(1)} m/s) — deferring to the bot's impact`);
         }
       } else {
@@ -1215,7 +1225,7 @@ export default function PlayerController({ sendUpdate }) {
         }, true);
 
         // Trigger visual effects instantly for attacker
-        console.log("💥 Calling triggerRipple() from collision handler");
+        debugLog("💥 Calling triggerRipple() from collision handler");
         triggerRipple();
 
         // Send network message for server validation
@@ -1232,7 +1242,7 @@ export default function PlayerController({ sendUpdate }) {
     } // end isSliding
     // 2. I am the VICTIM (A sliding player hit me!)
     else if (other.userData?.isSliding) {
-      console.log("🛡️ Newtonian Victim-side Knockback!");
+      debugLog("🛡️ Newtonian Victim-side Knockback!");
 
       const attackerPos = other.translation();
       const victimPos = rigidBodyRef.current.translation();
@@ -1258,7 +1268,11 @@ export default function PlayerController({ sendUpdate }) {
       // Calculate speed from attacker's velocity since we're the victim
       const attackerSpeed = new THREE.Vector3(attackerVel.x, 0, attackerVel.z).length();
       const force = Math.max(attackerSpeed * 800 * slideMultiplier, 25);
-      console.log("🥫 Victim hit! attackerSpeed:", attackerSpeed, "multiplier:", slideMultiplier, "force:", force);
+      // hit.ogg slide impact — volume 1, no force multiplier
+      if (force > 0) {
+        soundManager.playPositional('hit', playerGroupRef.current, 1);
+      }
+      debugLog("🥫 Victim hit! attackerSpeed:", attackerSpeed, "multiplier:", slideMultiplier, "force:", force);
 
       rigidBodyRef.current.applyImpulse({
         x: finalDir.x * force,

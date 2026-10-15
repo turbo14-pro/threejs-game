@@ -55,7 +55,7 @@ export default function EnvironmentSetup() {
       {/* Single shadow-casting directional light. */}
       <directionalLight
         position={[200, 400, 500]}
-        intensity={0.9}
+        intensity={1.5}
         castShadow
         shadow-mapSize-width={shadowMapSize}
         shadow-mapSize-height={shadowMapSize}

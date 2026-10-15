@@ -329,7 +329,7 @@ export const useGameStore = create(
         })),
         setMobileInput: (input) => set({ mobileInput: { ...get().mobileInput, ...input } }),
         setCameraInput: (input) => set({ cameraInput: { ...get().cameraInput, ...input } }),
-        setSetting: (key, value) => set((s) => ({ 
+        setSetting: (key, value) => set((s) => ({
           settings: { ...s.settings, [key]: value },
           performancePreset: 'Custom'
         })),

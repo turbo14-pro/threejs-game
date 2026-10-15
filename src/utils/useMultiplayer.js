@@ -1,6 +1,7 @@
 import { useEffect, useRef } from 'react';
 import geckos from '@geckos.io/client';
 import { useGameStore } from '../store/useGameStore';
+import { debugLog, debugWarn } from './debugLog.js';
 
 /**
  * THE MULTIPLAYER HOOK
@@ -23,11 +24,11 @@ export function useMultiplayer() {
 
     channel.onConnect(error => {
       if (error) {
-        console.warn('[Network] Connection failed:', error.message);
+        debugWarn('[Network] Connection failed:', error.message);
         return;
       }
 
-      console.log('[Network] Connected to multiplayer server! ID:', channel.id);
+      debugLog('[Network] Connected to multiplayer server! ID:', channel.id);
       setNetworkId(channel.id);
 
       // 2. Handle list updates from server

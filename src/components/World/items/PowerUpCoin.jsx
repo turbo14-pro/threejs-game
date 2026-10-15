@@ -3,6 +3,7 @@ import { useFrame } from '@react-three/fiber';
 import { RigidBody } from '@react-three/rapier';
 import * as THREE from 'three';
 import { useGameStore } from '../../../store/useGameStore';
+import { soundManager } from '../../../utils/SoundManager';
 import { getBotPositions, deliverPowerUp } from '../../Player/botRegistry.js';
 
 const _playerPos = new THREE.Vector3();
@@ -207,6 +208,7 @@ export function PowerUpCoin({
         unregisterPowerUp(coinIdRef.current);
         setPhase('collected');
         onCollected?.();
+        if (soundManager && soundManager.listener) soundManager.playPositional('powerup', rigidRef.current, 1, 10, 1.0, false);
         return;
       }
 
