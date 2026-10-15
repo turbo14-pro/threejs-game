@@ -927,7 +927,7 @@ export default function PlayerController({ sendUpdate }) {
     // Apply camera joystick input from store (touch devices)
     const camInput = useGameStore.getState().cameraInput;
     if (camInput.x !== 0 || camInput.y !== 0) {
-      rotationY.current += camInput.x + 0.2; // Add a small auto-rotation to keep the camera moving
+      rotationY.current += camInput.x;
       rotationX.current += camInput.y;
       rotationX.current = Math.max(-Math.PI / 3, Math.min(Math.PI / 4, rotationX.current));
       // Reset after applying so it doesn't compound
