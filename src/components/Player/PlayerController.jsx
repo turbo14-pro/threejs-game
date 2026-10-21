@@ -108,6 +108,7 @@ export default function PlayerController({ sendUpdate }) {
   const physicsAccumulator = useRef(0); // Gates velocity application at 30Hz to match server
   const netAccumulator = useRef(0);
   const inputHistory = useRef([]); // [{ tick, pos, input, camRot }]
+  const sentInputs = useRef(new Map()); // sequenceId -> { tick, pos, input, camRot }
   const lastProcessedTick = useRef(0);
 
   // --- RECONCILIATION LISTENER ---
@@ -215,6 +216,13 @@ export default function PlayerController({ sendUpdate }) {
 
         // Cleanup old history
         inputHistory.current = inputHistory.current.filter(e => e.tick > serverState.tick);
+
+        // Cleanup acknowledged sentInputs — remove entries whose tick the server has confirmed
+        for (const [seqId, entry] of sentInputs.current.entries()) {
+          if (entry.tick <= serverState.tick) {
+            sentInputs.current.delete(seqId);
+          }
+        }
       }
     );
     return unsubscribe;
@@ -1163,12 +1171,24 @@ export default function PlayerController({ sendUpdate }) {
       // and can process this input at the correct tick. Sending the current tick
       // causes one-tick desync because the server is already ahead by the time
       // the packet arrives.
-      sendUpdate({
+      const sequenceId = sendUpdate({
         type: 'input',
         tick: netTick.current + 1,
         input: currentInput,
         camRot: rotationY.current
       });
+
+      // Track sent input by sequenceId for reconciliation (Phase 01).
+      // The server echoes back the processed tick; we use sequenceId to match
+      // acknowledgments and re-apply any unacknowledged inputs.
+      if (sequenceId !== undefined) {
+        sentInputs.current.set(sequenceId, {
+          tick: netTick.current + 1,
+          pos: { x: rigidBodyRef.current.translation().x, y: rigidBodyRef.current.translation().y, z: rigidBodyRef.current.translation().z },
+          input: currentInput,
+          camRot: rotationY.current,
+        });
+      }
 
       // 2. Send LEGACY POSITION (Phase 1/2 Bridge)
       const pos = rigidBodyRef.current.translation();

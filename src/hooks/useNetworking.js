@@ -2,6 +2,7 @@ import { useEffect, useRef } from 'react';
 import geckos from '@geckos.io/client';
 import { useGameStore } from '../store/useGameStore';
 import { debugLog, debugWarn, debugError } from '../utils/debugLog.js';
+import { createInputSequenceTracker } from '../utils/inputSequence.js';
 
 /**
  * THE MULTIPLAYER HOOK
@@ -9,6 +10,7 @@ import { debugLog, debugWarn, debugError } from '../utils/debugLog.js';
  */
 export function useNetworking() {
   const channelRef = useRef(null);
+  const sequenceTracker = useRef(createInputSequenceTracker());
   const gameState = useGameStore(state => state.game.state);
   const updateRemotePlayers = useGameStore(state => state.updateRemotePlayers);
   const removeRemotePlayer = useGameStore(state => state.removeRemotePlayer);
@@ -168,18 +170,26 @@ export function useNetworking() {
   }, [gameState, updateRemotePlayers, removeRemotePlayer, setNetworkId, setNetworkStatus]);
 
   // Function to send our current position and animation state
+  // Returns the sequenceId assigned to input packets (undefined for non-input).
   const sendUpdate = (data) => {
     if (channelRef.current) {
       if (data.type === 'impact') {
         channelRef.current.emit('impact', data);
       } else if (data.type === 'input') {
-        // Send input for authoritative server simulation
-        channelRef.current.emit('input', data);
+        // Tag input with a monotonically increasing sequenceId so the server
+        // can reject duplicates and out-of-order inputs (Phase 01).
+        const sequenceId = sequenceTracker.current.next();
+        channelRef.current.emit('input', {
+          ...data,
+          sequenceId,
+        });
+        return sequenceId;
       } else {
         // Legacy position update
         channelRef.current.emit('pos', data);
       }
     }
+    return undefined;
   };
 
   return { sendUpdate };

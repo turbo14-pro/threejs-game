@@ -181,7 +181,18 @@ io.onConnection(channel => {
     const p = players.get(channel.id);
     if (!p) return;
     p.lastSeen = Date.now();
-    
+
+    // Phase 01: Sequence number validation — reject duplicates and out-of-order inputs
+    const sequenceId = data.sequenceId;
+    if (sequenceId !== undefined) {
+      if (p.lastProcessedSequenceId === undefined) p.lastProcessedSequenceId = -1;
+      if (sequenceId <= p.lastProcessedSequenceId) {
+        // Duplicate or out-of-order input — ignore to prevent double-processing
+        return;
+      }
+      p.lastProcessedSequenceId = sequenceId;
+    }
+
     // Buffer input by client tick for proper tick synchronization
     if (!p.inputBuffer) p.inputBuffer = new Map();
     p.inputBuffer.set(data.tick, {
