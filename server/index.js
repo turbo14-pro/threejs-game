@@ -1,6 +1,7 @@
 import geckos from '@geckos.io/server';
 import RAPIER from '@dimforge/rapier3d-compat';
 import * as THREE from 'three';
+import { PLAYER_BASELINE } from '../src/config/playerConfig.js';
 
 // --- PHYSICS SETUP ---
 await RAPIER.init();
@@ -295,9 +296,9 @@ setInterval(() => {
     const moveX = (d ? 1 : 0) - (a ? 1 : 0);
     const moveZ = (s ? 1 : 0) - (w ? 1 : 0);
     
-    // Calculate target velocity - MATCH PLAYER_BASELINE exactly
-    const walkSpeed = 4;    // PLAYER_BASELINE.movement.walkSpeed
-    const sprintSpeed = 35; // PLAYER_BASELINE.movement.sprintSpeed
+    // Calculate target velocity — single source of truth from PLAYER_BASELINE
+    const walkSpeed = PLAYER_BASELINE.movement.walkSpeed;
+    const sprintSpeed = PLAYER_BASELINE.movement.sprintSpeed;
     const speed = walk ? walkSpeed : sprintSpeed;
     let vx = 0;
     let vz = 0;
@@ -322,22 +323,22 @@ setInterval(() => {
     // Ground at y=0 (table) or y=100 (platforms)
     const isGrounded = currentPos.y <= 5.5 || (currentPos.y >= 99 && currentPos.y <= 105.5);
 
-      // Apply Jump (Impulse matching client's 38)
+      // Apply Jump (Impulse matching client's jumpVelocity)
       if (jump && isGrounded && (!p.lastJumpTick || serverTick - p.lastJumpTick > 10)) {
-        p.body.applyImpulse({ x: 0, y: 38, z: 0 }, true);
+        p.body.applyImpulse({ x: 0, y: PLAYER_BASELINE.movement.jumpVelocity, z: 0 }, true);
         p.lastJumpTick = serverTick;
         // Update anim state for remote players
         p.anim = { ...p.anim, jp: 'launch' };
       }
 
-      // Dash: Simulate with BASELINE speed (150) - no power-ups on server
+      // Dash: Simulate with BASELINE speed - no power-ups on server
       // Detect rising edge like client does
       const dashPressed = dash && !p.prevDashInput;
       p.prevDashInput = dash;
       
       if (dashPressed && isGrounded && (!p.lastDashTick || serverTick - p.lastDashTick > 20)) {
-        // Baseline dash speed (client: 150 * powerUpMultiplier, server: 150 baseline)
-        const dashSpeed = 150; // PLAYER_BASELINE.dash.dashSpeed
+        // Baseline dash speed from PLAYER_BASELINE
+        const dashSpeed = PLAYER_BASELINE.dash.dashSpeed;
         const rot = camRot;
         const dashVx = Math.sin(rot) * dashSpeed;
         const dashVz = Math.cos(rot) * dashSpeed;
@@ -349,9 +350,9 @@ setInterval(() => {
         p.anim = { ...p.anim, jp: 'dash' };
       }
 
-      // Apply Slide (match client's slide speed ~40)
+      // Apply Slide (match client's slide speed from PLAYER_BASELINE)
       if (slide && isGrounded) {
-        const slideSpeed = 40; // PLAYER_BASELINE.movement.slideSpeed
+        const slideSpeed = PLAYER_BASELINE.movement.slideSpeed;
         const rot = camRot;
         const slideVx = Math.sin(rot) * slideSpeed;
         const slideVz = Math.cos(rot) * slideSpeed;
