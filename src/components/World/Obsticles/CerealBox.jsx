@@ -122,12 +122,14 @@ export function CerealBoxMesh({ position, rotation, color, geometry, material, t
 
 /**
  * Physics collider component for a Cereal Box.
+ * boxSize: { x: width (30), y: height (36), z: depth (12) }
+ * Rapier/Three.js: x=width, y=height, z=depth
  */
 export function CerealBoxPhysics({ position, rotation, boxSize }) {
-  const { x: w, y: h, z: d } = boxSize;
-  const thickness = 0.5; // Thickness of the "cardboard"
-  const t2 = thickness / 2; // Half-thickness for centering
-  const doorHeight = 16; // Height of the doorway
+  const { x: w, y: h, z: d } = boxSize; // w=30, h=36, d=12
+  const thickness = 0.5;
+  const t2 = thickness / 2;
+  const doorHeight = 16;
 
   return (
     <RigidBody
@@ -136,20 +138,20 @@ export function CerealBoxPhysics({ position, rotation, boxSize }) {
       rotation={rotation}
       collisionGroups={0x0001FFFF}
     >
-      {/* 1. Floor - Inset by half thickness so top surface matches visual bottom */}
-      <CuboidCollider args={[d/2, t2, w/2]} position={[0, -h/2 + t2, 0]} />
+      {/* 1. Floor - x=width, y=thickness, z=depth */}
+      <CuboidCollider args={[w/2, t2, d/2]} position={[0, -h/2 + t2, 0]} />
 
-      {/* 2. Side Walls - Inset so outer surface matches visual width */}
-      <CuboidCollider args={[t2, h/2, w/2]} position={[-d/2 + t2, 0, 0]} />
-      <CuboidCollider args={[t2, h/2, w/2]} position={[d/2 - t2, 0, 0]} />
+      {/* 2. Side Walls (along z-axis) - x=thickness, y=height, z=depth */}
+      <CuboidCollider args={[t2, h/2, d/2]} position={[-w/2 + t2, 0, 0]} />
+      <CuboidCollider args={[t2, h/2, d/2]} position={[w/2 - t2, 0, 0]} />
 
-      {/* 3. Back Wall - Inset so visual depth matches */}
-      <CuboidCollider args={[d/2, h/2, t2]} position={[0, 0, -w/2 + t2]} />
+      {/* 3. Back Wall (at -z) - x=width, y=height, z=thickness */}
+      <CuboidCollider args={[w/2, h/2, t2]} position={[0, 0, -d/2 + t2]} />
 
-      {/* 4. Front Wall with Doorway - Inset so visual depth matches */}
+      {/* 4. Front Wall with Doorway (at +z) - x=width, y=height, z=thickness */}
       <CuboidCollider 
-        args={[d/2, (h - doorHeight)/2, t2]} 
-        position={[0, h/2 - (h - doorHeight)/2, w/2 - t2]} 
+        args={[w/2, (h - doorHeight)/2, t2]} 
+        position={[0, h/2 - (h - doorHeight)/2, d/2 - t2]} 
       />
 
       {/* NO TOP: Open for jumping in */}

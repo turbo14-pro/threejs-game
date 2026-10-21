@@ -93,7 +93,8 @@ export function useNetworking() {
       channel.emit('pos', { 
         skin: initialSkin,
         pos: [0, 103, 0], // Start at the lobby spawn
-        rot: Math.PI 
+        rot: Math.PI,
+        anim: { mv: false, dir: 'for', jp: 'none', spr: true }
       });
 
       // 2. Handle the initial list of players
@@ -105,7 +106,13 @@ export function useNetworking() {
       channel.on('update', (data) => {
         // Handle both old array format and new { p, t } format
         const players = Array.isArray(data) ? data : (data?.p || []);
+        const serverTick = data?.t;
         updateRemotePlayers(players);
+        
+        // Update server tick in store for LatencyGraph
+        if (serverTick !== undefined) {
+          useGameStore.getState().setServerTick(serverTick);
+        }
       });
 
       // Handle a player leaving
@@ -165,7 +172,11 @@ export function useNetworking() {
     if (channelRef.current) {
       if (data.type === 'impact') {
         channelRef.current.emit('impact', data);
+      } else if (data.type === 'input') {
+        // Send input for authoritative server simulation
+        channelRef.current.emit('input', data);
       } else {
+        // Legacy position update
         channelRef.current.emit('pos', data);
       }
     }

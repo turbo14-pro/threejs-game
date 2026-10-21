@@ -3,6 +3,10 @@ import { useGameStore } from '../../store/useGameStore';
 
 export default function LatencyGraph() {
   const latency = useGameStore(state => state.game.latency);
+  const serverTick = useGameStore(state => state.game.serverTick);
+  const remotePlayers = useGameStore(state => state.remotePlayers);
+  const desyncCount = useGameStore(state => state.game.desyncCount);
+  
   const [latHistory, setLatHistory] = useState(new Array(20).fill(0));
   const latCanvasRef = useRef(null);
 
@@ -111,6 +115,8 @@ export default function LatencyGraph() {
     border: '1px solid rgba(255,255,255,0.1)'
   };
 
+  const remoteCount = Object.keys(remotePlayers).length;
+
   return (
     <div style={{
       position: 'absolute',
@@ -144,6 +150,27 @@ export default function LatencyGraph() {
         }}>{fps}</span>
       </div>
       <canvas ref={fpsCanvasRef} width={120} height={40} style={graphStyle} />
+
+      {/* Server Tick */}
+      <div style={{ display: 'flex', alignItems: 'baseline', gap: '0.5rem', marginTop: '0.15rem' }}>
+        <span style={{ fontSize: '0.7rem', color: 'rgba(255,255,255,0.5)', fontWeight: 600 }}>SERVER TICK</span>
+        <span style={{ fontSize: '1.2rem', fontWeight: 800, color: '#00ffcc' }}>{serverTick || 0}</span>
+      </div>
+
+      {/* Remote Players Count */}
+      <div style={{ display: 'flex', alignItems: 'baseline', gap: '0.5rem', marginTop: '0.15rem' }}>
+        <span style={{ fontSize: '0.7rem', color: 'rgba(255,255,255,0.5)', fontWeight: 600 }}>REMOTE PLAYERS</span>
+        <span style={{ fontSize: '1.2rem', fontWeight: 800, color: '#ffcc00' }}>{remoteCount}</span>
+      </div>
+
+      {/* Desync Counter */}
+      <div style={{ display: 'flex', alignItems: 'baseline', gap: '0.5rem', marginTop: '0.15rem' }}>
+        <span style={{ fontSize: '0.7rem', color: 'rgba(255,255,255,0.5)', fontWeight: 600 }}>DESYNC COUNT</span>
+        <span style={{ 
+          fontSize: '1.2rem', fontWeight: 800, 
+          color: desyncCount > 5 ? '#ff0055' : desyncCount > 0 ? '#ffcc00' : '#00ffcc'
+        }}>{desyncCount || 0}</span>
+      </div>
     </div>
   );
 }

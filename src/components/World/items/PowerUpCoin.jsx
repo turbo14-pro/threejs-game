@@ -208,7 +208,7 @@ export function PowerUpCoin({
         unregisterPowerUp(coinIdRef.current);
         setPhase('collected');
         onCollected?.();
-        if (soundManager && soundManager.listener) soundManager.playPositional('powerup', rigidRef.current, 1, 10, 1.0, false);
+        if (soundManager && soundManager.listener) soundManager.playPositional('powerup', rigidRef.current, 1, 10, 1.0, 50, false);
         return;
       }
 

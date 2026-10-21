@@ -1,4 +1,4 @@
-import React, { useRef, useState, useEffect } from 'react';
+import React, { useRef, useState, useEffect, useCallback } from 'react';
 import { useFrame, useThree } from '@react-three/fiber';
 import { useKeyboardControls } from '@react-three/drei';
 import { RigidBody, CylinderCollider, CapsuleCollider, CuboidCollider, useRapier } from '@react-three/rapier';
@@ -10,13 +10,60 @@ import { setLocalPlayerWorldPos, setLocalPlayerWorldVel } from '../World/items/P
 import { damageBot, applyBotKnockback, getBotVelocity } from './botRegistry.js';
 import { BOT_COMBAT, resolveImpact } from './BotAI.jsx';
 import { soundManager } from '../../utils/SoundManager';
+import { audioFlag } from '../../utils/audioDebugFlags';
 import { useGamepad } from '../../hooks/useGamepad.js';
+// The debug helpers are also published on globalThis by utils/debugLog.js, but
+// relying on that global makes the module fail to load (ReferenceError) if the
+// logger is ever tree-shaken or the import order changes. Import them directly.
+import { debugLog, debugWarn, debugError } from '../../utils/debugLog';
 
 const direction = new THREE.Vector3();
 const frontVector = new THREE.Vector3();
 const sideVector = new THREE.Vector3();
 const rayDirection = new THREE.Vector3();
 const camPos = new THREE.Vector3();
+// P1-#12: shared scratch objects for the per-frame hot path. These used to be
+// allocated with `new THREE.Vector3()` / `new THREE.Quaternion()` inside
+// useFrame, which churns the GC every frame (60+/s) and can hitch the game.
+const upAxis = new THREE.Vector3(0, 1, 0);
+const rightAxis = new THREE.Vector3(1, 0, 0);
+const scratchMeshForward = new THREE.Vector3();
+const scratchCamForward = new THREE.Vector3();
+const scratchQuat = new THREE.Quaternion();
+const scratchCamOffset = new THREE.Vector3();
+const scratchRight = new THREE.Vector3();
+const scratchTarget = new THREE.Vector3();
+const scratchLookDir = new THREE.Vector3();
+const scratchLookTarget = new THREE.Vector3();
+
+// P0-#3: states where the physics simulation must not advance. MENU keeps the
+// old "attract mode" fall-through; PAUSED now freezes movement/physics/net.
+const SIM_RUNNING_STATES = new Set(['PLAYING', 'BATTLE', 'DROP', 'PREMATCH', 'LOBBY']);
+
+// P1-#9: teleport targets must be finite + inside the world.
+const TELEPORT_BOUNDS = { x: 290, yMin: -50, yMax: 400, z: 290 };
+function sanitizeTeleportTarget(t) {
+  if (!t) return null;
+  const x = Number(t.x), y = Number(t.y), z = Number(t.z);
+  if (!Number.isFinite(x) || !Number.isFinite(y) || !Number.isFinite(z)) return null;
+  return {
+    x: Math.max(-TELEPORT_BOUNDS.x, Math.min(TELEPORT_BOUNDS.x, x)),
+    y: Math.max(TELEPORT_BOUNDS.yMin, Math.min(TELEPORT_BOUNDS.yMax, y)),
+    z: Math.max(-TELEPORT_BOUNDS.z, Math.min(TELEPORT_BOUNDS.z, z)),
+  };
+}
+
+// P1-#11: sanitize a live Rapier translation proxy into plain numbers.
+function snapTranslation(t) {
+  try {
+    if (!t) return null;
+    const x = Number(t.x), y = Number(t.y), z = Number(t.z);
+    if (!Number.isFinite(x) || !Number.isFinite(y) || !Number.isFinite(z)) return null;
+    return { x, y, z };
+  } catch {
+    return null;
+  }
+}
 
 export default function PlayerController({ sendUpdate }) {
   const rigidBodyRef = useRef();
@@ -58,6 +105,7 @@ export default function PlayerController({ sendUpdate }) {
   const dashDir = useRef(new THREE.Vector3());
   const dashStartPos = useRef(new THREE.Vector3());
   const netTick = useRef(0);
+  const physicsAccumulator = useRef(0); // Gates velocity application at 30Hz to match server
   const netAccumulator = useRef(0);
   const inputHistory = useRef([]); // [{ tick, pos, input, camRot }]
   const lastProcessedTick = useRef(0);
@@ -73,26 +121,95 @@ export default function PlayerController({ sendUpdate }) {
         const historyEntry = inputHistory.current.find(e => e.tick === serverState.tick);
         if (!historyEntry) return;
 
+        const { pos: sPos, vel: sVel } = serverState;
+
+        // Guard against NaN/Infinity in server state to prevent corrupting
+        // the physics body and crashing PositionalAudio panners (non-finite
+        // AudioParam values in updateMatrixWorld).
+        const posValid = sPos && sPos.length === 3 && sPos.every(v => Number.isFinite(v));
+        const velValid = sVel && sVel.length === 3 && sVel.every(v => Number.isFinite(v));
+
+        if (!posValid) {
+          debugWarn(`[Reconciliation] Ignoring non-finite server position at tick ${serverState.tick}:`, sPos);
+          return;
+        }
+
         const pos = historyEntry.pos;
         const diff = Math.sqrt(
-          Math.pow(pos.x - serverState.pos[0], 2) +
-          Math.pow(pos.z - serverState.pos[2], 2)
+          Math.pow(pos.x - sPos[0], 2) +
+          Math.pow(pos.z - sPos[2], 2)
         );
 
-        // Increase threshold to 0.5m to allow for tick-rate jitter
-        if (diff > 0.5) {
+        // Increase threshold to 0.3m to account for 30Hz server + network jitter + physics divergence
+        // 0.15m was too tight for 33ms tick interval + variable client frame rate
+        if (diff > 0.3) {
           debugLog(`[Reconciliation] Desync detected at tick ${serverState.tick}! Diff: ${diff.toFixed(2)}m. Snapping...`);
+          
+          // Increment desync counter for LatencyGraph
+          useGameStore.getState().incrementDesyncCount();
           
           // Authoritative Snap
           rigidBodyRef.current.setTranslation({ 
-            x: serverState.pos[0], 
-            y: serverState.pos[1], 
-            z: serverState.pos[2] 
+            x: sPos[0], 
+            y: sPos[1], 
+            z: sPos[2] 
           }, true);
           
           // Match velocity to prevent post-snap drift
-          if (serverState.vel) {
-            rigidBodyRef.current.setLinvel(serverState.vel, true);
+          if (velValid) {
+            rigidBodyRef.current.setLinvel({ x: sVel[0], y: sVel[1], z: sVel[2] }, true);
+          }
+
+          // RE-APPLY UNACKNOWLEDGED INPUTS (client-side prediction)
+          // After snapping to server state, re-simulate all inputs that were
+          // generated after the acknowledged tick but not yet confirmed by server.
+          const unacknowledged = inputHistory.current
+            .filter(e => e.tick > serverState.tick)
+            .sort((a, b) => a.tick - b.tick);
+          
+          unacknowledged.forEach(entry => {
+            const { input, camRot } = entry;
+            const { w, a, s, d, jump, walk, slide, dash } = input;
+            
+            const moveX = (d ? 1 : 0) - (a ? 1 : 0);
+            const moveZ = (s ? 1 : 0) - (w ? 1 : 0);
+            
+            if (moveX !== 0 || moveZ !== 0) {
+              const length = Math.sqrt(moveX * moveX + moveZ * moveZ);
+              const nx = moveX / length;
+              const nz = moveZ / length;
+              const rot = camRot || 0;
+              const speed = walk ? 4 : 35;
+              const vx = (nx * Math.cos(rot) + nz * Math.sin(rot)) * speed;
+              const vz = (-nx * Math.sin(rot) + nz * Math.cos(rot)) * speed;
+              
+              const currentVel = rigidBodyRef.current.linvel();
+              rigidBodyRef.current.setLinvel({ x: vx, y: currentVel.y, z: vz }, true);
+            }
+          });
+
+          // Apply server-equivalent damping after re-applying inputs so client
+          // velocity matches what server would have after world.step().
+          // Rapier damping: v *= (1 - damping * dt) = v * 0.98335 per 33ms tick.
+          const dampingFactor = 1 - 0.5 * 0.0333;
+          const postVel = rigidBodyRef.current.linvel();
+          rigidBodyRef.current.setLinvel({
+            x: postVel.x * dampingFactor,
+            y: postVel.y,
+            z: postVel.z * dampingFactor
+          }, true);
+        }
+        
+        // Also reconcile velocity drift (prevents gradual yank)
+        if (velValid && rigidBodyRef.current) {
+          const clientVel = rigidBodyRef.current.linvel();
+          const velDiff = Math.sqrt(
+            Math.pow(clientVel.x - sVel[0], 2) +
+            Math.pow(clientVel.z - sVel[2], 2)
+          );
+          if (velDiff > 5) { // Significant velocity mismatch
+            debugLog(`[Reconciliation] Velocity drift: ${velDiff.toFixed(2)}. Correcting...`);
+            rigidBodyRef.current.setLinvel({ x: sVel[0], y: sVel[1], z: sVel[2] }, true);
           }
         }
 
@@ -105,6 +222,9 @@ export default function PlayerController({ sendUpdate }) {
 
   // --- REFS / TIMERS ---
   const slideTimer = useRef(0);
+  const slideSoundRef = useRef(null); // Reference to fade slide sound
+  // P1-#9: caps how many frames a teleport may keep re-applying (see useFrame).
+  const teleportRetries = useRef(0);
   const lastDamageTime = useRef(0);
   const jumpTimer = useRef(0);
   const physicsJumpTriggered = useRef(false);
@@ -113,6 +233,29 @@ export default function PlayerController({ sendUpdate }) {
   const prevJumpingInput = useRef(false);
   const externalForce = useRef(new THREE.Vector3());
   const worldVelocityRef = useRef(new THREE.Vector3());
+
+  // P0-#4: unmount cleanup — stop loop sounds + detach them OUTSIDE the render
+  // traversal (direct parent.remove() here is safe: we are in a React effect
+  // cleanup, not inside three's updateMatrixWorld loop). Without this, a
+  // remount (death/restart/StrictMode) leaves the old PositionalAudio nodes
+  // attached to a dead parent chain — and every render then walks a corrupt
+  // graph (the updateMatrixWorld crash) or linearRamps a NaN position.
+  const stopLoopSound = useCallback((ref) => {
+    const s = ref?.current;
+    if (!s) return;
+    ref.current = null;
+    // Use the SoundManager release path: it stops playback, untracks the node
+    // from `instances` and DEFERS the scene-graph detach (microtask) so we
+    // never splice a parent's children array mid-traversal. Calling
+    // parent.remove() inline from a useFrame collision handler is exactly what
+    // caused "Cannot read properties of undefined (reading 'updateMatrixWorld')".
+    try { soundManager?.release?.(s); } catch { /* fall through to manual cleanup */ }
+  }, []);
+  useEffect(() => () => {
+    stopLoopSound(walkingSoundRef);
+    stopLoopSound(runningSoundRef);
+    stopLoopSound(slideSoundRef);
+  }, [stopLoopSound]);
   const preImpactVelocity = useRef(new THREE.Vector3());
   const isSlidingRef = useRef(false); // Mirror isSliding state for collision handler (avoids stale closure)
   const runningSoundRef = useRef(null); // Positional loop for running footsteps
@@ -211,7 +354,7 @@ export default function PlayerController({ sendUpdate }) {
       (count) => {
         if (count > 0) {
           debugLog("🚀 Teleport fired, count:", count);
-          if (soundManager && soundManager.listener) soundManager.playPositional('teleport', playerGroupRef.current, 1, 10, 1.0, false);
+          if (soundManager && soundManager.listener) soundManager.playPositional('teleport', playerGroupRef.current, 1, 10, 1.0, 50, false);
 
           // Use custom spawn target if set by spawnPlayerAtRandomLocation, otherwise generate random
           let tx, tz, ty;
@@ -338,7 +481,7 @@ export default function PlayerController({ sendUpdate }) {
         z: currentVel.z
       }, true);
       
-      soundManager.playPositional('hit', playerGroupRef.current, 1);
+            soundManager.playPositional('hit', playerGroupRef.current, 1, 5, 1.0, 50, false);
 
       // Yield control for 1.2s to allow the flight to finish
       setTimeout(() => setIsStunned(false), 1200);
@@ -386,44 +529,93 @@ export default function PlayerController({ sendUpdate }) {
       const active = (Math.abs(gp.axes.lx) > 0.15 || Math.abs(gp.axes.ly) > 0.15 || Math.abs(gp.axes.rx) > 0.15 || Math.abs(gp.axes.ry) > 0.15 || Math.abs(gp.axes.rt) > 0.15 || gp.axes.rtPressed || gp.edges.length > 0 || gp.buttons.some(b => b.pressed));
       if (active) debugLog("[Gamepad] axes:", {lx: gp.axes.lx.toFixed(2), ly: gp.axes.ly.toFixed(2), rx: gp.axes.rx.toFixed(2), ry: gp.axes.ry.toFixed(2), rt: gp.axes.rt.toFixed(2), rtPressed: gp.axes.rtPressed}, "edges:", gp.edges, "buttons:", gp.buttons.map((b,i)=>b.pressed?i:null).filter(x=>x!==null));
     }
-    const translation = rigidBodyRef.current.translation();
+    // P1-#11: snapshot the translation ONCE into plain numbers. Reading the
+    // live Rapier proxy repeatedly (and re-reading it inside callbacks) risks
+    // touching the WASM object while the solver holds it -> "recursive use of
+    // an object detected which is already in use" / unsafe aliasing.
+    const translation = snapTranslation(rigidBodyRef.current.translation());
 
-    // Update shared player position for power-up distance pickup
+    // SAFETY: If physics returns NaN, hard-reset to the lobby instead of
+    // returning early. Returning early leaves the corrupt NaN body in the world:
+    // attached PositionalAudio nodes keep a NaN world matrix and three throws
+    // "linearRampToValueAtTime non-finite" on EVERY render, forever.
+    if (!translation) {
+      try {
+        rigidBodyRef.current.setTranslation({ x: 0, y: 103, z: 0 }, true);
+        rigidBodyRef.current.setLinvel({ x: 0, y: 0, z: 0 }, true);
+        rigidBodyRef.current.setAngvel({ x: 0, y: 0, z: 0 }, true);
+        worldVelocityRef.current.set(0, 0, 0);
+        setLocalPlayerWorldPos({ x: 0, y: 103, z: 0 });
+      } catch {}
+      return;
+    }
+
+    // Update shared player position for power-up distance pickup — but NEVER
+    // publish a NaN/Infinity translation. One corrupt broadcast poisons
+    // getLocalPlayerWorldPos() consumers (bots chase NaN -> their kinematic
+    // bodies go NaN -> their meshes + attached PositionalAudios go NaN ->
+    // panner.linearRampToValueAtTime throws every frame, forever).
     setLocalPlayerWorldPos(translation);
     // Publish horizontal velocity so CPU bots can run a Newtonian impact resolution
     // (who's driving into whom) instead of blindly knocking back whatever they touch.
-    setLocalPlayerWorldVel(worldVelocityRef.current);
+    if (Number.isFinite(worldVelocityRef.current?.x) && Number.isFinite(worldVelocityRef.current?.z)) {
+      setLocalPlayerWorldVel(worldVelocityRef.current);
+    }
     // Only update debug ripple position when debug mode is active
     if (useGameStore.getState().debugRipple.enabled) {
       useGameStore.getState().setRippleDebugPosition({ x: translation.x, y: translation.y, z: translation.z });
     }
 
-    // SAFETY: If physics returns NaN, ignore this frame to avoid crashing the camera
-    if (isNaN(translation.x) || isNaN(translation.y) || isNaN(translation.z)) return;
-
     // Apply pending teleport OUTSIDE the physics step (setTranslation during step is ignored)
-    // Persistent loop: keep firing until physics confirms the player is at target
+    // P1-#9: sanitized + retry-capped. Unbounded re-apply of a corrupt target
+    // would setTranslation(NaN) forever — poisoning the body and every attached
+    // PositionalAudio (linearRamp throws every frame).
     if (pendingTeleport.current) {
-      const t = pendingTeleport.current;
-      const current = rigidBodyRef.current.translation();
-      const dx = current.x - t.x, dy = current.y - t.y, dz = current.z - t.z;
-      const dist = Math.sqrt(dx*dx + dy*dy + dz*dz);
-
-      // Only clear when actually at target (within 0.5m) — otherwise re-apply
-      if (dist < 0.5) {
+      const raw = pendingTeleport.current;
+      const t = sanitizeTeleportTarget(raw);
+      if (!t) {
         pendingTeleport.current = null;
-        useGameStore.getState().setPendingTeleportTarget(null); // clear store target
-        debugLog(`✅ Teleport confirmed at (${t.x.toFixed(1)}, ${t.y}, ${t.z.toFixed(1)})`);
+        teleportRetries.current = 0;
+        try { useGameStore.getState().setPendingTeleportTarget(null); } catch {}
+      } else if ((teleportRetries.current = (teleportRetries.current || 0) + 1) > 60) {
+        pendingTeleport.current = null;
+        teleportRetries.current = 0;
+        try { useGameStore.getState().setPendingTeleportTarget(null); } catch {}
+        debugWarn('Teleport target unreachable after 60 frames — dropping it');
       } else {
-        // Re-apply: wake, translate, zero velocity — loop keeps firing
-        rigidBodyRef.current.wakeUp();
-        rigidBodyRef.current.setTranslation({ x: t.x, y: t.y, z: t.z }, true);
-        rigidBodyRef.current.setLinvel({ x: 0, y: 0, z: 0 }, true);
-        rigidBodyRef.current.setAngvel({ x: 0, y: 0, z: 0 }, true);
-        debugLog(`🔁 Teleport re-applied (dist ${dist.toFixed(1)}m): (${t.x.toFixed(1)}, ${t.y}, ${t.z.toFixed(1)})`);
-        if (sendUpdate) sendUpdate({ pos: [t.x, t.y, t.z], force: true });
+        const current = rigidBodyRef.current.translation();
+        const cx = Number(current?.x), cy = Number(current?.y), cz = Number(current?.z);
+        if (!Number.isFinite(cx) || !Number.isFinite(cy) || !Number.isFinite(cz)) {
+          // Corrupt body — force it back onto the target and zero all motion.
+          try {
+            rigidBodyRef.current.setTranslation(t, true);
+            rigidBodyRef.current.setLinvel({ x: 0, y: 0, z: 0 }, true);
+            rigidBodyRef.current.setAngvel({ x: 0, y: 0, z: 0 }, true);
+          } catch {}
+        } else {
+          const dx = cx - t.x, dy = cy - t.y, dz = cz - t.z;
+          const dist = Math.sqrt(dx*dx + dy*dy + dz*dz);
+
+          // Only clear when actually at target (within 0.5m) — otherwise re-apply
+          if (dist < 0.5) {
+            pendingTeleport.current = null;
+            teleportRetries.current = 0;
+            try { useGameStore.getState().setPendingTeleportTarget(null); } catch {}
+            debugLog(`✅ Teleport confirmed at (${t.x.toFixed(1)}, ${t.y}, ${t.z.toFixed(1)})`);
+          } else {
+            // Re-apply: wake, translate, zero velocity — loop keeps firing
+            try {
+              rigidBodyRef.current.wakeUp();
+              rigidBodyRef.current.setTranslation({ x: t.x, y: t.y, z: t.z }, true);
+              rigidBodyRef.current.setLinvel({ x: 0, y: 0, z: 0 }, true);
+              rigidBodyRef.current.setAngvel({ x: 0, y: 0, z: 0 }, true);
+            } catch {}
+            debugLog(`🔁 Teleport re-applied (dist ${dist.toFixed(1)}m): (${t.x.toFixed(1)}, ${t.y}, ${t.z.toFixed(1)})`);
+            if (sendUpdate) sendUpdate({ pos: [t.x, t.y, t.z], force: true });
+          }
+        }
       }
-    }
+    } // end pendingTeleport
 
     // Check power-up expiration
     const powerUp = useGameStore.getState().powerUp;
@@ -472,16 +664,34 @@ export default function PlayerController({ sendUpdate }) {
       return;
     }
 
-    // Suspend player control when menu is open
-    const menuOpen = useGameStore.getState().game.state === 'MENU';
-    // Input Aggregation (Keyboard + Mobile) — locked during dash
+    // P0-#3: freeze the simulation unless the state is a live-play state.
+    // The old check only froze MENU: PAUSED kept running movement, setLinvel,
+    // ground/camera casts, loop sounds and net broadcasts — burning CPU,
+    // desyncing reconciliation, and stepping on half-torn-down graphs.
+    const liveState = useGameStore.getState().game.state;
+    const menuOpen = liveState === 'MENU';
+    const simPaused = !SIM_RUNNING_STATES.has(liveState);
+    if (simPaused) {
+      // Silence movement loops so PAUSED doesn't keep panning 3D audio.
+      stopLoopSound(walkingSoundRef);
+      stopLoopSound(runningSoundRef);
+      stopLoopSound(slideSoundRef);
+      return;
+    }
+    // Input Aggregation (Keyboard + Mobile) — locked during dash.
+    // Every contributor is sanitized: undefined gamepad axes (disconnected pad),
+    // NaN mobile input, or a corrupt store value would otherwise produce NaN
+    // velocity -> NaN body -> NaN mesh -> PositionalAudio panner throws forever.
+    const finiteNum = (v) => { const n = Number(v); return Number.isFinite(n) ? n : 0; };
     let moveX, moveZ, walkingInput, jumpingInput, slidingInput;
     if (isDashing.current || menuOpen) {
       moveX = 0; moveZ = 0;
       walkingInput = false; jumpingInput = false; slidingInput = false;
     } else {
-      moveX = (keys.right ? 1 : 0) - (keys.left ? 1 : 0) + (mobileInput.x || 0) + (gp ? gp.axes.lx : 0);
-      moveZ = (keys.backward ? 1 : 0) - (keys.forward ? 1 : 0) - (mobileInput.y || 0) + (gp ? gp.axes.ly : 0);
+      moveX = (keys.right ? 1 : 0) - (keys.left ? 1 : 0) + finiteNum(mobileInput.x) + (gp ? finiteNum(gp.axes.lx) : 0);
+      moveZ = (keys.backward ? 1 : 0) - (keys.forward ? 1 : 0) - finiteNum(mobileInput.y) + (gp ? finiteNum(gp.axes.ly) : 0);
+      if (!Number.isFinite(moveX)) moveX = 0;
+      if (!Number.isFinite(moveZ)) moveZ = 0;
       walkingInput = !!(keys.walk || mobileInput.walk || (gp && gp.buttons[6] && gp.buttons[6].pressed));
       jumpingInput = !!(keys.jump || mobileInput.jump || (gp && gp.buttons[2] && gp.buttons[2].pressed));
       slidingInput = !!(keys.slide || mobileInput.slide || (gp && gp.buttons[7] && gp.buttons[7].pressed));
@@ -543,8 +753,14 @@ export default function PlayerController({ sendUpdate }) {
     // Replaces the single thin RayCast so that standing on edges works correctly
     let currentlyGrounded = false;
     let veryCloseToGround = false;
+    // Snapshot origin into plain numbers: feeding live WASM proxies or NaN into castShape
+    // traps the query (unreachable) and later triggers unsafe-aliasing panics.
+    const probePos = (playerPos && Number.isFinite(playerPos.x) && Number.isFinite(playerPos.y) && Number.isFinite(playerPos.z))
+      ? { x: playerPos.x, y: playerPos.y, z: playerPos.z }
+      : null;
 
     try {
+      if (!probePos) throw new Error('skip-ground-probe');
       // Lazy initialize the ground check shape once
       if (playerGroupRef.current && !playerGroupRef.current.userData._groundShape) {
         playerGroupRef.current.userData._groundShape = new rapier.Ball(0.3); // Match player radius
@@ -557,7 +773,7 @@ export default function PlayerController({ sendUpdate }) {
 
         // 1. Glue Sensor (Long): Keeps physics stable
         const glueHit = world.castShape(
-          playerPos,
+          probePos,
           shapeRotation,
           rayDirG,
           groundShape,
@@ -573,7 +789,7 @@ export default function PlayerController({ sendUpdate }) {
 
         // 2. Impact Sensor (Short): Only triggers landing animation when very close to ground
         const impactHit = world.castShape(
-          playerPos,
+          probePos,
           shapeRotation,
           rayDirG,
           groundShape,
@@ -621,12 +837,45 @@ export default function PlayerController({ sendUpdate }) {
       // Force player down a little to stay close to ground
       // removed duplicate curVel declaration
       rigidBodyRef.current.setLinvel({ x: curVel.x, y: -5, z: curVel.z }, true);
+      // --- AUDIO DEBUG (bisect step 1) -------------------------------------
+      // The slide-sound block below is an UNCOMMITTED addition (the slide
+      // sound itself did not exist in HEAD). It is now gated behind the
+      // `slideSound` debug flag so we can toggle it from the console and
+      // prove whether the slide sound is the source of the "audio lifecycle
+      // error" that fires on every movement input.
+      //
+      //   audioDebug.set('slideSound', true)   // re-enable the slide sound
+      //   audioDebug.set('slideSound', false)  // keep it disabled (default)
+      //
+      // Enable slide sound — plays at player position with volume based on horizontal speed
+      if (!slideSoundRef.current) {
+        slideSoundRef.current = soundManager.playPositional('slide', playerGroupRef.current, 1.0, 5, 1.0, 50, false);
+      }
     }
 
     if (isSliding) {
       slideTimer.current -= delta;
       if (slideTimer.current <= 0 || !currentlyGrounded) {
         setIsSliding(false);
+        // --- AUDIO DEBUG (bisect step 1) -------------------------------------
+        // Fade-out of the slide sound. The slide sound's creation is gated by
+        // the `slideSound` debug flag, so the fade-out must be gated by the
+        // same flag — otherwise a disabled slide sound would still leave a
+        // half-alive node in the audio lifecycle.
+        // if (audioFlag('slideSound') && slideSoundRef.current) {
+//   try {
+//     // THREE.Audio uses .volume property, not .getVolume() method
+    // const cur = Number.isFinite(slideSoundRef.current.volume) ? slideSoundRef.current.volume : 1.0;
+    // const next = Math.max(0, cur - 2 * delta);
+    // slideSoundRef.current.setVolume(next);
+    // if (next <= 0.01) {
+      // P0-#2: defer the detach — an inline parent.remove() here splices
+      // the children array while three is traversing it.
+      // stopLoopSound(slideSoundRef);
+    // }
+    // } catch {
+    //   stopLoopSound(slideSoundRef);
+    // }
       }
     }
 
@@ -647,7 +896,7 @@ export default function PlayerController({ sendUpdate }) {
 
     // apply speed and rotation to direction
     if (direction.lengthSq() > 0) {
-      direction.normalize().multiplyScalar(speed).applyAxisAngle(new THREE.Vector3(0, 1, 0), rotationY.current);
+      direction.normalize().multiplyScalar(speed).applyAxisAngle(upAxis, rotationY.current);
     }
 
     const currentVelocity = rigidBodyRef.current.linvel();
@@ -667,7 +916,7 @@ export default function PlayerController({ sendUpdate }) {
         currentPhase = 'land';
         const landDuration = (animConfig?.jump?.landFrames || 10) / (30 * 1.6);
         jumpTimer.current = landDuration;
-        soundManager.playPositional('land', playerGroupRef.current, 1.0);
+                soundManager.playPositional('land', playerGroupRef.current, 1.0, 5, 1.0, 50, false);
       }
 
       if (currentPhase === 'land' || currentPhase === 'none') {
@@ -677,7 +926,7 @@ export default function PlayerController({ sendUpdate }) {
           jumpTimer.current = config.launchFrames / 30; // Use JSON values
           physicsJumpTriggered.current = false;
           setJumpTransitionId((value) => value + 1);
-          soundManager.playPositional('jump', playerGroupRef.current, 1.0);
+                  soundManager.playPositional('launch', playerGroupRef.current, 1.0, 5, 1.0, 50, false);
         } else if (currentPhase === 'land') {
           jumpTimer.current -= delta;
           if (jumpTimer.current <= 0 || (direction.lengthSq() > 0.01 && currentlyGrounded)) {
@@ -720,7 +969,7 @@ export default function PlayerController({ sendUpdate }) {
         jumpTimer.current = Math.max(PLAYER_BASELINE.movement.doubleJumpDuration, frames / 30);
         setJumpTransitionId((value) => value + 1);
         
-        soundManager.playPositional('jump', playerGroupRef.current, 1.0); // Add double jump sound
+                soundManager.playPositional('jump', playerGroupRef.current, 1.0, 5, 1.0, 50, false); // Add double jump sound
       }
 
       if (currentPhase === 'doublejump') {
@@ -768,8 +1017,15 @@ export default function PlayerController({ sendUpdate }) {
       finalZ = direction.z + externalForce.current.z;
     }
     const finalY = rigidBodyRef.current.linvel().y;
-    
-    rigidBodyRef.current.setLinvel({ x: finalX, y: finalY, z: finalZ }, true);
+
+    // Gate velocity application at 30Hz to match server simulation rate.
+    // Applying setLinvel every frame (~60fps) causes divergence from server's 30Hz steps.
+    // linearDamping={0.5} on the RigidBody matches server's Rapier damping exactly.
+    physicsAccumulator.current = (physicsAccumulator.current || 0) + delta;
+    if (physicsAccumulator.current >= 0.0333) {
+      physicsAccumulator.current -= 0.0333;
+      rigidBodyRef.current.setLinvel({ x: finalX, y: finalY, z: finalZ }, true);
+    }
 
     // Decay the external force quickly
     externalForce.current.multiplyScalar(Math.max(0, 1 - 8 * delta));
@@ -788,50 +1044,70 @@ export default function PlayerController({ sendUpdate }) {
     // Update store with current movement state for post-effects system
     useGameStore.getState().setPlayerMovement(moving, isDashing.current);
 
-    // FOOTSTEP SOUNDS
-    if (currentlyGrounded && moving && currentPhase === 'none') {
-      const footstepDelay = walkingInput ? 400 : 250; // Faster frequency when sprinting
-      if (Date.now() - lastFootstepTime.current > footstepDelay) {
-        soundManager.playPositional('footstep', playerGroupRef.current, 1.0, 3);
-        lastFootstepTime.current = Date.now();
-      }
-    }
-
     // WALKING LOOP (slower, lower volume)
-    const shouldWalk = currentlyGrounded && moving && currentPhase === 'none' && walkingInput && playerGroupRef.current;
+    const shouldWalk = audioFlag('movementLoops') && currentlyGrounded && moving && currentPhase === 'none' && walkingInput && playerGroupRef.current;
     if (shouldWalk && !walkingSoundRef.current) {
-      debugLog('[SoundDebug] walking loop START');
-      walkingSoundRef.current = soundManager.playPositional('walk', playerGroupRef.current, 0.8, 2, 1.0, true);
-      if (!walkingSoundRef.current) walkingSoundRef.current = soundManager.playGlobal('walk', 0.8, true);
+      try {
+        // Guard: ensure playerGroupRef.current exists and has valid matrix before attempting positional audio
+        const pg = playerGroupRef.current;
+        if (!pg || !pg.matrix) {
+          walkingSoundRef.current = soundManager.playPositional('walk', playerGroupRef.current, 1.0, 5, 1.0, 50, true);
+        } else {
+          try {
+            const audio = soundManager.playPositional('walk', playerGroupRef.current, 1.0, 5, 1.0, 50, true);
+            if (audio) {
+              walkingSoundRef.current = audio;
+            } else {
+              walkingSoundRef.current = soundManager.playGlobal('walk', 0.8, true);
+            }
+          } catch {
+            walkingSoundRef.current = soundManager.playGlobal('walk', 0.8, true);
+          }
+        }
+      } catch {
+        walkingSoundRef.current = soundManager.playGlobal('walk', 0.8, true);
+      }
     } else if (!shouldWalk && walkingSoundRef.current) {
-      debugLog('[SoundDebug] walking loop STOP');
-      if (walkingSoundRef.current.isPlaying) walkingSoundRef.current.stop();
-      if (playerGroupRef.current && walkingSoundRef.current.parent === playerGroupRef.current) playerGroupRef.current.remove(walkingSoundRef.current);
-      walkingSoundRef.current = null;
+      // P0-#2: stop + DETACH via the deferred helper. Removing the node inline
+      // here (inside useFrame) splices the parent's children array while three
+      // is traversing it -> "Cannot read properties of undefined (reading
+      // 'updateMatrixWorld')" in the same frame.
+      stopLoopSound(walkingSoundRef);
     }
 
     // RUNNING LOOP (4-step cycle from running.ogg) — start/stop, not restart
-    const shouldRun = currentlyGrounded && moving && currentPhase === 'none' && playerGroupRef.current;
+    const shouldRun = audioFlag('movementLoops') && currentlyGrounded && moving && currentPhase === 'none' && playerGroupRef.current;
     if (shouldRun && !runningSoundRef.current) {
-      if (!soundManager.listener && camera) soundManager.init(camera);
-      runningSoundRef.current = soundManager.playPositional('running', playerGroupRef.current, 1, 1.5, 1.0, true);
-      if (!runningSoundRef.current) {
-        runningSoundRef.current = soundManager.playGlobal('running', 1, true);
+      try {
+        if (!soundManager.listener && camera) soundManager.init(camera);
+        // Guard: ensure playerGroupRef.current exists and has valid matrix before attempting positional audio
+        const pg = playerGroupRef.current;
+        if (!pg || !pg.matrix) {
+          runningSoundRef.current = soundManager.playPositional('running', playerGroupRef.current, 1.0, 5, 1.0, 50, true);
+        } else {
+          // Wrap in anonymous function to catch any Three.js internal errors
+          const audio = soundManager.playPositional('running', playerGroupRef.current, 1.0, 5, 1.0, 50, true);
+          if (audio) {
+            runningSoundRef.current = audio;
+          } else {
+            runningSoundRef.current = soundManager.playGlobal('running', 1, true);
+          }
+        }
+      } catch {
+        if (!runningSoundRef.current) {
+          runningSoundRef.current = soundManager.playGlobal('running', 1, true);
+        }
       }
-      debugLog('[SoundDebug] play result:', !!runningSoundRef.current, 'isPlaying:', runningSoundRef.current?.isPlaying);
     } else if (!shouldRun && runningSoundRef.current) {
-      debugLog('[SoundDebug] running loop STOP');
-      if (runningSoundRef.current.isPlaying) runningSoundRef.current.stop();
-      if (playerGroupRef.current && runningSoundRef.current.parent === playerGroupRef.current) {
-        playerGroupRef.current.remove(runningSoundRef.current);
-      }
-      runningSoundRef.current = null;
+      // P0-#2: same deferred-detach requirement as the walk loop.
+      stopLoopSound(runningSoundRef);
     }
 
     // Contextual movement: Backwards logic
     // Determine if we should walk backwards based on mesh forward vs camera forward
-    const meshForward = new THREE.Vector3(0, 0, 1).applyQuaternion(playerGroupRef.current.quaternion);
-    const camForward = new THREE.Vector3(0, 0, -1).applyAxisAngle(new THREE.Vector3(0, 1, 0), rotationY.current);
+    // P1-#12: reuse scratch vectors instead of allocating two per frame.
+    const meshForward = scratchMeshForward.set(0, 0, 1).applyQuaternion(playerGroupRef.current.quaternion);
+    const camForward = scratchCamForward.set(0, 0, -1).applyAxisAngle(upAxis, rotationY.current);
 
     // dot > 0.3 defines a VERY generous ~144-degree detection zone
     // We use a significant hysteresis (0.0 vs 0.3) so that once you start backing up, 
@@ -855,8 +1131,9 @@ export default function PlayerController({ sendUpdate }) {
 
       // Smoothly rotate the visual mesh towards the target heading
       if (playerGroupRef.current) {
-        const targetQuat = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), targetRotationY.current);
-        playerGroupRef.current.quaternion.slerp(targetQuat, 0.2);
+        // P1-#12: reuse the shared quaternion scratch.
+        scratchQuat.setFromAxisAngle(upAxis, targetRotationY.current);
+        playerGroupRef.current.quaternion.slerp(scratchQuat, 0.2);
       }
     }
 
@@ -876,15 +1153,19 @@ export default function PlayerController({ sendUpdate }) {
       d: !!keys.right,
       jump: jumpingInput,
       walk: walkingInput,
-      slide: slidingInput
+      slide: slidingInput,
+      dash: dashInput
     };
 
     if (sendUpdate) {
-      // 1. Send INPUT (Authoritative Phase 2)
-      // We send this every frame for maximum responsiveness
+      // Send INPUT for the NEXT tick (netTick + 1). By the time the server
+      // receives this packet after network latency, it will be at tick netTick+1
+      // and can process this input at the correct tick. Sending the current tick
+      // causes one-tick desync because the server is already ahead by the time
+      // the packet arrives.
       sendUpdate({
         type: 'input',
-        tick: netTick.current,
+        tick: netTick.current + 1,
         input: currentInput,
         camRot: rotationY.current
       });
@@ -892,7 +1173,7 @@ export default function PlayerController({ sendUpdate }) {
       // 2. Send LEGACY POSITION (Phase 1/2 Bridge)
       const pos = rigidBodyRef.current.translation();
       
-      if (netTick.current % 3 === 0) {
+      if (netTick.current % 2 === 0) {
         sendUpdate({
           pos: [pos.x, pos.y, pos.z],
           rot: targetRotationY.current,
@@ -906,8 +1187,10 @@ export default function PlayerController({ sendUpdate }) {
       }
       
       // 3. Record History for Reconciliation
+      // Record with netTick.current + 1 to match the tick we sent to the server,
+      // so reconciliation can find this entry when serverState.tick matches.
       inputHistory.current.push({
-        tick: netTick.current,
+        tick: netTick.current + 1,
         pos: { x: pos.x, y: pos.y, z: pos.z },
         input: currentInput,
         camRot: rotationY.current
@@ -944,9 +1227,10 @@ export default function PlayerController({ sendUpdate }) {
     smoothZoom.current = THREE.MathUtils.damp(smoothZoom.current, rawZoom, 15, delta); // Expected zoom
 
     // 2. Determine camera direction vector
-    const cameraOffset = new THREE.Vector3(0, 0, 1);
-    cameraOffset.applyAxisAngle(new THREE.Vector3(1, 0, 0), smoothRotX.current);
-    cameraOffset.applyAxisAngle(new THREE.Vector3(0, 1, 0), smoothRotY.current);
+    // P1-#12: reuse scratch vectors instead of allocating 3 per frame.
+    const cameraOffset = scratchCamOffset.set(0, 0, 1);
+    cameraOffset.applyAxisAngle(rightAxis, smoothRotX.current);
+    cameraOffset.applyAxisAngle(upAxis, smoothRotY.current);
     rayDirection.copy(cameraOffset).normalize();
 
     // 3. Define the Ray Origin (Target Point) with smoothing
@@ -956,9 +1240,9 @@ export default function PlayerController({ sendUpdate }) {
     const shoulderOffset = 0; // No translation offset — shoulder effect is now a Z-roll on the camera
 
     // Calculate the right vector (kept for potential future use)
-    const right = new THREE.Vector3().set(1, 0, 0).applyAxisAngle(new THREE.Vector3(0, 1, 0), smoothRotY.current);
+    const right = scratchRight.set(1, 0, 0).applyAxisAngle(upAxis, smoothRotY.current);
 
-    const currentTarget = new THREE.Vector3(
+    const currentTarget = scratchTarget.set(
       playerPos.x,
       playerPos.y + targetYOffset,
       playerPos.z
@@ -1067,8 +1351,9 @@ export default function PlayerController({ sendUpdate }) {
     const lookDistance = 100;
     // Rotate the look direction 5° to the right (Y-axis) for an over-the-shoulder feel.
     // This shifts the VIEW right without moving the camera position, keeping collision perfectly centered.
-    const lookDir = new THREE.Vector3().copy(rayDirection).applyAxisAngle(new THREE.Vector3(0, 1, 0), -10 * (Math.PI / 180));
-    const lookTarget = new THREE.Vector3().copy(rayOrigin).addScaledVector(lookDir, -lookDistance);
+    // P1-#12: reuse scratch vectors instead of allocating 3 per frame.
+    const lookDir = scratchLookDir.copy(rayDirection).applyAxisAngle(upAxis, -10 * (Math.PI / 180));
+    const lookTarget = scratchLookTarget.copy(rayOrigin).addScaledVector(lookDir, -lookDistance);
     camera.lookAt(lookTarget);
 
     // Track World Velocity for Newtonian Prediction
@@ -1103,35 +1388,56 @@ export default function PlayerController({ sendUpdate }) {
    * Applies a physical impulse to the character.
    */
   const triggerKnockback = (direction, force = 12) => {
-    if (!rigidBodyRef.current) return;
-    
-    // Apply World-Space Impulse — reduced force & pop since network also applies
-    rigidBodyRef.current.applyImpulse({
-      x: direction.x * force,
-      y: 3,
-      z: direction.z * force
-    }, true);
+    try {
+      if (!rigidBodyRef.current) return;
+      const dx = Number(direction?.x ?? 0);
+      const dz = Number(direction?.z ?? 0);
+      const f = Number(force);
+      if (!Number.isFinite(dx) || !Number.isFinite(dz) || !Number.isFinite(f)) return;
+      const safeF = Math.max(-5000, Math.min(5000, f));
+      // Apply World-Space Impulse — reduced force & pop since network also applies
+      rigidBodyRef.current.applyImpulse({
+        x: dx * safeF,
+        y: 3,
+        z: dz * safeF
+      }, true);
 
-    // Visual/Audio Feedback — volume 1, no force multiplier
-    if (force > 0) {
-      soundManager.playPositional('hit', playerGroupRef.current, 1);
-    }
+      // Visual/Audio Feedback — volume 1, no force multiplier
+      if (safeF > 0) {
+        try { soundManager.playPositional('hit', playerGroupRef.current, 1, 5, 1.0, 50, false); } catch {}
+      }
+    } catch { /* knockback must never crash the frame */ }
   };
 
   const impactTracker = useRef(new Set());
 
   const handleCollision = (e) => {
-    if (!rigidBodyRef.current) return;
+    try {
+      if (!rigidBodyRef.current) return;
 
-    // Only react to collisions with physics bodies that have a userData flag
-    const other = e.other.rigidBody;
-    if (!other || !other.userData) return;
+      // Only react to collisions with physics bodies that have a userData flag
+      const other = e.other.rigidBody;
+      if (!other || !other.userData) return;
 
-        // Only process impacts with players, tin cans, and bot opponents
-    const isPlayer = other.userData?.type === 'player';
-    const isBot = other.userData?.type === 'bot-player';
-    const isTinCan = other.userData?.type === 'tinCan';
-    if (!isPlayer && !isBot && !isTinCan) return;
+      // Only process impacts with players, tin cans, and bot opponents
+      const isPlayer = other.userData?.type === 'player';
+      const isBot = other.userData?.type === 'bot-player';
+      const isTinCan = other.userData?.type === 'tinCan';
+      if (!isPlayer && !isBot && !isTinCan) return;
+
+      // Snapshot the WASM refs ONCE into plain numbers. Holding live proxies
+      // across playPositional/applyImpulse re-enters the Rapier JS wrapper and
+      // trips "recursive use ... unsafe aliasing in rust".
+      let attackerSnap, victimSnap, attackerVelSnap;
+      try {
+        const a = rigidBodyRef.current.translation();
+        const v = other.translation();
+        const av = other.linvel();
+        if (![a.x, a.y, a.z, v.x, v.y, v.z, av.x, av.z].every(Number.isFinite)) return;
+        attackerSnap = { x: a.x, y: a.y, z: a.z };
+        victimSnap = { x: v.x, y: v.y, z: v.z };
+        attackerVelSnap = { x: av.x, z: av.z };
+      } catch { return; }
 
     // Avoid duplicate ripple triggers for the same object within a short window
     const uniqueId = other.userData?.id ?? `tinCan_${e.contactPoint?.x}`;
@@ -1141,7 +1447,7 @@ export default function PlayerController({ sendUpdate }) {
     setTimeout(() => impactTracker.current.delete(uniqueId), 2000);
 
     if (isTinCan) {
-      soundManager.playPositional('metal-hit', playerGroupRef.current, 1, 10, 1.0, false);
+          soundManager.playPositional('metal-hit', playerGroupRef.current, 1, 10, 1.0, 50, false);
     }
 
     // Only react to sliding attacks (not when we are the victim)
@@ -1152,13 +1458,14 @@ export default function PlayerController({ sendUpdate }) {
       // 1. PHYSICAL KICK (Newtonian Interaction)
       // We apply an impulse to the other body locally on our screen
       // so they fly away instantly without waiting for the network.
-      const attackerPos = rigidBodyRef.current.translation();
-      const victimPos = other.translation();
-      const hitDir = new THREE.Vector3(
-        victimPos.x - attackerPos.x,
-        0,
-        victimPos.z - attackerPos.z
-      ).normalize();
+      // Use the snapshots taken at the top (never re-read live WASM proxies).
+      const attackerPos = attackerSnap;
+      const victimPos = victimSnap;
+      const dvx = victimPos.x - attackerPos.x;
+      const dvz = victimPos.z - attackerPos.z;
+      const dLen = Math.hypot(dvx, dvz);
+      if (!Number.isFinite(dLen) || dLen < 1e-4) return;
+      const hitDir = new THREE.Vector3(dvx / dLen, 0, dvz / dLen);
 
       const slidePowerUp = useGameStore.getState().powerUp;
       const hasSpeedPowerUp = slidePowerUp?.category === 'speed';
@@ -1200,9 +1507,11 @@ export default function PlayerController({ sendUpdate }) {
         // so we must NOT also launch it here (that double-launch is the reported bug:
         // "player slides into a sliding bot and still gets knocked back").
         const botVel = getBotVelocity(other.userData.id) || { x: 0, z: 0 };
+        const bvx = Number(botVel.x ?? 0);
+        const bvz = Number(botVel.z ?? 0);
         const impact = resolveImpact(
           { x: attackerPos.x, z: attackerPos.z, vx: worldVelocityRef.current.x, vz: worldVelocityRef.current.z },
-          { x: victimPos.x, z: victimPos.z, vx: botVel.x, vz: botVel.z },
+          { x: victimPos.x, z: victimPos.z, vx: Number.isFinite(bvx) ? bvx : 0, vz: Number.isFinite(bvz) ? bvz : 0 },
         );
         if (impact.aggressor === 'a') {
           debugLog("🤖 Slide IMPACT! Player drove into bot:", other.userData?.name,
@@ -1218,11 +1527,17 @@ export default function PlayerController({ sendUpdate }) {
         }
       } else {
         // Dynamic (networked human) victims respond to a real physics impulse
-        other.applyImpulse({
-          x: hitDir.x * BLAST_POWER,
-          y: UPWARD_POP,
-          z: hitDir.z * BLAST_POWER
-        }, true);
+        try {
+          const safeBlast = Number.isFinite(BLAST_POWER) ? Math.min(Math.max(BLAST_POWER, 0), 50000) : 0;
+          const safePop = Number.isFinite(UPWARD_POP) ? Math.min(Math.max(UPWARD_POP, -500), 500) : 0;
+          if ([hitDir.x, hitDir.z].every(Number.isFinite)) {
+            other.applyImpulse({
+              x: hitDir.x * safeBlast,
+              y: safePop,
+              z: hitDir.z * safeBlast
+            }, true);
+          }
+        } catch {}
 
         // Trigger visual effects instantly for attacker
         debugLog("💥 Calling triggerRipple() from collision handler");
@@ -1244,44 +1559,61 @@ export default function PlayerController({ sendUpdate }) {
     else if (other.userData?.isSliding) {
       debugLog("🛡️ Newtonian Victim-side Knockback!");
 
-      const attackerPos = other.translation();
-      const victimPos = rigidBodyRef.current.translation();
+      // Reuse the snapshots — do NOT call other.translation()/linvel() again
+      // (re-entering WASM mid-callback trips the aliasing guard).
+      const attackerPos = victimSnap;
+      const victimPos = attackerSnap;
+      const attackerVel = attackerVelSnap;
 
-      // Calculate Glancing Blow (Offset Vector)
-      const glanceDir = new THREE.Vector3(
-        victimPos.x - attackerPos.x,
-        0,
-        victimPos.z - attackerPos.z
-      ).normalize();
+      // Calculate Glancing Blow (Offset Vector) — guard zero-length.
+      const gvx = victimPos.x - attackerPos.x;
+      const gvz = victimPos.z - attackerPos.z;
+      const gLen = Math.hypot(gvx, gvz);
+      const glanceDir = gLen > 1e-4
+        ? new THREE.Vector3(gvx / gLen, 0, gvz / gLen)
+        : new THREE.Vector3(0, 0, 1);
 
       // Blend Attacker Velocity with Glancing Blow
-      const attackerVel = other.linvel();
-      const velDir = new THREE.Vector3(attackerVel.x, 0, attackerVel.z).normalize();
+      const aLen = Math.hypot(attackerVel.x, attackerVel.z);
+      const velDir = aLen > 1e-4
+        ? new THREE.Vector3(attackerVel.x / aLen, 0, attackerVel.z / aLen)
+        : glanceDir.clone();
 
       const finalDir = new THREE.Vector3()
         .copy(velDir).multiplyScalar(0.7) // 70% Forward
-        .addScaledVector(glanceDir, 0.3)  // 30% Outward (Glance)
-        .normalize();
+        .addScaledVector(glanceDir, 0.3);  // 30% Outward (Glance)
+      if (finalDir.lengthSq() < 1e-8) finalDir.copy(glanceDir);
+      finalDir.normalize();
 
       // Scale force by player speed (min threshold so even slow hits move the can)
-      const slideMultiplier = other.userData?.slideMultiplier || 1;
+      const rawMult = other.userData?.slideMultiplier || 1;
+      const slideMultiplier = Number.isFinite(rawMult) ? rawMult : 1;
       // Calculate speed from attacker's velocity since we're the victim
-      const attackerSpeed = new THREE.Vector3(attackerVel.x, 0, attackerVel.z).length();
-      const force = Math.max(attackerSpeed * 800 * slideMultiplier, 25);
+      const attackerSpeed = Math.hypot(attackerVel.x, attackerVel.z);
+      const force = Number.isFinite(attackerSpeed)
+        ? Math.max(attackerSpeed * 800 * slideMultiplier, 25)
+        : 25;
+      const safeForce = Math.min(force, 50000);
       // hit.ogg slide impact — volume 1, no force multiplier
-      if (force > 0) {
-        soundManager.playPositional('hit', playerGroupRef.current, 1);
+      if (safeForce > 0) {
+        try { soundManager.playPositional('hit', playerGroupRef.current, 1, 5, 1.0, 50, false); } catch {}
       }
-      debugLog("🥫 Victim hit! attackerSpeed:", attackerSpeed, "multiplier:", slideMultiplier, "force:", force);
+      debugLog("🥫 Victim hit! attackerSpeed:", attackerSpeed, "multiplier:", slideMultiplier, "force:", safeForce);
 
-      rigidBodyRef.current.applyImpulse({
-        x: finalDir.x * force,
-        y: force,  // slight upward pop
-        z: finalDir.z * force
-      }, true);
+      try {
+        if ([finalDir.x, finalDir.z].every(Number.isFinite)) {
+          rigidBodyRef.current.applyImpulse({
+            x: finalDir.x * safeForce,
+            y: safeForce,  // slight upward pop
+            z: finalDir.z * safeForce
+          }, true);
+        }
+      } catch {}
 
       // Trigger screen-space ripple displacement for the victim
       triggerRipple();
+    }
+    } catch { /* collision callbacks must never crash the frame */
     }
   };
 

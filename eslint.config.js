@@ -31,6 +31,10 @@ export default [
       "react/jsx-uses-vars": "error",
       
       "no-unused-vars": ["warn", { argsIgnorePattern: "^_" }],
+      // Defensive `catch { }` blocks are used throughout the audio/physics code
+      // to guarantee that a failure in one subsystem can never crash a frame.
+      // An empty catch is the intended pattern there, so allow it.
+      "no-empty": ["error", { allowEmptyCatch: true }],
     },
   },
 ];

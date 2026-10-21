@@ -71,3 +71,71 @@ describe('Ripple debug state', () => {
     expect(useGameStore.getState().debugRipple.worldPosition).toEqual({ x: 12, y: 3, z: -4 });
   });
 });
+
+describe('Multiplayer tick and velocity state', () => {
+  beforeEach(() => {
+    useGameStore.setState({
+      game: {
+        state: 'PLAYING',
+        networkStatus: 'ONLINE',
+        networkId: 'test-id',
+        remotePlayers: [],
+        phase: 'BATTLE',
+        countdown: 0,
+        currentLevel: 'kitchen_table',
+        startTime: Date.now(),
+        latency: 0,
+        serverTick: 0,
+        desyncCount: 0,
+      },
+      player: {
+        networkId: 'test-id',
+      },
+      lastServerState: null,
+    });
+  });
+
+  it('stores lastServerState with pos, vel, tick, serverTick', () => {
+    const serverState = {
+      pos: [10, 100, 20],
+      vel: [5, 0, -3],
+      tick: 100,
+      serverTick: 105,
+    };
+    
+    useGameStore.getState().updateRemotePlayers([{
+      id: 'test-id',
+      pos: serverState.pos,
+      vel: serverState.vel,
+      tick: serverState.tick,
+    }]);
+
+    const state = useGameStore.getState().lastServerState;
+    expect(state).not.toBeNull();
+    expect(state.pos).toEqual(serverState.pos);
+    expect(state.tick).toBe(serverState.tick);
+  });
+
+  it('increments desyncCount on reconciliation', () => {
+    expect(useGameStore.getState().game.desyncCount).toBe(0);
+    
+    useGameStore.getState().incrementDesyncCount();
+    expect(useGameStore.getState().game.desyncCount).toBe(1);
+    
+    useGameStore.getState().incrementDesyncCount();
+    expect(useGameStore.getState().game.desyncCount).toBe(2);
+    
+    useGameStore.getState().resetDesyncCount();
+    expect(useGameStore.getState().game.desyncCount).toBe(0);
+  });
+
+  it('stores and retrieves serverTick', () => {
+    expect(useGameStore.getState().game.serverTick).toBe(0);
+    
+    useGameStore.getState().setServerTick(100);
+    expect(useGameStore.getState().game.serverTick).toBe(100);
+    
+    useGameStore.getState().setServerTick(200);
+    expect(useGameStore.getState().game.serverTick).toBe(200);
+  });
+});

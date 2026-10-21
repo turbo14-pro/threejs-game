@@ -48,6 +48,8 @@ export const useGameStore = create(
           currentLevel: LEVELS[0].id,
           startTime: 0,
           latency: 0,
+          serverTick: 0,
+          desyncCount: 0,
         },
 
         // --- PLAYER STATE ---
@@ -166,6 +168,9 @@ export const useGameStore = create(
         setCountdown: (val) => set((s) => ({ game: { ...s.game, countdown: val } })),
         setNetworkStatus: (status) => set((s) => ({ game: { ...s.game, networkStatus: status } })),
         setLatency: (ms) => set((s) => ({ game: { ...s.game, latency: ms } })),
+        setServerTick: (tick) => set((s) => ({ game: { ...s.game, serverTick: tick } })),
+        incrementDesyncCount: () => set((s) => ({ game: { ...s.game, desyncCount: s.game.desyncCount + 1 } })),
+        resetDesyncCount: () => set((s) => ({ game: { ...s.game, desyncCount: 0 } })),
         
         startMatchSequence: () => {
           Logger.info('Match', 'Starting battle sequence');
@@ -288,7 +293,7 @@ export const useGameStore = create(
               remotePlayers[p.id] = p;
             } else {
               // Capture our own state for reconciliation
-              lastServerState = { pos: p.pos, tick: p.tick };
+              lastServerState = { pos: p.pos, tick: p.tick, vel: p.vel };
             }
           });
           

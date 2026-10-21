@@ -131,7 +131,7 @@ const io = geckos({
     { urls: 'stun:stun.l.google.com:19302' },
     { urls: 'stun:stun1.l.google.com:19302' }
   ],
-  portRange: { min: 9208, max: 9208 }
+  portRange: { min: 9208, max: 9218 }
 });
 
 io.onConnection(channel => {
@@ -162,12 +162,16 @@ io.onConnection(channel => {
   });
 
   // Sync current state
-  const currentPlayers = Array.from(players.values()).map(p => ({
-    id: p.id,
-    pos: p.body.translation(),
-    rot: p.body.rotation(),
-    skin: p.skin
-  }));
+  const currentPlayers = Array.from(players.values()).map(p => {
+    const pos = p.body.translation();
+    const rot = p.body.rotation();
+    return {
+      id: p.id,
+      pos: [Number.isFinite(pos.x) ? pos.x : 0, Number.isFinite(pos.y) ? pos.y : 0, Number.isFinite(pos.z) ? pos.z : 0],
+      rot: [Number.isFinite(rot.x) ? rot.x : 0, Number.isFinite(rot.y) ? rot.y : 0, Number.isFinite(rot.z) ? rot.z : 0, Number.isFinite(rot.w) ? rot.w : 1],
+      skin: p.skin
+    };
+  });
   channel.emit('currentPlayers', currentPlayers);
 
   // --- HANDLERS ---
@@ -178,9 +182,23 @@ io.onConnection(channel => {
     if (!p) return;
     p.lastSeen = Date.now();
     
-    // Store the latest input and rotation
-    p.input = data.input; // { w, a, s, d, jump, walk }
-    p.camRot = data.camRot;
+    // Buffer input by client tick for proper tick synchronization
+    if (!p.inputBuffer) p.inputBuffer = new Map();
+    p.inputBuffer.set(data.tick, {
+      input: data.input,
+      camRot: data.camRot,
+      skin: data.skin || p.skin
+    });
+    
+    // Keep buffer small (last 120 ticks = 4 seconds at 30Hz)
+    if (p.inputBuffer.size > 120) {
+      const oldestTick = Math.min(...p.inputBuffer.keys());
+      p.inputBuffer.delete(oldestTick);
+    }
+    
+    // Update current input for immediate use (fallback) — same shape as
+    // buffered entries so inputData.input / inputData.camRot work either path
+    p.input = { input: data.input, camRot: data.camRot, skin: data.skin || p.skin };
     p.tick = data.tick;
     p.skin = data.skin || p.skin;
   });
@@ -191,7 +209,13 @@ io.onConnection(channel => {
     if (!p) return;
     p.lastSeen = Date.now();
     p.skin = data.skin || p.skin;
-    p.anim = data.anim || p.anim;
+    // Merge client anim with server anim - SERVER anim (jump/dash/slide) takes precedence
+    // Client legacy pos may have stale jp state, so only merge non-authoritative fields
+    if (data.anim) {
+      const { jp, sl, ...clientAnim } = data.anim;
+      p.anim = { ...p.anim, ...clientAnim };
+      // Server-authoritative anim fields (jump/dash/slide) are NOT overwritten
+    }
     
     // In Phase 2, we ONLY teleport if we don't have active inputs (e.g., initial join) or if forced
     if (data.pos && (!p.input || data.force)) {
@@ -234,52 +258,110 @@ setInterval(() => {
 
   // 1. Process Inputs & Apply Forces
   for (const p of players.values()) {
-    if (p.input) {
-      const { w, a, s, d, jump, walk } = p.input;
-      
-      // Combine keyboard inputs
-      const moveX = (d ? 1 : 0) - (a ? 1 : 0);
-      const moveZ = (s ? 1 : 0) - (w ? 1 : 0);
-      
-      // Calculate target velocity
-      const speed = walk ? 8 : 30;
-      let vx = 0;
-      let vz = 0;
-
-      if (moveX !== 0 || moveZ !== 0) {
-        // Normalize input vector
-        const length = Math.sqrt(moveX * moveX + moveZ * moveZ);
-        const nx = moveX / length;
-        const nz = moveZ / length;
-
-        // Rotate by camera angle (match Client applyAxisAngle)
-        const rot = p.camRot || 0;
-        vx = (nx * Math.cos(rot) + nz * Math.sin(rot)) * speed;
-        vz = (-nx * Math.sin(rot) + nz * Math.cos(rot)) * speed;
+    // Look up input for the current server tick from buffer.
+    // Use the most recent input available (<= current tick) to handle
+    // network latency — input sent for tick N+1 arrives at tick N+2.
+    let bufferedInput = p.inputBuffer ? p.inputBuffer.get(serverTick) : null;
+    if (!bufferedInput && p.inputBuffer) {
+      // Find the most recent input <= current tick
+      let bestTick = -1;
+      for (const tick of p.inputBuffer.keys()) {
+        if (tick <= serverTick && tick > bestTick) {
+          bestTick = tick;
+        }
       }
+      if (bestTick >= 0) {
+        bufferedInput = p.inputBuffer.get(bestTick);
+      }
+    }
+    const inputData = bufferedInput || p.input;
+    if (!inputData) continue;
+    
+    const { w, a, s, d, jump, walk, dash, slide } = inputData.input;
+    const camRot = inputData.camRot || p.camRot || 0;
+    
+    // Combine keyboard inputs
+    const moveX = (d ? 1 : 0) - (a ? 1 : 0);
+    const moveZ = (s ? 1 : 0) - (w ? 1 : 0);
+    
+    // Calculate target velocity - MATCH PLAYER_BASELINE exactly
+    const walkSpeed = 4;    // PLAYER_BASELINE.movement.walkSpeed
+    const sprintSpeed = 35; // PLAYER_BASELINE.movement.sprintSpeed
+    const speed = walk ? walkSpeed : sprintSpeed;
+    let vx = 0;
+    let vz = 0;
 
-      const currentVel = p.body.linvel();
-      const currentPos = p.body.translation();
-      
-      // Simple Ground Check for Server (Height < 101.6 on platforms or < 0.6 on table)
-      const isGrounded = currentPos.y < 102.5 || (currentPos.y < 100 && currentPos.y < 1.5);
+    if (moveX !== 0 || moveZ !== 0) {
+      // Normalize input vector
+      const length = Math.sqrt(moveX * moveX + moveZ * moveZ);
+      const nx = moveX / length;
+      const nz = moveZ / length;
+
+      // Rotate by camera angle (match Client applyAxisAngle)
+      const rot = camRot;
+      vx = (nx * Math.cos(rot) + nz * Math.sin(rot)) * speed;
+      vz = (-nx * Math.sin(rot) + nz * Math.cos(rot)) * speed;
+    }
+
+    const currentVel = p.body.linvel();
+    const currentPos = p.body.translation();
+    
+    // Ground Check for Server - match client logic: y <= 5.5 (capsule half-height 1.5 + radius 1.5 + small margin)
+    // Client capsule: height 3 (1.5*2), radius 1.5, so bottom at y - 1.5
+    // Ground at y=0 (table) or y=100 (platforms)
+    const isGrounded = currentPos.y <= 5.5 || (currentPos.y >= 99 && currentPos.y <= 105.5);
 
       // Apply Jump (Impulse matching client's 38)
       if (jump && isGrounded && (!p.lastJumpTick || serverTick - p.lastJumpTick > 10)) {
         p.body.applyImpulse({ x: 0, y: 38, z: 0 }, true);
         p.lastJumpTick = serverTick;
+        // Update anim state for remote players
+        p.anim = { ...p.anim, jp: 'launch' };
+      }
+
+      // Dash: Simulate with BASELINE speed (150) - no power-ups on server
+      // Detect rising edge like client does
+      const dashPressed = dash && !p.prevDashInput;
+      p.prevDashInput = dash;
+      
+      if (dashPressed && isGrounded && (!p.lastDashTick || serverTick - p.lastDashTick > 20)) {
+        // Baseline dash speed (client: 150 * powerUpMultiplier, server: 150 baseline)
+        const dashSpeed = 150; // PLAYER_BASELINE.dash.dashSpeed
+        const rot = camRot;
+        const dashVx = Math.sin(rot) * dashSpeed;
+        const dashVz = Math.cos(rot) * dashSpeed;
+        // Use setLinvel like client does for dash
+        const currentVel = p.body.linvel();
+        p.body.setLinvel({ x: dashVx, y: currentVel.y, z: dashVz }, true);
+        p.lastDashTick = serverTick;
+        // Update anim state for remote players
+        p.anim = { ...p.anim, jp: 'dash' };
+      }
+
+      // Apply Slide (match client's slide speed ~40)
+      if (slide && isGrounded) {
+        const slideSpeed = 40; // PLAYER_BASELINE.movement.slideSpeed
+        const rot = camRot;
+        const slideVx = Math.sin(rot) * slideSpeed;
+        const slideVz = Math.cos(rot) * slideSpeed;
+        // Slide overrides normal movement
+        vx = slideVx;
+        vz = slideVz;
+        // Update anim state for remote players
+        p.anim = { ...p.anim, sl: true };
+      } else if (!slide) {
+        // Clear slide anim when not sliding
+        if (p.anim?.sl) {
+          p.anim = { ...p.anim, sl: false };
+        }
       }
 
       p.body.setLinvel({ x: vx, y: currentVel.y, z: vz }, true);
       
-      // We are simulating this tick's input for 33ms.
-      // By incrementing p.tick, we tell the client that this resulting position
-      // corresponds to the exact moment the client generated (tick + 1),
-      // which perfectly matches the client's inputHistory recording phase!
-      if (typeof p.tick === 'number') {
-        p.tick++;
-      }
-    }
+      // Broadcast the tick that was actually processed (the input tick),
+      // NOT an incremented value. The client matches history entries by this tick.
+      // Do NOT increment p.tick here — that causes reconciliation to look up
+      // a history entry that was never recorded.
   }
 
   // 2. Step Physics
@@ -301,10 +383,22 @@ setInterval(() => {
   // 3. Broadcast Snapshot
   const playerList = Array.from(players.values()).map(p => {
     const pos = p.body.translation();
+    const vel = p.body.linvel();
+
+    // Sanitize non-finite physics state so NaN/Infinity never reaches clients
+    // (which would crash PositionalAudio panners via updateMatrixWorld).
+    const px = Number.isFinite(pos.x) ? pos.x : 0;
+    const py = Number.isFinite(pos.y) ? pos.y : 0;
+    const pz = Number.isFinite(pos.z) ? pos.z : 0;
+    const vx = Number.isFinite(vel.x) ? vel.x : 0;
+    const vy = Number.isFinite(vel.y) ? vel.y : 0;
+    const vz = Number.isFinite(vel.z) ? vel.z : 0;
+
     return {
       id: p.id,
-      pos: [pos.x, pos.y, pos.z],
-      rot: p.rot || 0,
+      pos: [px, py, pz],
+      vel: [vx, vy, vz],
+      rot: Number.isFinite(p.rot) ? p.rot : 0,
       skin: p.skin,
       anim: p.anim,
       tick: p.tick // THE CLIENT TICK WE JUST PROCESSED
@@ -312,10 +406,18 @@ setInterval(() => {
   });
 
   if (playerList.length > 0) {
-    io.emit('update', { 
-      p: playerList, 
-      t: serverTick 
-    });
+    const payload = { p: playerList, t: serverTick };
+    const payloadSize = JSON.stringify(payload).length;
+    
+    // Log tick drift and payload size for baseline measurement
+    const avgClientTick = playerList.reduce((sum, p) => sum + (p.tick || 0), 0) / playerList.length;
+    const tickDrift = serverTick - avgClientTick;
+    
+    if (serverTick % 60 === 0) { // Log every 2 seconds at 30Hz
+      console.log(`[Server] Tick: ${serverTick}, Players: ${playerList.length}, Drift: ${tickDrift.toFixed(1)}, Payload: ${payloadSize}B`);
+    }
+    
+    io.emit('update', payload);
   }
 }, TICK_RATE);
 

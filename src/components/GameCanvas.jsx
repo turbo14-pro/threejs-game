@@ -19,7 +19,7 @@ export default function GameCanvas({ sendUpdate }) {
     <>
       <EnvironmentSetup />
       <SoundListener />
-      <Physics gravity={[0, -90.81, 0]} debug={physicsDebug}>
+      <Physics gravity={[0, -90.81, 0]} timestep={0.0333} debug={physicsDebug}>
         <Arena />
         {/* Bots spawn on the arena from the very first frame — menu included — so the
             world never looks empty before "Game Start" is pressed. */}
