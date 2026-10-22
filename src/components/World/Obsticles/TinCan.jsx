@@ -1,11 +1,10 @@
-import React, { useMemo, useRef, useCallback, forwardRef, useImperativeHandle } from 'react';
+import React, { useMemo, useRef, useCallback } from 'react';
 import * as THREE from 'three';
 import { RigidBody, CylinderCollider } from '@react-three/rapier';
 import { useTexture } from '@react-three/drei';
 import { soundManager } from '../../../utils/SoundManager';
 import { useFrame } from '@react-three/fiber';
 import { debugLog } from '../../../utils/debugLog.js';
-import { getLocalPlayerWorldPos } from '../items/PowerUpCoin.jsx';
 
 useTexture.preload('/materials/sonicboom-beans.webp');
 
@@ -13,11 +12,7 @@ useTexture.preload('/materials/sonicboom-beans.webp');
  * TinCan obstacle – a cylinder with a label texture on its side and metallic caps.
  * A random colour is applied beneath the label for visual variety.
  */
-const TinCan = forwardRef((props, ref) => {
-  const { position, rotation, color } = props;
-  const groupRef = useRef();
-  
-  useImperativeHandle(ref, () => groupRef.current);
+export function TinCan({ position, rotation, color }) {
   // Load the label texture (beans logo). FlipY is false because the texture is already oriented.
   const labelTex = useTexture('/materials/sonicboom-beans.webp');
   labelTex.flipY = false;
@@ -106,7 +101,7 @@ const TinCan = forwardRef((props, ref) => {
   }, [radius]);
 
   return (
-      <group ref={groupRef} position={position} rotation={rotation}>
+    <group position={position} rotation={rotation}>
       {/* Side surface */}
       <mesh geometry={new THREE.CylinderGeometry(radius, radius, height, 32, 1, true)} castShadow receiveShadow>
         {sideMaterial}
@@ -131,9 +126,7 @@ const TinCan = forwardRef((props, ref) => {
       </group>
     </group>
   );
-  });
-
-  export { TinCan };
+}
 
 /**
  * Physics collider component for a Tin Can.
@@ -145,7 +138,6 @@ export function TinCanPhysics({ position, rotation, color, mass = 1, linearDampi
   const halfHeight = 5;  // height 12 / 2
   const radius = 4;
   const rigidRef = useRef();
-  const visualRef = useRef(); // Ref to the visual TinCan group for positional audio
 
   const groundHitRef = useRef(false);
   const lastSoundTime = useRef(0); // cooldown to prevent rapid re-fire on micro-bounces
@@ -161,8 +153,7 @@ export function TinCanPhysics({ position, rotation, color, mass = 1, linearDampi
       return;
     }
     // Near floor (y ~ 5 = half height) and downward velocity just dropped
-    // Only trigger when can is near ground level (y <= 8, slightly above halfHeight=5)
-    if (vel.y < -1 && y <= 8 && !groundHitRef.current) {
+    if (vel.y < -1 && !groundHitRef.current) {
       const now = Date.now();
       if (now - lastSoundTime.current < 300) { // 300ms margin against rapid micro-bounces
         groundHitRef.current = true;
@@ -170,16 +161,9 @@ export function TinCanPhysics({ position, rotation, color, mass = 1, linearDampi
       }
       lastSoundTime.current = now;
       groundHitRef.current = true;
-      const impactVol = Math.min(Math.round((Math.abs(vel.y)) * 100) / 100/30, 1);
-      const pos = rigidRef.current.translation();
-            const playerPos = getLocalPlayerWorldPos();
-            const dist = playerPos ? Math.sqrt(
-              Math.pow(pos.x - playerPos.x, 2) +
-              Math.pow(pos.y - playerPos.y, 2) +
-              Math.pow(pos.z - playerPos.z, 2)
-            ).toFixed(2) : 'N/A';
-// debugLog("🥫 TinCan bounce! pos:", {x: pos.x.toFixed(2), y: pos.y.toFixed(2), z: pos.z.toFixed(2)}, "playerPos:", playerPos ? {x: playerPos.x.toFixed(2), y: playerPos.y.toFixed(2), z: playerPos.z.toFixed(2)} : 'N/A', "dist:", dist, "velY:", Math.abs(vel.y).toFixed(2), "vol:", impactVol);
-                        try { if (soundManager && soundManager.listener && visualRef.current) soundManager.playPositional('metal-ground', visualRef.current, impactVol, 5, 1.0, 50, false); } catch (e) {}
+      const impactVol = Math.min(Math.round(Math.abs(vel.y),2)/30, 1);
+      debugLog("🥫 TinCan bounce! velY:", Math.abs(vel.y), "vol:", impactVol);
+      try { if (soundManager && soundManager.listener) soundManager.playPositional('metal-ground', rigidRef.current, impactVol, 15, 1.0, false); } catch (e) {}
     } else if (y > 10) {
       groundHitRef.current = false; // Reset when airborne
     }
@@ -188,169 +172,77 @@ export function TinCanPhysics({ position, rotation, color, mass = 1, linearDampi
   // Respawn if the can falls below the arena
   useFrame(() => {
     if (!rigidRef.current) return;
-    let y;
-    try {
-      y = rigidRef.current.translation().y;
-    } catch { return; }
-    // A NaN position means the WASM body is already corrupt — freeze it for
-    // respawn instead of feeding NaN back into setTranslation (which traps).
-    if (!Number.isFinite(y)) {
-      try {
-        rigidRef.current.setTranslation({ x: position[0], y: 30, z: position[2] }, true);
-        rigidRef.current.setLinvel({ x: 0, y: 0, z: 0 }, true);
-        rigidRef.current.setAngvel({ x: 0, y: 0, z: 0 }, true);
-      } catch {}
-      groundHitRef.current = false;
+    const y = rigidRef.current.translation().y;
+    if (y < -100) {
+      rigidRef.current.setTranslation({ x: position[0], y: 30, z: position[2] }, true);
+      rigidRef.current.setLinvel({ x: 0, y: 0, z: 0 }, true);
+      rigidRef.current.setAngvel({ x: 0, y: 0, z: 0 }, true);
+      groundHitRef.current = false; // Prevent sound on respawn before hitting ground
       return;
     }
-    if (y < -100) {
-      const pos = rigidRef.current.translation();
-          const playerPos = getLocalPlayerWorldPos();
-          const dist = playerPos ? Math.sqrt(
-            Math.pow(pos.x - playerPos.x, 2) +
-            Math.pow(pos.y - playerPos.y, 2) +
-            Math.pow(pos.z - playerPos.z, 2)
-          ).toFixed(2) : 'N/A';
-          debugLog("🥫 TinCan RESPAWN! was at:", {x: pos.x.toFixed(2), y: pos.y.toFixed(2), z: pos.z.toFixed(2)}, "playerPos:", playerPos ? {x: playerPos.x.toFixed(2), y: playerPos.y.toFixed(2), z: playerPos.z.toFixed(2)} : 'N/A', "dist:", dist, "-> new pos:", {x: position[0], y: 30, z: position[2]});
-          rigidRef.current.setTranslation({ x: position[0], y: 30, z: position[2] }, true);
-          rigidRef.current.setLinvel({ x: 0, y: 0, z: 0 }, true);
-          rigidRef.current.setAngvel({ x: 0, y: 0, z: 0 }, true);
-          groundHitRef.current = false; // Prevent sound on respawn before hitting ground
-          return;
-        }
   });
 
   // Push the can away when the player slides into it
   const handleCollision = useCallback((e) => {
-    try {
-      if (!rigidRef.current) return;
-      const other = e.other.rigidBody;
-      if (!other) return;
+    if (!rigidRef.current) return;
+    const other = e.other.rigidBody;
+    if (!other) return;
 
-      // Snapshot positions/velocities into plain numbers immediately.
-      // Holding live WASM refs across setVolume/playPositional re-enters the
-      // Rapier JS wrapper and trips "recursive use ... unsafe aliasing".
-      let canPos, playerPos, playerVel, canVel;
-      try {
-        const c = rigidRef.current.translation();
-        const p = other.translation();
-        const v = other.linvel();
-        const cv = rigidRef.current.linvel();
-        if (![c.x, c.y, c.z, p.x, p.y, p.z, v.x, v.z, cv.x, cv.z].every(Number.isFinite)) return;
-        canPos = { x: c.x, y: c.y, z: c.z };
-        playerPos = { x: p.x, y: p.y, z: p.z };
-        playerVel = { x: v.x, z: v.z };
-        canVel = { x: cv.x, z: cv.z };
-      } catch { return; }
+    const canPos = rigidRef.current.translation();
+    const playerPos = other.translation();
 
     // Only apply impact when the player is sliding; otherwise just push gently
     const isSliding = other.userData?.isSliding || false;
-
-    const localPlayerPos = getLocalPlayerWorldPos();
-    const hitDist = localPlayerPos ? Math.sqrt(
-      Math.pow(canPos.x - localPlayerPos.x, 2) +
-      Math.pow(canPos.y - localPlayerPos.y, 2) +
-      Math.pow(canPos.z - localPlayerPos.z, 2)
-    ).toFixed(2) : 'N/A';
 
     if (isSliding) {
       const now = Date.now();
       if (now - lastSoundTime.current < 300) return;
       lastSoundTime.current = now;
 
-      // Direction from player to can — guard zero-length (normalize() of 0-vector = NaN,
-      // and NaN in applyImpulse traps WASM with "unreachable").
-      const dirX = canPos.x - playerPos.x;
-      const dirZ = canPos.z - playerPos.z;
-      const dirLen = Math.hypot(dirX, dirZ);
-      if (!Number.isFinite(dirLen) || dirLen < 1e-4) return;
-      const dir = new THREE.Vector3(dirX / dirLen, 0, dirZ / dirLen);
+      const hitVol = Math.max(Math.min(Math.round(Math.abs(other.linvel().y),2)/30, 1), 0);
+      try { if (soundManager && soundManager.listener && hitVol > 0.1) soundManager.playPositional('metal-ground', rigidRef.current, hitVol, 15, 1.0, false); } catch (e) {}
 
+      // Direction from player to can
+      const dir = new THREE.Vector3(
+        canPos.x - playerPos.x,
+        0,
+        canPos.z - playerPos.z
+      ).normalize();
+
+      const playerVel = other.linvel();
       const velDir = new THREE.Vector3(playerVel.x, 0, playerVel.z);
       const speed = velDir.length();
-      if (!Number.isFinite(speed)) return;
 
-      const velLen = Math.hypot(playerVel.x, playerVel.z);
-      const velNX = velLen > 1e-4 ? playerVel.x / velLen : 0;
-      const velNZ = velLen > 1e-4 ? playerVel.z / velLen : 0;
       const finalDir = new THREE.Vector3()
         .copy(dir).multiplyScalar(0.7)
-        .addScaledVector(new THREE.Vector3(velNX, 0, velNZ), 0.3);
-      if (finalDir.lengthSq() < 1e-8) finalDir.copy(dir);
-      finalDir.normalize();
+        .addScaledVector(velDir.normalize(), 0.3)
+        .normalize();
 
       const slideMultiplier = other.userData?.slideMultiplier || 1;
-      const safeSlideMult = Number.isFinite(slideMultiplier) ? slideMultiplier : 1;
-      const force = Math.max(speed * 800 * safeSlideMult, 25);
-      if (!Number.isFinite(force)) return;
-      // Clamp the impulse — a corrupt speed (1e10+) traps WASM.
-      const safeForce = Math.min(force, 50000);
+      const force = Math.max(speed * 800 * slideMultiplier, 25);
 
-      // Volume based on horizontal slide speed (0-1), no floor so gentle slides are quiet
-      const impactVol = Math.min(Math.round((speed) * 100) / 100 / 30, 1);
-      const safeImpactVol = Number.isFinite(impactVol) ? Math.max(0, Math.min(1, impactVol)) : 0;
-      try { debugLog("🥫 TinCan hit! speed:", speed, "multiplier:", slideMultiplier, "force:", force, "vol:", safeImpactVol); } catch {}
-      try { if (soundManager && soundManager.listener && safeImpactVol > 0.05 && visualRef.current) soundManager.playPositional('metal-hit', visualRef.current, safeImpactVol, 5, 1.0, 50, false); } catch (e) {}
+      const impactVol = Math.max(Math.min(Math.round(speed, 2),1),0.1);
+      debugLog("🥫 TinCan hit! speed:", speed, "multiplier:", slideMultiplier, "force:", force, "vol:", impactVol);
+      try { if (soundManager && soundManager.listener) soundManager.playPositional('metal-ground', rigidRef.current, impactVol, 15, 1.0, false); } catch (e) {}
 
-      try {
-        if ([finalDir.x, finalDir.z].every(Number.isFinite)) {
-          rigidRef.current.applyImpulse({
-            x: finalDir.x * safeForce,
-            y: safeForce,
-            z: finalDir.z * safeForce
-          }, true);
-        }
-      } catch {}
+      rigidRef.current.applyImpulse({
+        x: finalDir.x * force,
+        y: force,
+        z: finalDir.z * force
+      }, true);
     } else {
-      // Non-slide collision (can-object, walking into can): gentle push with velocity-based sound
-      const now = Date.now();
-      const gDirX = canPos.x - playerPos.x;
-      const gDirZ = canPos.z - playerPos.z;
-      const gLen = Math.hypot(gDirX, gDirZ);
-      const dir = gLen > 1e-4
-        ? new THREE.Vector3(gDirX / gLen, 0, gDirZ / gLen)
-        : new THREE.Vector3(0, 0, 1);
-      if (now - lastSoundTime.current < 300) {
-        // Still apply gentle push even if sound is on cooldown
-        try {
-          rigidRef.current.applyImpulse({
-            x: dir.x * 15,
-            y: 2,
-            z: dir.z * 15
-          }, true);
-        } catch {}
-        return;
-      }
-      lastSoundTime.current = now;
-
-      // Relative impact velocity between can and other object (snapshotted above —
-      // do NOT call other.linvel() again here; re-entering WASM mid-callback aliases).
-      const relVel = new THREE.Vector3(
-        canVel.x - playerVel.x,
+      // Non-slide collision: gentle push only, no impact sound/force
+      const dir = new THREE.Vector3(
+        canPos.x - playerPos.x,
         0,
-        canVel.z - playerVel.z
-      );
-      const impactSpeed = relVel.length();
-      if (!Number.isFinite(impactSpeed)) return;
-
-      // Gentle push force
-      try {
-        rigidRef.current.applyImpulse({
-          x: dir.x * 15,
-          y: 2,
-          z: dir.z * 15
-        }, true);
-      } catch {}
-
-      // Volume based on relative impact speed (0-1). Divisor 20 = more sensitive than 30.
-      // Quiet floor so very gentle taps are silent.
-      const impactVol = Math.min(Math.round((impactSpeed) * 100) / 100 / 15, 1);
-      const safeVol = Number.isFinite(impactVol) ? Math.max(0, Math.min(1, impactVol)) : 0;
-      const hitLabel = safeVol > 0.5 ? "hard" : safeVol > 0.2 ? "medium" : "gentle";
-      try { debugLog("🥫 TinCan hit (" + hitLabel + ")! speed:", impactSpeed, "vol:", safeVol); } catch {}
-      try { if (soundManager && soundManager.listener && safeVol > 0.05 && visualRef.current) soundManager.playPositional('metal-hit', visualRef.current, safeVol, 5, 1.0, 50, false); } catch (e) {}
-    }
-    } catch { /* never let a collision callback crash the frame */
+        canPos.z - playerPos.z
+      ).normalize();
+      const gentleForce = 15;
+      rigidRef.current.applyImpulse({
+        x: dir.x * gentleForce,
+        y: 2,
+        z: dir.z * gentleForce
+      }, true);
     }
   }, []);
 
@@ -369,7 +261,7 @@ export function TinCanPhysics({ position, rotation, color, mass = 1, linearDampi
         userData={{ type: 'tinCan' }}
       >
       <CylinderCollider args={[halfHeight, radius]} />
-            <TinCan ref={visualRef} position={[0, 0, 0]} rotation={[0, 0, 0]} color={color} />
+      <TinCan position={[0, 0, 0]} rotation={[0, 0, 0]} color={color} />
     </RigidBody>
   );
 }
