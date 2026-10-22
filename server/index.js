@@ -166,6 +166,7 @@ io.onConnection(channel => {
     jumpPhaseTick: 0,    // Server tick when jumpPhase was last set
     dashPhase: 'none',   // Track dash phase for remote animation sync
     dashPhaseTick: 0,    // Server tick when dashPhase was last set
+    jumpRequested: false, // Track pending jump request from client (latency-safe)
   });
 
   // Sync current state
@@ -308,10 +309,18 @@ setInterval(() => {
     // Ground Check for Server via shared BaseGame
     const playerIsGrounded = isGrounded(currentPos);
 
+    // Track jump request from client — persists until server applies impulse
+    // (latency-safe: client sends jump:true for one tick, then jump:false;
+    //  server may process the jump:false after the jump:true due to latency)
+    if (jump) {
+      p.jumpRequested = true;
+    }
+
     // Apply Jump (Impulse matching client's jumpVelocity)
-    if (jump && playerIsGrounded && (!p.lastJumpTick || serverTick - p.lastJumpTick > 10)) {
+    if (p.jumpRequested && playerIsGrounded && (!p.lastJumpTick || serverTick - p.lastJumpTick > 10)) {
       p.body.applyImpulse({ x: 0, y: getJumpVelocity(), z: 0 }, true);
       p.lastJumpTick = serverTick;
+      p.jumpRequested = false; // Consume the request
       p.jumpPhase = 'launch';
       p.jumpPhaseTick = serverTick;
       // Update anim state for remote players
