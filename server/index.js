@@ -163,6 +163,9 @@ io.onConnection(channel => {
     anim: {},
     lastStateHash: null, // Phase 05: change detection hash
     jumpPhase: 'none',   // Track jump phase for remote animation sync
+    jumpPhaseTick: 0,    // Server tick when jumpPhase was last set
+    dashPhase: 'none',   // Track dash phase for remote animation sync
+    dashPhaseTick: 0,    // Server tick when dashPhase was last set
   });
 
   // Sync current state
@@ -310,20 +313,33 @@ setInterval(() => {
       p.body.applyImpulse({ x: 0, y: getJumpVelocity(), z: 0 }, true);
       p.lastJumpTick = serverTick;
       p.jumpPhase = 'launch';
+      p.jumpPhaseTick = serverTick;
       // Update anim state for remote players
       p.anim = { ...p.anim, jp: 'launch' };
     }
 
-    // Track jump phase for remote animation sync
-    if (p.jumpPhase === 'launch' && !playerIsGrounded) {
-      p.jumpPhase = 'air';
-      p.anim = { ...p.anim, jp: 'air' };
+    // Track jump phase for remote animation sync with minimum durations
+    // so the client sees each phase long enough to play the animation.
+    const JUMP_LAUNCH_TICKS = 2;  // ~66ms at 30Hz — enough for client to start launch anim
+    const JUMP_LAND_TICKS = 2;    // ~66ms at 30Hz — enough for client to start land anim
+
+    if (p.jumpPhase === 'launch') {
+      if (serverTick - p.jumpPhaseTick >= JUMP_LAUNCH_TICKS) {
+        if (!playerIsGrounded) {
+          p.jumpPhase = 'air';
+          p.jumpPhaseTick = serverTick;
+          p.anim = { ...p.anim, jp: 'air' };
+        }
+      }
     } else if (p.jumpPhase === 'air' && playerIsGrounded) {
       p.jumpPhase = 'land';
+      p.jumpPhaseTick = serverTick;
       p.anim = { ...p.anim, jp: 'land' };
-    } else if (p.jumpPhase === 'land' && playerIsGrounded) {
-      p.jumpPhase = 'none';
-      p.anim = { ...p.anim, jp: 'none' };
+    } else if (p.jumpPhase === 'land') {
+      if (serverTick - p.jumpPhaseTick >= JUMP_LAND_TICKS) {
+        p.jumpPhase = 'none';
+        p.anim = { ...p.anim, jp: 'none' };
+      }
     }
 
       // Dash: Simulate with BASELINE speed - no power-ups on server
@@ -341,8 +357,16 @@ setInterval(() => {
         const currentVel = p.body.linvel();
         p.body.setLinvel({ x: dashVx, y: currentVel.y, z: dashVz }, true);
         p.lastDashTick = serverTick;
+        p.dashPhase = 'dash';
+        p.dashPhaseTick = serverTick;
         // Update anim state for remote players
         p.anim = { ...p.anim, jp: 'dash' };
+      }
+
+      // Dash phase: return to 'none' after 2 ticks (~66ms at 30Hz)
+      if (p.dashPhase === 'dash' && serverTick - p.dashPhaseTick >= 2) {
+        p.dashPhase = 'none';
+        p.anim = { ...p.anim, jp: 'none' };
       }
 
       // Apply Slide (match client's slide speed from PLAYER_BASELINE)
