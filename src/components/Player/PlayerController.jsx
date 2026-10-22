@@ -164,9 +164,12 @@ export default function PlayerController({ sendUpdate }) {
           // RE-APPLY UNACKNOWLEDGED INPUTS (client-side prediction)
           // After snapping to server state, re-simulate all inputs that were
           // generated after the acknowledged tick but not yet confirmed by server.
-          const unacknowledged = inputHistory.current
-            .filter(e => e.tick > serverState.tick)
-            .sort((a, b) => a.tick - b.tick);
+          // Use sentInputs (sequenceId-keyed) for reliable matching with
+          // server's lastProcessedSeq acknowledgment.
+          const unacknowledged = Array.from(sentInputs.current.entries())
+            .filter(([, entry]) => entry.tick > serverState.tick)
+            .sort((a, b) => a[1].tick - b[1].tick)
+            .map(([, entry]) => entry);
           
           unacknowledged.forEach(entry => {
             const { input, camRot } = entry;
@@ -180,7 +183,7 @@ export default function PlayerController({ sendUpdate }) {
               const nx = moveX / length;
               const nz = moveZ / length;
               const rot = camRot || 0;
-              const speed = walk ? 4 : 35;
+              const speed = walk ? PLAYER_BASELINE.movement.walkSpeed : PLAYER_BASELINE.movement.sprintSpeed;
               const vx = (nx * Math.cos(rot) + nz * Math.sin(rot)) * speed;
               const vz = (-nx * Math.sin(rot) + nz * Math.cos(rot)) * speed;
               

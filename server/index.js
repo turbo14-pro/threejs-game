@@ -413,7 +413,8 @@ setInterval(() => {
       rot: Number.isFinite(p.rot) ? p.rot : 0,
       skin: p.skin,
       anim: p.anim,
-      tick: p.tick // THE CLIENT TICK WE JUST PROCESSED
+      tick: p.tick, // THE CLIENT TICK WE JUST PROCESSED
+      lastProcessedSeq: p.lastProcessedSeq, // Phase 03: sequenceId of last processed input
     };
   });
 
