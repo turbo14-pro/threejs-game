@@ -1,7 +1,7 @@
 import geckos from '@geckos.io/server';
 import RAPIER from '@dimforge/rapier3d-compat';
 import * as THREE from 'three';
-import { PLAYER_BASELINE } from '../src/config/playerConfig.js';
+import { computeVelocity, isGrounded, getJumpVelocity, getDashSpeed, getSlideSpeed, getSpeed } from '../src/utils/baseGame.js';
 
 // --- PHYSICS SETUP ---
 await RAPIER.init();
@@ -292,41 +292,20 @@ setInterval(() => {
     
     const { w, a, s, d, jump, walk, dash, slide } = inputData.input;
     const camRot = inputData.camRot || p.camRot || 0;
-    
-    // Combine keyboard inputs
-    const moveX = (d ? 1 : 0) - (a ? 1 : 0);
-    const moveZ = (s ? 1 : 0) - (w ? 1 : 0);
-    
-    // Calculate target velocity — single source of truth from PLAYER_BASELINE
-    const walkSpeed = PLAYER_BASELINE.movement.walkSpeed;
-    const sprintSpeed = PLAYER_BASELINE.movement.sprintSpeed;
-    const speed = walk ? walkSpeed : sprintSpeed;
-    let vx = 0;
-    let vz = 0;
 
-    if (moveX !== 0 || moveZ !== 0) {
-      // Normalize input vector
-      const length = Math.sqrt(moveX * moveX + moveZ * moveZ);
-      const nx = moveX / length;
-      const nz = moveZ / length;
-
-      // Rotate by camera angle (match Client applyAxisAngle)
-      const rot = camRot;
-      vx = (nx * Math.cos(rot) + nz * Math.sin(rot)) * speed;
-      vz = (-nx * Math.sin(rot) + nz * Math.cos(rot)) * speed;
-    }
+    // Calculate target velocity via shared BaseGame (Phase 06)
+    const speed = getSpeed(walk);
+    let { vx, vz } = computeVelocity({ w, a, s, d }, camRot, speed);
 
     const currentVel = p.body.linvel();
     const currentPos = p.body.translation();
-    
-    // Ground Check for Server - match client logic: y <= 5.5 (capsule half-height 1.5 + radius 1.5 + small margin)
-    // Client capsule: height 3 (1.5*2), radius 1.5, so bottom at y - 1.5
-    // Ground at y=0 (table) or y=100 (platforms)
-    const isGrounded = currentPos.y <= 5.5 || (currentPos.y >= 99 && currentPos.y <= 105.5);
 
-      // Apply Jump (Impulse matching client's jumpVelocity)
-      if (jump && isGrounded && (!p.lastJumpTick || serverTick - p.lastJumpTick > 10)) {
-        p.body.applyImpulse({ x: 0, y: PLAYER_BASELINE.movement.jumpVelocity, z: 0 }, true);
+    // Ground Check for Server via shared BaseGame
+    const playerIsGrounded = isGrounded(currentPos);
+
+    // Apply Jump (Impulse matching client's jumpVelocity)
+    if (jump && playerIsGrounded && (!p.lastJumpTick || serverTick - p.lastJumpTick > 10)) {
+      p.body.applyImpulse({ x: 0, y: getJumpVelocity(), z: 0 }, true);
         p.lastJumpTick = serverTick;
         // Update anim state for remote players
         p.anim = { ...p.anim, jp: 'launch' };
@@ -337,9 +316,9 @@ setInterval(() => {
       const dashPressed = dash && !p.prevDashInput;
       p.prevDashInput = dash;
       
-      if (dashPressed && isGrounded && (!p.lastDashTick || serverTick - p.lastDashTick > 20)) {
-        // Baseline dash speed from PLAYER_BASELINE
-        const dashSpeed = PLAYER_BASELINE.dash.dashSpeed;
+      if (dashPressed && playerIsGrounded && (!p.lastDashTick || serverTick - p.lastDashTick > 20)) {
+        // Baseline dash speed from PLAYER_BASELINE via BaseGame
+        const dashSpeed = getDashSpeed();
         const rot = camRot;
         const dashVx = Math.sin(rot) * dashSpeed;
         const dashVz = Math.cos(rot) * dashSpeed;
@@ -352,8 +331,8 @@ setInterval(() => {
       }
 
       // Apply Slide (match client's slide speed from PLAYER_BASELINE)
-      if (slide && isGrounded) {
-        const slideSpeed = PLAYER_BASELINE.movement.slideSpeed;
+      if (slide && playerIsGrounded) {
+        const slideSpeed = getSlideSpeed();
         const rot = camRot;
         const slideVx = Math.sin(rot) * slideSpeed;
         const slideVz = Math.cos(rot) * slideSpeed;
