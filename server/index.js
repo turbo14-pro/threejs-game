@@ -328,7 +328,9 @@ setInterval(() => {
       p.jumpPhaseTick = serverTick;
       // Update anim state for remote players
       p.anim = { ...p.anim, jp: 'launch' };
-      // currentVel.y already set to jumpVelocity above, setLinvel below preserves it
+      // Set currentVel.y to jumpVelocity so setLinvel below preserves it
+      // (reading linvel() back returns 0 because world.step() hasn't run yet)
+      currentVel.y = getJumpVelocity();
       debugLog(`[SERVER JUMP APPLY] player=${p.id} newVelY=${currentVel.y}`);
     } else if (p.jumpRequested && !playerIsGrounded) {
       debugLog(`[SERVER JUMP] player=${p.id} jumpRequested=true but NOT grounded, skipping`);
