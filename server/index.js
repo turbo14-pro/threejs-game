@@ -162,6 +162,7 @@ io.onConnection(channel => {
     skin: 'avo',
     anim: {},
     lastStateHash: null, // Phase 05: change detection hash
+    jumpPhase: 'none',   // Track jump phase for remote animation sync
   });
 
   // Sync current state
@@ -307,10 +308,23 @@ setInterval(() => {
     // Apply Jump (Impulse matching client's jumpVelocity)
     if (jump && playerIsGrounded && (!p.lastJumpTick || serverTick - p.lastJumpTick > 10)) {
       p.body.applyImpulse({ x: 0, y: getJumpVelocity(), z: 0 }, true);
-        p.lastJumpTick = serverTick;
-        // Update anim state for remote players
-        p.anim = { ...p.anim, jp: 'launch' };
-      }
+      p.lastJumpTick = serverTick;
+      p.jumpPhase = 'launch';
+      // Update anim state for remote players
+      p.anim = { ...p.anim, jp: 'launch' };
+    }
+
+    // Track jump phase for remote animation sync
+    if (p.jumpPhase === 'launch' && !playerIsGrounded) {
+      p.jumpPhase = 'air';
+      p.anim = { ...p.anim, jp: 'air' };
+    } else if (p.jumpPhase === 'air' && playerIsGrounded) {
+      p.jumpPhase = 'land';
+      p.anim = { ...p.anim, jp: 'land' };
+    } else if (p.jumpPhase === 'land' && playerIsGrounded) {
+      p.jumpPhase = 'none';
+      p.anim = { ...p.anim, jp: 'none' };
+    }
 
       // Dash: Simulate with BASELINE speed - no power-ups on server
       // Detect rising edge like client does
