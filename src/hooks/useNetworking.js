@@ -109,6 +109,11 @@ export function useNetworking() {
         // Handle both old array format and new { p, t } format
         const players = Array.isArray(data) ? data : (data?.p || []);
         const serverTick = data?.t;
+        players.forEach(p => {
+          if (p.pos) {
+            console.log(`[NETWORKING HOOK RECEIVE] player=${p.id} posY=${p.pos[1].toFixed(2)}`);
+          }
+        });
         updateRemotePlayers(players);
         
         // Update server tick in store for LatencyGraph

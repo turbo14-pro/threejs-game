@@ -31,6 +31,8 @@ export default function RemotePlayer({ data }) {
     if (!Number.isFinite(rot)) return;
     if (Math.abs(px) > 10000 || Math.abs(py) > 10000 || Math.abs(pz) > 10000) return;
 
+    console.log(`[REMOTEPLAYER BUFFER] player=${data.id} posY=${py.toFixed(2)} bufferLen=${buffer.current.length}`);
+
     buffer.current.push({
       pos: new THREE.Vector3(px, py, pz),
       rot,
@@ -82,6 +84,7 @@ export default function RemotePlayer({ data }) {
     try {
       if (![targetPos.x, targetPos.y, targetPos.z].every(Number.isFinite)) return;
       if (![targetQuat.x, targetQuat.y, targetQuat.z, targetQuat.w].every(Number.isFinite)) return;
+      console.log(`[REMOTEPLAYER APPLY] player=${data.id} targetPosY=${targetPos.y.toFixed(2)}`);
       groupRef.current.setNextKinematicTranslation({ x: targetPos.x, y: targetPos.y, z: targetPos.z });
       groupRef.current.setNextKinematicRotation({ x: targetQuat.x, y: targetQuat.y, z: targetQuat.z, w: targetQuat.w });
 

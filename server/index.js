@@ -458,9 +458,11 @@ setInterval(() => {
       p.lastStateHash.set(viewerId, hash);
 
       const vel = p.body.linvel();
+      const posY = Number.isFinite(pos.y) ? pos.y : 0;
+      console.log(`[SERVER BROADCAST] viewer=${viewerId} player=${p.id} posY=${posY.toFixed(2)} hashChanged=${lastHash !== hash}`);
       playerList.push({
         id: p.id,
-        pos: [Number.isFinite(pos.x) ? pos.x : 0, Number.isFinite(pos.y) ? pos.y : 0, Number.isFinite(pos.z) ? pos.z : 0],
+        pos: [Number.isFinite(pos.x) ? pos.x : 0, posY, Number.isFinite(pos.z) ? pos.z : 0],
         vel: [Number.isFinite(vel.x) ? vel.x : 0, Number.isFinite(vel.y) ? vel.y : 0, Number.isFinite(vel.z) ? vel.z : 0],
         rot: Number.isFinite(p.rot) ? p.rot : 0,
         skin: p.skin,
