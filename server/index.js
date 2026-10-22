@@ -313,9 +313,17 @@ setInterval(() => {
     // Track jump request from client — persists until server applies impulse
     // (latency-safe: client sends jump:true for one tick, then jump:false;
     //  server may process the jump:false after the jump:true due to latency)
-    if (jump) {
+    // Only set on rising edge (transition from false to true) so holding
+    // the jump key down doesn't keep jumpRequested=true across multiple ticks.
+    const jumpPressed = jump && !p.prevJump;
+    p.prevJump = jump;
+    if (jumpPressed) {
       p.jumpRequested = true;
       debugLog(`[SERVER JUMP] player=${p.id} jump=true jumpRequested=true grounded=${playerIsGrounded} tick=${serverTick}`);
+    } else if (!jump) {
+      p.jumpRequested = false;
+    } else {
+      p.jumpRequested = false;
     }
 
     // Apply Jump (set velocity matching client's jumpVelocity)
