@@ -161,7 +161,7 @@ io.onConnection(channel => {
     lastSeen: Date.now(),
     skin: 'avo',
     anim: {},
-    lastStateHash: null, // Phase 05: change detection hash
+    lastStateHash: new Map(), // Phase 05: per-viewer change detection hash (viewerId -> hash)
     jumpPhase: 'none',   // Track jump phase for remote animation sync
     jumpPhaseTick: 0,    // Server tick when jumpPhase was last set
     dashPhase: 'none',   // Track dash phase for remote animation sync
@@ -451,10 +451,11 @@ setInterval(() => {
       const dz = Number.isFinite(pos.z) ? pos.z : 0 - vz;
       if (Math.sqrt(dx * dx + dz * dz) > INTEREST_RADIUS) continue;
 
-      // Change detection: skip if state hash unchanged
+      // Change detection: skip if state hash unchanged for THIS viewer
       const hash = hashEntityState(p);
-      if (hash === p.lastStateHash) continue;
-      p.lastStateHash = hash;
+      const lastHash = p.lastStateHash.get(viewerId);
+      if (lastHash === hash) continue;
+      p.lastStateHash.set(viewerId, hash);
 
       const vel = p.body.linvel();
       playerList.push({
