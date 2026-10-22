@@ -314,10 +314,12 @@ setInterval(() => {
     //  server may process the jump:false after the jump:true due to latency)
     if (jump) {
       p.jumpRequested = true;
+      console.log(`[SERVER JUMP] player=${p.id} jump=true jumpRequested=true grounded=${playerIsGrounded} tick=${serverTick}`);
     }
 
     // Apply Jump (Impulse matching client's jumpVelocity)
     if (p.jumpRequested && playerIsGrounded && (!p.lastJumpTick || serverTick - p.lastJumpTick > 10)) {
+      console.log(`[SERVER JUMP APPLY] player=${p.id} applying impulse y=${getJumpVelocity()} lastJumpTick=${p.lastJumpTick} serverTick=${serverTick}`);
       p.body.applyImpulse({ x: 0, y: getJumpVelocity(), z: 0 }, true);
       p.lastJumpTick = serverTick;
       p.jumpRequested = false; // Consume the request
@@ -327,6 +329,11 @@ setInterval(() => {
       p.anim = { ...p.anim, jp: 'launch' };
       // Re-read velocity after impulse so setLinvel below preserves the jump's vertical velocity
       currentVel.y = p.body.linvel().y;
+      console.log(`[SERVER JUMP APPLY] player=${p.id} newVelY=${currentVel.y}`);
+    } else if (p.jumpRequested && !playerIsGrounded) {
+      console.log(`[SERVER JUMP] player=${p.id} jumpRequested=true but NOT grounded, skipping`);
+    } else if (p.jumpRequested && p.lastJumpTick && serverTick - p.lastJumpTick <= 10) {
+      console.log(`[SERVER JUMP] player=${p.id} jumpRequested=true but cooldown active (${serverTick - p.lastJumpTick} ticks since last)`);
     }
 
     // Track jump phase for remote animation sync with minimum durations
