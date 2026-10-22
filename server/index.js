@@ -316,6 +316,8 @@ setInterval(() => {
       p.jumpPhaseTick = serverTick;
       // Update anim state for remote players
       p.anim = { ...p.anim, jp: 'launch' };
+      // Re-read velocity after impulse so setLinvel below preserves the jump's vertical velocity
+      currentVel.y = p.body.linvel().y;
     }
 
     // Track jump phase for remote animation sync with minimum durations
