@@ -2,6 +2,7 @@ import geckos from '@geckos.io/server';
 import RAPIER from '@dimforge/rapier3d-compat';
 import * as THREE from 'three';
 import { computeVelocity, isGrounded, getJumpVelocity, getDashSpeed, getSlideSpeed, getSpeed } from '../src/utils/baseGame.js';
+import { NetworkedActor } from '../src/utils/networkedActor.js';
 
 // --- PHYSICS SETUP ---
 await RAPIER.init();
