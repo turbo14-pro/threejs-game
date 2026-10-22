@@ -159,7 +159,8 @@ io.onConnection(channel => {
     body, 
     lastSeen: Date.now(),
     skin: 'avo',
-    anim: {}
+    anim: {},
+    lastStateHash: null, // Phase 05: change detection hash
   });
 
   // Sync current state
@@ -392,45 +393,66 @@ setInterval(() => {
     }
   }
 
-  // 3. Broadcast Snapshot
-  const playerList = Array.from(players.values()).map(p => {
+  // 3. Broadcast Snapshot — Phase 05: entity culling + change detection
+  const INTEREST_RADIUS = 200; // meters — only send players within this radius
+
+  function hashEntityState(p) {
     const pos = p.body.translation();
     const vel = p.body.linvel();
-
-    // Sanitize non-finite physics state so NaN/Infinity never reaches clients
-    // (which would crash PositionalAudio panners via updateMatrixWorld).
-    const px = Number.isFinite(pos.x) ? pos.x : 0;
-    const py = Number.isFinite(pos.y) ? pos.y : 0;
-    const pz = Number.isFinite(pos.z) ? pos.z : 0;
-    const vx = Number.isFinite(vel.x) ? vel.x : 0;
-    const vy = Number.isFinite(vel.y) ? vel.y : 0;
-    const vz = Number.isFinite(vel.z) ? vel.z : 0;
-
-    return {
-      id: p.id,
-      pos: [px, py, pz],
-      vel: [vx, vy, vz],
+    const str = JSON.stringify({
+      pos: [Number.isFinite(pos.x) ? pos.x : 0, Number.isFinite(pos.y) ? pos.y : 0, Number.isFinite(pos.z) ? pos.z : 0],
+      vel: [Number.isFinite(vel.x) ? vel.x : 0, Number.isFinite(vel.y) ? vel.y : 0, Number.isFinite(vel.z) ? vel.z : 0],
       rot: Number.isFinite(p.rot) ? p.rot : 0,
-      skin: p.skin,
       anim: p.anim,
-      tick: p.tick, // THE CLIENT TICK WE JUST PROCESSED
-      lastProcessedSeq: p.lastProcessedSeq, // Phase 03: sequenceId of last processed input
-    };
-  });
-
-  if (playerList.length > 0) {
-    const payload = { p: playerList, t: serverTick };
-    const payloadSize = JSON.stringify(payload).length;
-    
-    // Log tick drift and payload size for baseline measurement
-    const avgClientTick = playerList.reduce((sum, p) => sum + (p.tick || 0), 0) / playerList.length;
-    const tickDrift = serverTick - avgClientTick;
-    
-    if (serverTick % 60 === 0) { // Log every 2 seconds at 30Hz
-      console.log(`[Server] Tick: ${serverTick}, Players: ${playerList.length}, Drift: ${tickDrift.toFixed(1)}, Payload: ${payloadSize}B`);
+    });
+    let hash = 0;
+    for (let i = 0; i < str.length; i++) {
+      hash = ((hash << 5) - hash) + str.charCodeAt(i);
+      hash = hash & hash;
     }
-    
-    io.emit('update', payload);
+    return hash;
+  }
+
+  for (const [viewerId, viewerChannel] of channels) {
+    const viewer = players.get(viewerId);
+    if (!viewer) continue;
+
+    const vPos = viewer.body.translation();
+    const vx = Number.isFinite(vPos.x) ? vPos.x : 0;
+    const vz = Number.isFinite(vPos.z) ? vPos.z : 0;
+
+    const playerList = [];
+    for (const p of players.values()) {
+      if (p.id === viewerId) continue;
+
+      // Cull: skip players outside interest radius
+      const pos = p.body.translation();
+      const dx = Number.isFinite(pos.x) ? pos.x : 0 - vx;
+      const dz = Number.isFinite(pos.z) ? pos.z : 0 - vz;
+      if (Math.sqrt(dx * dx + dz * dz) > INTEREST_RADIUS) continue;
+
+      // Change detection: skip if state hash unchanged
+      const hash = hashEntityState(p);
+      if (hash === p.lastStateHash) continue;
+      p.lastStateHash = hash;
+
+      const vel = p.body.linvel();
+      playerList.push({
+        id: p.id,
+        pos: [Number.isFinite(pos.x) ? pos.x : 0, Number.isFinite(pos.y) ? pos.y : 0, Number.isFinite(pos.z) ? pos.z : 0],
+        vel: [Number.isFinite(vel.x) ? vel.x : 0, Number.isFinite(vel.y) ? vel.y : 0, Number.isFinite(vel.z) ? vel.z : 0],
+        rot: Number.isFinite(p.rot) ? p.rot : 0,
+        skin: p.skin,
+        anim: p.anim,
+        tick: p.tick,
+        lastProcessedSeq: p.lastProcessedSeq,
+      });
+    }
+
+    if (playerList.length > 0) {
+      const payload = { p: playerList, t: serverTick };
+      viewerChannel.emit('update', payload);
+    }
   }
 }, TICK_RATE);
 
