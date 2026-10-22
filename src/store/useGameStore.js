@@ -293,7 +293,12 @@ export const useGameStore = create(
               remotePlayers[p.id] = p;
             } else {
               // Capture our own state for reconciliation
-              lastServerState = { pos: p.pos, tick: p.tick, vel: p.vel };
+              lastServerState = {
+                pos: p.pos,
+                tick: p.tick,
+                vel: p.vel,
+                lastProcessedSeq: p.lastProcessedSeq, // Phase 04: sequenceId of last processed input
+              };
             }
           });
           

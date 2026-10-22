@@ -220,10 +220,14 @@ export default function PlayerController({ sendUpdate }) {
         // Cleanup old history
         inputHistory.current = inputHistory.current.filter(e => e.tick > serverState.tick);
 
-        // Cleanup acknowledged sentInputs — remove entries whose tick the server has confirmed
-        for (const [seqId, entry] of sentInputs.current.entries()) {
-          if (entry.tick <= serverState.tick) {
-            sentInputs.current.delete(seqId);
+        // Cleanup acknowledged sentInputs — remove entries whose sequenceId the
+        // server has confirmed via lastProcessedSeq (Phase 04).
+        const lastSeq = serverState.lastProcessedSeq;
+        if (lastSeq !== undefined) {
+          for (const [seqId] of sentInputs.current.entries()) {
+            if (seqId <= lastSeq) {
+              sentInputs.current.delete(seqId);
+            }
           }
         }
       }

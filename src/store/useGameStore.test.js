@@ -139,3 +139,51 @@ describe('Multiplayer tick and velocity state', () => {
     expect(useGameStore.getState().game.serverTick).toBe(200);
   });
 });
+
+/**
+ * Phase 04: Full State Snapshots
+ * Tests that lastServerState captures lastProcessedSeq from server broadcast
+ * so client can acknowledge sentInputs by sequenceId instead of tick.
+ * Failure mode: lastProcessedSeq not captured → client can't match
+ * acknowledgments → sentInputs never cleaned up → memory leak + wrong re-apply.
+ */
+describe('lastServerState captures lastProcessedSeq', () => {
+  beforeEach(() => {
+    useGameStore.setState({
+      remotePlayers: {},
+      lastServerState: null,
+      player: { networkId: 'local1', health: 100 },
+    });
+  });
+
+  it('captures lastProcessedSeq for the local player', () => {
+    useGameStore.getState().updateRemotePlayers([
+      { id: 'local1', pos: [0, 0, 0], vel: [0, 0, 0], tick: 42, lastProcessedSeq: 7 },
+      { id: 'remote1', pos: [10, 0, 0], vel: [0, 0, 0], tick: 42, lastProcessedSeq: 3 },
+    ]);
+
+    const { lastServerState } = useGameStore.getState();
+    expect(lastServerState).not.toBeNull();
+    expect(lastServerState.lastProcessedSeq).toBe(7);
+  });
+
+  it('captures pos, tick, vel alongside lastProcessedSeq', () => {
+    useGameStore.getState().updateRemotePlayers([
+      { id: 'local1', pos: [1, 2, 3], vel: [4, 5, 6], tick: 100, lastProcessedSeq: 9 },
+    ]);
+
+    const { lastServerState } = useGameStore.getState();
+    expect(lastServerState.pos).toEqual([1, 2, 3]);
+    expect(lastServerState.tick).toBe(100);
+    expect(lastServerState.vel).toEqual([4, 5, 6]);
+    expect(lastServerState.lastProcessedSeq).toBe(9);
+  });
+
+  it('lastServerState is null when local player not in list', () => {
+    useGameStore.getState().updateRemotePlayers([
+      { id: 'remote1', pos: [0, 0, 0], vel: [0, 0, 0], tick: 1, lastProcessedSeq: 0 },
+    ]);
+
+    expect(useGameStore.getState().lastServerState).toBeNull();
+  });
+});
