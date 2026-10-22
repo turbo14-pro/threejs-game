@@ -8,7 +8,9 @@ const storedDebugSetting = typeof localStorage === 'undefined'
   ? null
   : localStorage.getItem(DEBUG_STORAGE_KEY);
 
-let debugEnabled = storedDebugSetting === 'true';
+// Default to enabled on server (no localStorage), disabled in browser unless
+// explicitly set via localStorage or setDebugEnabled().
+let debugEnabled = storedDebugSetting === null ? true : storedDebugSetting === 'true';
 
 export function setDebugEnabled(enabled) {
   debugEnabled = Boolean(enabled);
