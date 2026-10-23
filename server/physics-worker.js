@@ -7,6 +7,7 @@
  */
 const { parentPort, workerData } = require('worker_threads');
 const RAPIER = require('@dimforge/rapier3d-compat');
+const { debugLog } = require('../src/utils/debugLog.js');
 
 // Initialize Rapier (synchronous in worker)
 await RAPIER.init();
@@ -54,6 +55,7 @@ parentPort.on('message', (msg) => {
         camRot: 0,
         skin: 'avo',
         anim: {},
+        jumpCount: 0, // Track jump count for double jump support
       });
       break;
     }
@@ -162,14 +164,40 @@ function simulate() {
     }
 
     // Apply Jump (set velocity matching client's jumpVelocity)
-    if (p.jumpRequested && playerIsGrounded && (!p.lastJumpTick || serverTick - p.lastJumpTick > 10)) {
+    // Allow double jump while airborne if jumpCount < maxJumps
+    const maxJumps = PLAYER_BASELINE.movement.maxJumps || 2;
+    const canJump = p.jumpRequested && (!p.lastJumpTick || serverTick - p.lastJumpTick > 10) && (
+      playerIsGrounded || p.jumpCount < maxJumps
+    );
+
+    if (canJump) {
       p.body.setLinvel({ x: currentVel.x, y: getJumpVelocity(), z: currentVel.z }, true);
       p.lastJumpTick = serverTick;
       p.jumpRequested = false; // Consume the request
       p.jumpPhase = 'launch';
       p.jumpPhaseTick = serverTick;
+      // Update anim state for remote players
       p.anim = { ...p.anim, jp: 'launch' };
+      // Set currentVel.y to jumpVelocity so setLinvel below preserves it
       currentVel.y = getJumpVelocity();
+      // Increment jump count (grounded jump resets to 1, air jump increments)
+      if (playerIsGrounded) {
+        p.jumpCount = 1;
+      } else {
+        p.jumpCount++;
+      }
+      debugLog(`[SERVER JUMP APPLY] player=${p.id} newVelY=${currentVel.y} jumpCount=${p.jumpCount}`);
+    } else if (p.jumpRequested && !playerIsGrounded && p.jumpCount >= maxJumps) {
+      debugLog(`[SERVER JUMP] player=${p.id} jumpRequested=true but max jumps reached (${p.jumpCount}/${maxJumps})`);
+    } else if (p.jumpRequested && !playerIsGrounded) {
+      debugLog(`[SERVER JUMP] player=${p.id} jumpRequested=true but NOT grounded, skipping`);
+    } else if (p.jumpRequested && p.lastJumpTick && serverTick - p.lastJumpTick <= 10) {
+      debugLog(`[SERVER JUMP] player=${p.id} jumpRequested=true but cooldown active (${serverTick - p.lastJumpTick} ticks since last)`);
+    }
+
+    // Reset jump count when grounded
+    if (playerIsGrounded && p.jumpPhase === 'none') {
+      p.jumpCount = 0;
     }
 
     // Track jump phase for remote animation sync
