@@ -266,7 +266,8 @@ function simulate() {
   // 2. Step Physics
   world.step();
 
-  // 3. Build snapshot
+  // 3. Build snapshot — ALWAYS broadcast all players (heartbeat) so clients
+  // never run out of snapshot data and freeze
   const playerList = [];
   for (const p of players.values()) {
     const pos = p.body.translation();
