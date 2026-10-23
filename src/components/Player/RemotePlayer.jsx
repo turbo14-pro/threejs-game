@@ -119,6 +119,7 @@ export default function RemotePlayer({ data }) {
           moveDir={data.anim?.dir}
           isSprinting={data.anim?.spr}
           jumpPhase={data.anim?.jp}
+          isSliding={data.anim?.sl}
           skinOverride={data.skin || 'avo'} 
         />
       </group>
