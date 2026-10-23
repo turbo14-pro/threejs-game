@@ -271,13 +271,13 @@ function simulate() {
   for (const p of players.values()) {
     const pos = p.body.translation();
     const vel = p.body.linvel();
-    const rot = p.body.rotation();
+    const rot = p.camRot || 0; // Use client camera rotation for remote facing direction
 
     playerList.push({
       id: p.id,
       pos: [Number.isFinite(pos.x) ? pos.x : 0, Number.isFinite(pos.y) ? pos.y : 0, Number.isFinite(pos.z) ? pos.z : 0],
       vel: [Number.isFinite(vel.x) ? vel.x : 0, Number.isFinite(vel.y) ? vel.y : 0, Number.isFinite(vel.z) ? vel.z : 0],
-      rot: [Number.isFinite(rot.x) ? rot.x : 0, Number.isFinite(rot.y) ? rot.y : 0, Number.isFinite(rot.z) ? rot.z : 0, Number.isFinite(rot.w) ? rot.w : 1],
+      rot: Number.isFinite(rot) ? rot : 0,
       skin: p.skin,
       anim: p.anim,
       tick: p.tick,
