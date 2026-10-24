@@ -1,16 +1,18 @@
 import { useEffect, useRef } from 'react';
-import geckos from '@geckos.io/client';
+import { encode, decode } from 'msgpackr';
 import { useGameStore } from '../store/useGameStore';
 import { debugLog, debugWarn, debugError } from '../utils/debugLog.js';
 import { createInputSequenceTracker } from '../utils/inputSequence.js';
 
 /**
  * THE MULTIPLAYER HOOK
- * Handles the connection and syncing with the Geckos server.
+ * Handles the connection and syncing with the WS binary server.
+ * Replaces Geckos.io WebRTC with native WebSocket + msgpackr binary protocol.
  */
 export function useNetworking() {
-  const channelRef = useRef(null);
+  const wsRef = useRef(null);
   const sequenceTracker = useRef(createInputSequenceTracker());
+  const playerIdRef = useRef(null);
   const gameState = useGameStore(state => state.game.state);
   const updateRemotePlayers = useGameStore(state => state.updateRemotePlayers);
   const removeRemotePlayer = useGameStore(state => state.removeRemotePlayer);
@@ -23,13 +25,14 @@ export function useNetworking() {
   useEffect(() => {
     // Only connect when we are in the game
     if (gameState === 'MENU') {
-      if (channelRef.current) {
+      if (wsRef.current) {
         try {
-          channelRef.current.close();
+          wsRef.current.close();
         } catch (e) {
-          debugWarn("Error closing Geckos channel during MENU transition:", e);
+          debugWarn("Error closing WS connection during MENU transition:", e);
         }
-        channelRef.current = null;
+        wsRef.current = null;
+        playerIdRef.current = null;
         setNetworkStatus('OFFLINE');
       }
       return;
@@ -37,161 +40,161 @@ export function useNetworking() {
 
     // --- DEBUG TRACE: START ---
     const isDev = import.meta.env.DEV;
-    // In dev mode use the local server; in production use the cloud server
     const rawEnvUrl = isDev
       ? import.meta.env.VITE_SERVER_URL_LOCAL
       : import.meta.env.VITE_SERVER_URL_PRODUCTION;
-    
-    debugLog('%c 📡 [Network Trace] Starting Connection Sequence...', 'color: #00ff88; font-weight: bold;');
+
+    debugLog('%c 📡 [Network Trace] Starting WS Connection Sequence...', 'color: #00ff88; font-weight: bold;');
     debugLog('   > Mode:', isDev ? 'DEVELOPMENT' : 'PRODUCTION');
     debugLog('   > Raw Env URL:', rawEnvUrl);
 
-    // CLEANING THE URL: Remove any trailing ports or slashes
+    // Build WS URL: ws:// for dev, wss:// for prod
     const baseAddress = rawEnvUrl.replace(':9208', '').replace(/\/$/, '');
-    
-    // In dev we hit the raw port 9208. In prod, Nginx handles SSL on port 443.
-    const targetPort = isDev ? 9208 : 443;
-    
-    debugLog('   > Base Address:', baseAddress);
-    debugLog('   > Target Port:', targetPort);
+    const wsUrl = isDev ? `ws://${baseAddress}:9208` : `wss://${baseAddress}`;
+
+    debugLog('   > WS URL:', wsUrl);
 
     // Tell the UI we are looking for the server
     setNetworkStatus('CONNECTING');
 
-    // 2. Connect to the server
-    // We add a "STUN" server (from Google) to help the game find the path through the cloud firewalls.
-    const channel = geckos({ 
-      url: baseAddress, 
-      port: targetPort,
-      iceServers: [{ urls: 'stun:stun.l.google.com:19302' }]
-    });
-    channelRef.current = channel;
+    // Connect to the WS binary server
+    const ws = new WebSocket(wsUrl);
+    ws.binaryType = 'arraybuffer';
+    wsRef.current = ws;
 
-    debugLog('   > Geckos Instance Created with STUN. Waiting for handshake...');
+    debugLog('   > WebSocket Created. Waiting for open...');
 
-    channel.onConnect(error => {
-      if (error) {
-        debugError('%c ❌ [Network Trace] Handshake Failed!', 'color: #ff4444; font-weight: bold;');
-        debugError('   > Error Message:', error.message);
-        debugError('   > Error Type:', error.name || 'Unknown');
-        debugError('   > Target URL:', baseAddress);
-        debugError('   > Target Port:', targetPort);
-        debugError('   > Is Dev Mode:', isDev);
-        debugError('   > Raw Env URL:', rawEnvUrl);
-        debugError('   > Check if the browser is blocking HTTP to an IP address (Mixed Content).');
-        debugError('   > Check if your system clock is correct (SSL certificate validation depends on accurate time).');
-        debugError('   > Try accessing https://ff-server-9208.duckdns.org in your browser to see if you get a certificate warning.');
-        setNetworkStatus('ERROR');
-        return;
-      }
-
-      debugLog('%c ✅ [Network Trace] Handshake Success!', 'color: #00ff88; font-weight: bold;');
-      debugLog('   > Connection ID:', channel.id);
-      setNetworkId(channel.id);
+    ws.onopen = () => {
+      debugLog('%c ✅ [Network Trace] WS Handshake Success!', 'color: #00ff88; font-weight: bold;');
       setNetworkStatus('ONLINE');
 
-      // 1. Tell the server who we are and what we look like immediately
+      // Send initial player info (skin, position) as a pos message
       const initialSkin = useGameStore.getState().player.selectedSkin;
-      channel.emit('pos', { 
+      ws.send(encode({
+        type: 'pos',
         skin: initialSkin,
-        pos: [0, 103, 0], // Start at the lobby spawn
+        pos: [0, 103, 0],
         rot: Math.PI,
-        anim: { mv: false, dir: 'for', jp: 'none', spr: true }
-      });
+        anim: { mv: false, dir: 'for', jp: 'none', spr: true },
+      }, { binary: true }));
+    };
 
-      // 2. Handle the initial list of players
-      channel.on('currentPlayers', (players) => {
-        updateRemotePlayers(players);
-      });
+    ws.onmessage = (event) => {
+      const data = decode(new Uint8Array(event.data));
 
-      // Handle the regular updates (20 times per second)
-      channel.on('update', (data) => {
-        // Handle both old array format and new { p, t } format
-        const players = Array.isArray(data) ? data : (data?.p || []);
-        const serverTick = data?.t;
-        players.forEach(p => {
-          if (p.pos) {
-            console.log(`[NETWORKING HOOK RECEIVE] player=${p.id} posY=${p.pos[1].toFixed(2)}`);
-          }
-        });
-        updateRemotePlayers(players);
-        
-        // Update server tick in store for LatencyGraph
-        if (serverTick !== undefined) {
-          useGameStore.getState().setServerTick(serverTick);
+      switch (data.type) {
+        case 'welcome': {
+          // Server assigns our playerId — store it for tagging inputs
+          playerIdRef.current = data.playerId;
+          setNetworkId(data.playerId);
+          debugLog('   > Assigned playerId:', data.playerId);
+          break;
         }
-      });
 
-      // Handle a player leaving
-      channel.on('removePlayer', (id) => {
-        removeRemotePlayer(id);
-      });
+        case 'snapshot': {
+          // Handle { p: [...], t: serverTick } snapshot format
+          const players = data.p || [];
+          const serverTick = data.t;
+          players.forEach(p => {
+            if (p.pos) {
+              console.log(`[NETWORKING HOOK RECEIVE] player=${p.id} posY=${p.pos[1]?.toFixed(2)}`);
+            }
+          });
+          updateRemotePlayers(players);
 
-      // Handle being hit by another player
-      channel.on('impact', (data) => {
-        // data: { victimId, dir, position }
-        const localId = useGameStore.getState().player.networkId;
-        
-        // 1. If it's me, trigger local knockback
-        if (data.victimId === localId) {
-          debugLog("🛡️ Received IMPACT! Applying knockback.");
-          triggerKnockback({ x: data.dir[0], y: data.dir[1], z: data.dir[2] }, 250 * (data.slideMultiplier || 1));
-          triggerRipple();
-          if (data.position) {
-            addShockwave(data.position);
+          // Update server tick in store for LatencyGraph
+          if (serverTick !== undefined) {
+            useGameStore.getState().setServerTick(serverTick);
           }
-        } 
-        // 2. If it's someone else, track it so we can disable their magnet and apply local impulse
-        else {
-          useGameStore.getState().triggerRemoteKnockback(data.victimId, data.dir);
+          break;
         }
-      });
 
-      // Handle latency pong
-      channel.on('pong', (t) => {
-        const rtt = Date.now() - t;
-        useGameStore.getState().setLatency(rtt);
-      });
-      const pingInterval = setInterval(() => {
-        channel.emit('ping', Date.now());
-      }, 2000);
-      
-      // Store interval ID on channel to clean it up later
-      channel._pingInterval = pingInterval;
-    });
+        case 'removePlayer': {
+          removeRemotePlayer(data.id);
+          break;
+        }
+
+        case 'impact': {
+          const localId = useGameStore.getState().player.networkId;
+          if (data.victimId === localId) {
+            debugLog("🛡️ Received IMPACT! Applying knockback.");
+            triggerKnockback({ x: data.dir[0], y: data.dir[1], z: data.dir[2] }, 250 * (data.slideMultiplier || 1));
+            triggerRipple();
+            if (data.position) {
+              addShockwave(data.position);
+            }
+          } else {
+            useGameStore.getState().triggerRemoteKnockback(data.victimId, data.dir);
+          }
+          break;
+        }
+
+        case 'pong': {
+          const rtt = Date.now() - data.t;
+          useGameStore.getState().setLatency(rtt);
+          break;
+        }
+
+        default:
+          debugWarn(`[Network Trace] Unknown WS message type: ${data.type}`);
+      }
+    };
+
+    ws.onerror = (error) => {
+      debugError('%c ❌ [Network Trace] WS Error!', 'color: #ff4444; font-weight: bold;');
+      debugError('   > Error:', error.message);
+      setNetworkStatus('ERROR');
+    };
+
+    ws.onclose = () => {
+      debugLog('   > WS Connection closed.');
+      wsRef.current = null;
+      playerIdRef.current = null;
+      setNetworkStatus('OFFLINE');
+    };
+
+    // Ping interval for latency measurement
+    const pingInterval = setInterval(() => {
+      if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+        wsRef.current.send(encode({ type: 'ping', t: Date.now() }, { binary: true }));
+      }
+    }, 2000);
 
     return () => {
-      if (channelRef.current) {
-        if (channelRef.current._pingInterval) {
-          clearInterval(channelRef.current._pingInterval);
-        }
+      clearInterval(pingInterval);
+      if (wsRef.current) {
         try {
-          channelRef.current.close();
-        } catch(e) {
-          debugWarn("Error closing Geckos channel:", e);
+          wsRef.current.close();
+        } catch (e) {
+          debugWarn("Error closing WS connection:", e);
         }
+        wsRef.current = null;
+        playerIdRef.current = null;
       }
     };
   }, [gameState, updateRemotePlayers, removeRemotePlayer, setNetworkId, setNetworkStatus]);
 
-  // Function to send our current position and animation state
-  // Returns the sequenceId assigned to input packets (undefined for non-input).
+  // Function to send input to the WS binary server
+  // Returns the sequenceId assigned to input packets.
   const sendUpdate = (data) => {
-    if (channelRef.current) {
+    const ws = wsRef.current;
+    if (ws && ws.readyState === WebSocket.OPEN) {
       if (data.type === 'impact') {
-        channelRef.current.emit('impact', data);
+        ws.send(encode(data, { binary: true }));
       } else if (data.type === 'input') {
         // Tag input with a monotonically increasing sequenceId so the server
         // can reject duplicates and out-of-order inputs (Phase 01).
         const sequenceId = sequenceTracker.current.next();
-        channelRef.current.emit('input', {
+        ws.send(encode({
+          type: 'input',
+          playerId: playerIdRef.current,
           ...data,
           sequenceId,
-        });
+        }, { binary: true }));
         return sequenceId;
       } else {
         // Legacy position update
-        channelRef.current.emit('pos', data);
+        ws.send(encode({ type: 'pos', ...data }, { binary: true }));
       }
     }
     return undefined;
