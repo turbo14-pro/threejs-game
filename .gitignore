@@ -18,6 +18,7 @@ dist-ssr
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json
+!.vscode/launch.json
 .idea
 .DS_Store
 *.suo
@@ -31,7 +32,6 @@ src/models/*.blend
 # Large binary assets (track locally, not in git)
 *.blend
 *.blend1
-*.glb
 
 # Secrets
 *.key
@@ -42,4 +42,10 @@ src/models/*.blend
 scratch/
 processes.txt
 animation_names.txt
+
+# Playwright artifacts
+/test-results/
+/playwright-report/
+/blob-report/
+/playwright/.cache/
 
