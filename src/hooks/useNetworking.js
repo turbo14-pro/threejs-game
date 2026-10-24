@@ -49,7 +49,11 @@ export function useNetworking() {
     debugLog('   > Raw Env URL:', rawEnvUrl);
 
     // Build WS URL: ws:// for dev, wss:// for prod
-    const baseAddress = rawEnvUrl.replace(':9208', '').replace(/\/$/, '');
+    // Strip any http:// or https:// prefix from the env URL
+    const baseAddress = rawEnvUrl
+      .replace(/^https?:\/\//, '')
+      .replace(':9208', '')
+      .replace(/\/$/, '');
     const wsUrl = isDev ? `ws://${baseAddress}:9208` : `wss://${baseAddress}`;
 
     debugLog('   > WS URL:', wsUrl);
