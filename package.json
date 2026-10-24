@@ -10,11 +10,12 @@
     "test": "vitest",
     "test:e2e": "playwright test",
     "deploy": "npm run build && node deploy.cjs",
-    "server": "node server/index.js"
+    "server": "node server/ws-server.js"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
     "@playwright/test": "^1.58.2",
+    "@vitest/coverage-v8": "^5.0.5",
     "dotenv": "^17.3.1",
     "eslint": "^10.2.1",
     "eslint-plugin-react": "^7.37.5",
@@ -44,6 +45,7 @@
     "gltf-pipeline": "^4.3.0",
     "lil-gui": "^0.21.0",
     "miniplex": "^2.0.0",
+    "msgpackr": "^2.1.2",
     "react": "^19.2.4",
     "react-dom": "^19.2.4",
     "stats.js": "^0.17.0",
