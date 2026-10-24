@@ -39,7 +39,7 @@ worker.on('message', (msg) => {
           // Filter out the viewer from their own player list
           const filtered = playerList.filter(p => p.id !== client.playerId);
           if (filtered.length > 0) {
-            const viewerPayload = { p: filtered, t: serverTick };
+            const viewerPayload = { type: 'snapshot', p: filtered, t: serverTick };
             ws.send(encode(viewerPayload), { binary: true });
           }
         }
