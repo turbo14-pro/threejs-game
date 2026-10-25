@@ -34,6 +34,9 @@ const INTEREST_RADIUS = 200;
 // Change detection: per-viewer last-sent state hash
 const viewerState = new Map(); // ws -> { lastHash, lastPlayers }
 
+// Y interpolation on culling re-entry: per-viewer last sent Y per player
+const viewerYState = new Map(); // ws -> Map<playerId, { lastY, interpTicks }>
+
 // Track player positions for bot AI (updated from snapshots)
 const playerPositions = new Map(); // playerId -> { x, y, z }
 
@@ -81,6 +84,34 @@ worker.on('message', (msg) => {
             const dz = p.pos[2] - viewer.pos[2];
             return Math.sqrt(dx * dx + dz * dz) <= INTEREST_RADIUS;
           });
+
+          // Get or create per-viewer Y state
+          let viewerY = viewerYState.get(ws);
+          if (!viewerY) {
+            viewerY = new Map();
+            viewerYState.set(ws, viewerY);
+          }
+
+          // Interpolate Y on culling re-entry
+          for (const p of filtered) {
+            const prevY = viewerY.get(p.id);
+            if (prevY) {
+              // Player was previously visible — interpolate Y smoothly
+              const interpProgress = Math.min(prevY.interpTicks + 1, 10) / 10;
+              p.pos[1] = prevY.lastY + (p.pos[1] - prevY.lastY) * interpProgress;
+              viewerY.set(p.id, { lastY: p.pos[1], interpTicks: prevY.interpTicks + 1 });
+            } else {
+              // Player newly visible (re-entry) — start interpolation from last known Y
+              viewerY.set(p.id, { lastY: p.pos[1], interpTicks: 0 });
+            }
+          }
+
+          // Clean up Y state for players no longer visible
+          for (const [pid] of viewerY) {
+            if (!filtered.some(p => p.id === pid)) {
+              viewerY.delete(pid);
+            }
+          }
 
           // Change detection: only send if state hash changed for this viewer
           const currentHash = hashState(filtered);
