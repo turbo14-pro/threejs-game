@@ -5,6 +5,7 @@
  * Input from main thread: { type: 'input', playerId, input, camRot, tick }
  * Output to main thread: { type: 'snapshot', players: [...], serverTick }
  */
+/* global setInterval */
 import { parentPort, workerData } from 'worker_threads';
 import RAPIER from '@dimforge/rapier3d-compat';
 import { debugLog } from '../src/utils/debugLog.js';
@@ -215,7 +216,6 @@ const SIMULATION_RATE = 1000 / 30; // 30Hz
 
 function simulate() {
   serverTick++;
-  const now = Date.now();
 
   // 1. Process Inputs & Apply Forces
   for (const p of players.values()) {
@@ -393,9 +393,9 @@ function simulate() {
   }
 
   // Send snapshot to main thread — throttled to 20Hz (50ms)
-  const now = Date.now();
-  if (now - lastSnapshotTime >= SNAPSHOT_INTERVAL) {
-    lastSnapshotTime = now;
+  const snapshotNow = Date.now();
+  if (snapshotNow - lastSnapshotTime >= SNAPSHOT_INTERVAL) {
+    lastSnapshotTime = snapshotNow;
     parentPort.postMessage({
       type: 'snapshot',
       players: playerList,

@@ -26,8 +26,8 @@ describe('Server-controlled bots broadcast', () => {
     expect(workerSource).toContain('players.values()');
   });
 
-  it('server/index.js forwards addBot to worker', () => {
-    const serverPath = path.resolve(__dirname, '../../server/index.js');
+  it('server/ws-server.js forwards addBot to worker', () => {
+    const serverPath = path.resolve(__dirname, '../../server/ws-server.js');
     const serverSource = fs.readFileSync(serverPath, 'utf-8');
     expect(serverSource).toContain("'addBot'");
   });

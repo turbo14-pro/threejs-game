@@ -36,7 +36,6 @@ const viewerState = new Map(); // ws -> { lastHash, lastPlayers }
 
 // Track player positions for bot AI (updated from snapshots)
 const playerPositions = new Map(); // playerId -> { x, y, z }
-const botIds = new Set(); // track bot IDs to exclude from nearest-player search
 
 function hashState(players) {
   // Simple deterministic hash of player state for change detection
