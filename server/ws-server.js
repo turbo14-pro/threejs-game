@@ -31,6 +31,23 @@ let nextClientId = 0;
 // Entity culling: interest radius (units) — only send players within this distance
 const INTEREST_RADIUS = 200;
 
+// Change detection: per-viewer last-sent state hash
+const viewerState = new Map(); // ws -> { lastHash, lastPlayers }
+
+function hashState(players) {
+  // Simple deterministic hash of player state for change detection
+  const sorted = [...players].sort((a, b) => a.id.localeCompare(b.id));
+  let str = '';
+  for (const p of sorted) {
+    str += `${p.id}:${p.pos?.[0]?.toFixed(2)},${p.pos?.[1]?.toFixed(2)},${p.pos?.[2]?.toFixed(2)}:${p.rot}:${p.skin}:${JSON.stringify(p.anim)}|`;
+  }
+  let hash = 0;
+  for (let i = 0; i < str.length; i++) {
+    hash = ((hash << 5) - hash + str.charCodeAt(i)) | 0;
+  }
+  return hash;
+}
+
 // --- WORKER MESSAGE HANDLER ---
 worker.on('message', (msg) => {
   switch (msg.type) {
@@ -48,6 +65,14 @@ worker.on('message', (msg) => {
             const dz = p.pos[2] - viewer.pos[2];
             return Math.sqrt(dx * dx + dz * dz) <= INTEREST_RADIUS;
           });
+
+          // Change detection: only send if state hash changed for this viewer
+          const currentHash = hashState(filtered);
+          const prev = viewerState.get(ws);
+          if (prev && prev.hash === currentHash) continue; // No change — skip
+
+          viewerState.set(ws, { hash: currentHash, players: filtered });
+
           if (filtered.length > 0) {
             const viewerPayload = { type: 'snapshot', p: filtered, o: obstacles, t: serverTick };
             ws.send(encode(viewerPayload), { binary: true });
