@@ -17,6 +17,10 @@ const gravity = { x: 0.0, y: -90.81, z: 0.0 };
 const world = new RAPIER.World(gravity);
 world.timestep = 1 / 30; // 30Hz simulation (matching client/server Rapier timestep)
 
+// Snapshot throttle: 20Hz = 50ms between snapshots (decision #2)
+const SNAPSHOT_INTERVAL = 50; // ms
+let lastSnapshotTime = 0;
+
 // Add floor body to prevent players falling through
 const floorBodyDesc = RAPIER.RigidBodyDesc.fixed()
   .setTranslation(0, -1, 0);
@@ -388,13 +392,17 @@ function simulate() {
     });
   }
 
-  // Send snapshot to main thread
-  parentPort.postMessage({
-    type: 'snapshot',
-    players: playerList,
-    serverTick,
-  });
-  debugLog(`[WORKER] Snapshot sent: ${playerList.length} players, tick=${serverTick}`);
+  // Send snapshot to main thread — throttled to 20Hz (50ms)
+  const now = Date.now();
+  if (now - lastSnapshotTime >= SNAPSHOT_INTERVAL) {
+    lastSnapshotTime = now;
+    parentPort.postMessage({
+      type: 'snapshot',
+      players: playerList,
+      serverTick,
+    });
+    debugLog(`[WORKER] Snapshot sent: ${playerList.length} players, tick=${serverTick}`);
+  }
 }
 
 // Start simulation loop
