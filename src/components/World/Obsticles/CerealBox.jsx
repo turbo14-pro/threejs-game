@@ -2,7 +2,6 @@ import React, { useMemo } from 'react';
 import * as THREE from 'three';
 import { RigidBody, CuboidCollider } from '@react-three/rapier';
 import { useGLTF, useTexture } from '@react-three/drei';
-import * as BufferGeometryUtils from 'three/examples/jsm/utils/BufferGeometryUtils';
 import { extractGeometry, extractMaterial } from './obstacleUtils';
 
 // Preload assets to avoid React Suspense triggering unmounts during physics simulation
@@ -27,14 +26,34 @@ export function useCerealBoxAssets() {
         if (child.isMesh) {
           child.updateMatrixWorld(true);
           const clonedGeo = child.geometry.clone();
-          clonedGeo.applyMatrix4(child.matrix);
+          // Ensure normals and UVs exist on the source geometry
+          if (!clonedGeo.attributes.normal) {
+            clonedGeo.computeVertexNormals();
+          }
+          if (!clonedGeo.attributes.uv) {
+            clonedGeo.computeUVs();
+          }
+          // Use matrixWorld to capture the full transform (including any
+          // Blender +Y-up axis conversion rotation stored on parent nodes).
+          clonedGeo.applyMatrix4(child.matrixWorld);
           meshes.push(clonedGeo);
         }
       });
 
       if (meshes.length > 0) {
-        geometry = BufferGeometryUtils.mergeGeometries(meshes, false);
+        // Use the first mesh's geometry directly to preserve the GLB's UVs.
+        // mergeGeometries can drop or remap UV attributes, causing the
+        // shader to sample incorrect texture coordinates.
+        geometry = meshes[0];
         geometry.center();
+        // Recompute normals after center to ensure proper lighting
+        geometry.computeVertexNormals();
+        // Ensure UV attribute is bound to the standard 'uv' name
+        // so the shader can sample it via vMapUv / vUv
+        if (!geometry.attributes.uv) {
+          geometry.computeUVs();
+        }
+        geometry.attributes.uv.name = 'uv';
       }
     }
 
@@ -43,6 +62,15 @@ export function useCerealBoxAssets() {
       geometry = extractGeometry(model);
       if (geometry) {
         geometry.center();
+        if (!geometry.attributes.normal) {
+          geometry.computeVertexNormals();
+        }
+        if (!geometry.attributes.uv) {
+          geometry.computeUVs();
+        }
+        if (geometry.attributes.uv) {
+          geometry.attributes.uv.name = 'uv';
+        }
       }
     }
 

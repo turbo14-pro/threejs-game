@@ -39,12 +39,72 @@ export function computeVelocity(input, camRot, speed) {
 /**
  * Ground check matching client capsule logic.
  * @param {Object} pos - { x, y, z } world position
- * @returns {boolean} true if grounded
+ * @param {Array} obstacles - Array of { x, y, z, w, h, d } obstacle boxes
+ * @returns {boolean} true if grounded on floor, platform, or obstacle surface
  */
-export function isGrounded(pos) {
+export function isGrounded(pos, obstacles = []) {
   // Ground at y=0 (table) or y=100 (platforms)
   // Capsule bottom at y - 1.5, so grounded when y <= 5.5
-  return pos.y <= 5.5 || (pos.y >= 99 && pos.y <= 105.5);
+  if (pos.y <= 5.5 || (pos.y >= 99 && pos.y <= 105.5)) return true;
+
+  // Check obstacle surfaces (cereal boxes)
+  for (const obs of obstacles) {
+    const halfW = (obs.w || 30) / 2;
+    const halfH = (obs.h || 36) / 2;
+    const halfD = (obs.d || 12) / 2;
+    const topY = obs.y + halfH;
+    // Player capsule bottom at y - 1.5; grounded when just above obstacle top
+    if (
+      pos.x >= obs.x - halfW - 1.5 &&
+      pos.x <= obs.x + halfW + 1.5 &&
+      pos.z >= obs.z - halfD - 1.5 &&
+      pos.z <= obs.z + halfD + 1.5 &&
+      pos.y <= topY + 1.5 &&
+      pos.y >= topY - 0.5
+    ) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+/**
+ * Get the Y of the surface the player is standing on.
+ * @param {Object} pos - { x, y, z } world position
+ * @param {Array} obstacles - Array of { x, y, z, w, h, d } obstacle boxes
+ * @returns {number} groundY (0 for floor, 100 for platforms, obstacle top Y, or -1 if airborne)
+ */
+export function getGroundY(pos, obstacles = []) {
+  if (pos.y <= 5.5) return 0; // Floor
+  if (pos.y >= 99 && pos.y <= 105.5) return 100; // Platform
+
+  for (const obs of obstacles) {
+    const halfW = (obs.w || 30) / 2;
+    const halfH = (obs.h || 36) / 2;
+    const halfD = (obs.d || 12) / 2;
+    const topY = obs.y + halfH;
+    if (
+      pos.x >= obs.x - halfW - 1.5 &&
+      pos.x <= obs.x + halfW + 1.5 &&
+      pos.z >= obs.z - halfD - 1.5 &&
+      pos.z <= obs.z + halfD + 1.5 &&
+      pos.y <= topY + 1.5 &&
+      pos.y >= topY - 0.5
+    ) {
+      return topY;
+    }
+  }
+
+  return -1; // Airborne
+}
+
+/**
+ * Get air jump velocity from PLAYER_BASELINE.
+ * @returns {number} airJumpVelocity
+ */
+export function getAirJumpVelocity() {
+  return PLAYER_BASELINE.movement.airJumpVelocity;
 }
 
 /**

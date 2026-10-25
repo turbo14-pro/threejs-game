@@ -877,20 +877,25 @@ export default function PlayerController({ sendUpdate }) {
         // the `slideSound` debug flag, so the fade-out must be gated by the
         // same flag — otherwise a disabled slide sound would still leave a
         // half-alive node in the audio lifecycle.
-        // if (audioFlag('slideSound') && slideSoundRef.current) {
-//   try {
-//     // THREE.Audio uses .volume property, not .getVolume() method
-    // const cur = Number.isFinite(slideSoundRef.current.volume) ? slideSoundRef.current.volume : 1.0;
-    // const next = Math.max(0, cur - 2 * delta);
-    // slideSoundRef.current.setVolume(next);
-    // if (next <= 0.01) {
-      // P0-#2: defer the detach — an inline parent.remove() here splices
-      // the children array while three is traversing it.
-      // stopLoopSound(slideSoundRef);
-    // }
-    // } catch {
-    //   stopLoopSound(slideSoundRef);
-    // }
+        if (audioFlag('slideSound') && slideSoundRef.current) {
+          try {
+            // THREE.Audio uses .volume property, not .getVolume() method
+            const cur = Number.isFinite(slideSoundRef.current.volume) ? slideSoundRef.current.volume : 1.0;
+            const next = Math.max(0, cur - 2 * delta);
+            slideSoundRef.current.volume = next;
+            if (next <= 0.01) {
+              // P0-#2: defer the detach — an inline parent.remove() here splices
+              // the children array while three is traversing it.
+              stopLoopSound(slideSoundRef);
+              slideSoundRef.current = null;
+              debugLog('[Sound] Slide sound faded out and stopped');
+            }
+          } catch {
+            stopLoopSound(slideSoundRef);
+            slideSoundRef.current = null;
+            debugLog('[Sound] Slide sound stopped due to error');
+          }
+        }
       }
     }
 

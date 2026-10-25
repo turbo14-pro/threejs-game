@@ -1,0 +1,29 @@
+
+> three.js@0.0.0 build
+> vite build
+
+[36mvite v8.0.3 [32mbuilding client environment for production...[36m[39m
+[2Ktransforming...✓ 1036 modules transformed.
+rendering chunks...
+computing gzip size...
+dist/registerSW.js                  0.13 kB
+dist/manifest.webmanifest           0.54 kB
+dist/index.html                     3.80 kB │ gzip:     1.49 kB
+dist/assets/index-BYRZwBIQ.css     14.17 kB │ gzip:     3.53 kB
+dist/assets/index-ZWTvDW0w.js   4,132.09 kB │ gzip: 1,458.76 kB │ map: 9,805.40 kB
+
+[32m✓ built in 2.50s[39m
+[33m[plugin builtin:vite-reporter] 
+(!) Some chunks are larger than 2500 kB after minification. Consider:
+- Using dynamic import() to code-split the application
+- Use build.rolldownOptions.output.codeSplitting to improve chunking: https://rolldown.rs/reference/OutputOptions.codeSplitting
+- Adjust chunk size limit for this warning via build.chunkSizeWarningLimit.[39m
+
+PWA v1.3.0
+mode      generateSW
+precache  45 entries (5106.23 KiB)
+files generated
+  dist/sw.js.map
+  dist/sw.js
+  dist/workbox-dcde9eb3.js.map
+  dist/workbox-dcde9eb3.js
