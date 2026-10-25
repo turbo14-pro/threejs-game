@@ -43,6 +43,7 @@ export default function RemotePlayer({ data }) {
         Number.isFinite(data.vel?.[2]) ? data.vel[2] : 0
       ),
       rot,
+      groundY: Number.isFinite(data.groundY) ? data.groundY : -1,
       t: Date.now(),
       serverTick: data.tick || 0
     });
@@ -108,6 +109,15 @@ export default function RemotePlayer({ data }) {
     // This resolves desync instantly without jitter.
     // Never pass live THREE objects straight in: snapshot to plain numbers so a
     // corrupt buffer entry can't trap WASM with NaN ("unreachable").
+    
+    // Ground-aware Y correction: when the remote player is grounded, snap Y to
+    // server groundY + capsule radius (1.5) to prevent Y drift during jumps/falls
+    // and obstacle standing. Only apply when grounded (anim.jp === 'none').
+    const latest = buffer.current[buffer.current.length - 1];
+    if (latest && latest.groundY >= 0 && data.anim?.jp === 'none') {
+      targetPos.y = latest.groundY + 1.5; // capsule center sits 1.5m above ground
+    }
+
     try {
       if (![targetPos.x, targetPos.y, targetPos.z].every(Number.isFinite)) return;
       if (![targetQuat.x, targetQuat.y, targetQuat.z, targetQuat.w].every(Number.isFinite)) return;
