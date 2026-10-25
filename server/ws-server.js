@@ -28,6 +28,9 @@ const wss = new WebSocketServer({ port: 9208 });
 const clients = new Map(); // ws -> { id, playerId, lastSeen, sequenceTracker }
 let nextClientId = 0;
 
+// Entity culling: interest radius (units) — only send players within this distance
+const INTEREST_RADIUS = 200;
+
 // --- WORKER MESSAGE HANDLER ---
 worker.on('message', (msg) => {
   switch (msg.type) {
@@ -36,8 +39,15 @@ worker.on('message', (msg) => {
 
       for (const [ws, client] of clients) {
         if (ws.readyState === WebSocket.OPEN) {
-          // Filter out the viewer from their own player list
-          const filtered = playerList.filter(p => p.id !== client.playerId);
+          const viewer = playerList.find(p => p.id === client.playerId);
+          // Filter out the viewer and cull players outside interest radius
+          const filtered = playerList.filter(p => {
+            if (p.id === client.playerId) return false;
+            if (!viewer) return true; // No viewer position — send all
+            const dx = p.pos[0] - viewer.pos[0];
+            const dz = p.pos[2] - viewer.pos[2];
+            return Math.sqrt(dx * dx + dz * dz) <= INTEREST_RADIUS;
+          });
           if (filtered.length > 0) {
             const viewerPayload = { type: 'snapshot', p: filtered, o: obstacles, t: serverTick };
             ws.send(encode(viewerPayload), { binary: true });
