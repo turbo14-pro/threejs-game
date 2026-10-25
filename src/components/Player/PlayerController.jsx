@@ -730,7 +730,7 @@ export default function PlayerController({ sendUpdate }) {
           rotationY.current,
         );
         // Lock player visual rotation to face dash direction (does NOT touch camera)
-        targetRotationY.current = Math.atan2(dashDir.current.x, dashDir.current.z);
+        targetRotationY.current = Math.atan2(dashDir.current.x, -dashDir.current.z);
         if (playerGroupRef.current) {
           const targetQuat = new THREE.Quaternion().setFromAxisAngle(
             new THREE.Vector3(0, 1, 0), targetRotationY.current
@@ -1145,7 +1145,7 @@ export default function PlayerController({ sendUpdate }) {
           targetRotationY.current = rotationY.current + Math.PI;
         } else {
           currentMoveDir = 'for';
-          targetRotationY.current = Math.atan2(direction.x, direction.z);
+          targetRotationY.current = Math.atan2(direction.x, -direction.z);
         }
       }
 

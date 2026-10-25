@@ -39,7 +39,7 @@ const playerPositions = new Map(); // playerId -> { x, y, z }
 
 function hashState(players) {
   // Simple deterministic hash of player state for change detection
-  const sorted = [...players].sort((a, b) => a.id.localeCompare(b.id));
+  const sorted = [...players].sort((a, b) => (a.id || '').localeCompare(b.id || ''));
   let str = '';
   for (const p of sorted) {
     str += `${p.id}:${p.pos?.[0]?.toFixed(2)},${p.pos?.[1]?.toFixed(2)},${p.pos?.[2]?.toFixed(2)}:${p.rot}:${p.skin}:${JSON.stringify(p.anim)}|`;
@@ -62,7 +62,7 @@ worker.on('message', (msg) => {
         if (p.pos && p.pos.length === 3) {
           playerPositions.set(p.id, { x: p.pos[0], y: p.pos[1], z: p.pos[2] });
           // Update bot positions from snapshot
-          if (p.id.startsWith('bot-')) {
+          if (p.id && p.id.startsWith('bot-')) {
             const bot = bots.get(p.id);
             if (bot) bot.pos = { x: p.pos[0], y: p.pos[1], z: p.pos[2] };
           }
@@ -310,7 +310,7 @@ setInterval(() => {
     let nearestDist = Infinity;
 
     for (const [pid, pos] of playerPositions) {
-      if (pid.startsWith('bot-')) continue; // skip bots
+      if (!pid || pid.startsWith('bot-')) continue; // skip bots
       if (!bot.pos) continue;
       const dx = pos.x - bot.pos.x;
       const dz = pos.z - bot.pos.z;
