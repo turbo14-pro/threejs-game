@@ -34,6 +34,10 @@ const INTEREST_RADIUS = 200;
 // Change detection: per-viewer last-sent state hash
 const viewerState = new Map(); // ws -> { lastHash, lastPlayers }
 
+// Track player positions for bot AI (updated from snapshots)
+const playerPositions = new Map(); // playerId -> { x, y, z }
+const botIds = new Set(); // track bot IDs to exclude from nearest-player search
+
 function hashState(players) {
   // Simple deterministic hash of player state for change detection
   const sorted = [...players].sort((a, b) => a.id.localeCompare(b.id));
@@ -53,6 +57,18 @@ worker.on('message', (msg) => {
   switch (msg.type) {
     case 'snapshot': {
       const { players: playerList, obstacles, serverTick } = msg;
+
+      // Track all positions for bot AI
+      for (const p of playerList) {
+        if (p.pos && p.pos.length === 3) {
+          playerPositions.set(p.id, { x: p.pos[0], y: p.pos[1], z: p.pos[2] });
+          // Update bot positions from snapshot
+          if (p.id.startsWith('bot-')) {
+            const bot = bots.get(p.id);
+            if (bot) bot.pos = { x: p.pos[0], y: p.pos[1], z: p.pos[2] };
+          }
+        }
+      }
 
       for (const [ws, client] of clients) {
         if (ws.readyState === WebSocket.OPEN) {
@@ -288,15 +304,51 @@ setInterval(() => {
   botTick++;
   if (botTick % BOT_UPDATE_INTERVAL !== 0) return;
 
-  // Simple heuristic: bots move forward
-  for (const [botId] of bots) {
+  // Simple heuristic: bots move toward nearest player
+  for (const [botId, bot] of bots) {
+    // Find nearest human player position (exclude bots)
+    let nearestPlayer = null;
+    let nearestDist = Infinity;
+
+    for (const [pid, pos] of playerPositions) {
+      if (pid.startsWith('bot-')) continue; // skip bots
+      if (!bot.pos) continue;
+      const dx = pos.x - bot.pos.x;
+      const dz = pos.z - bot.pos.z;
+      const dist = Math.sqrt(dx * dx + dz * dz);
+      if (dist < nearestDist) {
+        nearestDist = dist;
+        nearestPlayer = pos;
+      }
+    }
+
+    let camRot = bot.camRot || 0;
+    let input = { w: true, a: false, s: false, d: false, jump: false, walk: false, dash: false, slide: false };
+
+    if (nearestPlayer && bot.pos) {
+      const dx = nearestPlayer.x - bot.pos.x;
+      const dz = nearestPlayer.z - bot.pos.z;
+      const targetRot = Math.atan2(dx, dz);
+      // Smoothly rotate toward target
+      let diff = targetRot - camRot;
+      while (diff > Math.PI) diff -= Math.PI * 2;
+      while (diff < -Math.PI) diff += Math.PI * 2;
+      camRot += diff * 0.1; // 10% turn per tick
+      // Move forward toward target
+      input = { w: true, a: false, s: false, d: false, jump: false, walk: false, dash: false, slide: false };
+      // Jump if close to target
+      if (nearestDist < 15) input.jump = true;
+    }
+
+    bot.camRot = camRot;
+
     worker.postMessage({
       type: 'input',
       playerId: botId,
-      input: { w: true, a: false, s: false, d: false, jump: false, walk: false, dash: false, slide: false },
-      camRot: 0,
+      input,
+      camRot,
       tick: botTick,
-      skin: 'avo',
+      skin: bot.skin || 'avo',
     });
   }
 }, 100);
