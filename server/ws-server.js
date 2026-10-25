@@ -39,10 +39,11 @@ const playerPositions = new Map(); // playerId -> { x, y, z }
 
 function hashState(players) {
   // Simple deterministic hash of player state for change detection
+  // Includes vel and groundY so small Y changes are detected earlier
   const sorted = [...players].sort((a, b) => (a.id || '').localeCompare(b.id || ''));
   let str = '';
   for (const p of sorted) {
-    str += `${p.id}:${p.pos?.[0]?.toFixed(2)},${p.pos?.[1]?.toFixed(2)},${p.pos?.[2]?.toFixed(2)}:${p.rot}:${p.skin}:${JSON.stringify(p.anim)}|`;
+    str += `${p.id}:${p.pos?.[0]?.toFixed(3)},${p.pos?.[1]?.toFixed(3)},${p.pos?.[2]?.toFixed(3)}:${p.vel?.[0]?.toFixed(3)},${p.vel?.[1]?.toFixed(3)},${p.vel?.[2]?.toFixed(3)}:${p.rot}:${p.groundY}:${p.skin}:${JSON.stringify(p.anim)}|`;
   }
   let hash = 0;
   for (let i = 0; i < str.length; i++) {
