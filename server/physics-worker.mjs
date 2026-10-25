@@ -22,6 +22,11 @@ world.timestep = 1 / 30; // 30Hz simulation (matching client/server Rapier times
 const SNAPSHOT_INTERVAL = 50; // ms
 let lastSnapshotTime = 0;
 
+// Y-only update throttle: 30Hz = every tick (33.33ms) for Y position
+// Y changes faster during jumps/falls; decoupling reduces Y lag
+const Y_UPDATE_INTERVAL = 1000 / 30; // ms
+let lastYUpdateTime = 0;
+
 // Add floor body to prevent players falling through
 const floorBodyDesc = RAPIER.RigidBodyDesc.fixed()
   .setTranslation(0, -1, 0);
@@ -403,6 +408,22 @@ function simulate() {
       serverTick,
     });
     debugLog(`[WORKER] Snapshot sent: ${playerList.length} players, ${obstacles.length} obstacles, tick=${serverTick}`);
+  }
+
+  // Send Y-only position updates at 30Hz for reduced Y lag during jumps/falls
+  const yNow = Date.now();
+  if (yNow - lastYUpdateTime >= Y_UPDATE_INTERVAL) {
+    lastYUpdateTime = yNow;
+    const yUpdates = playerList.map(p => ({
+      id: p.id,
+      y: p.pos[1],
+      groundY: p.groundY,
+    }));
+    parentPort.postMessage({
+      type: 'yUpdate',
+      players: yUpdates,
+      serverTick,
+    });
   }
 }
 
