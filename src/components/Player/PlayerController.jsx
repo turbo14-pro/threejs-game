@@ -1187,7 +1187,7 @@ export default function PlayerController({ sendUpdate }) {
         type: 'input',
         tick: netTick.current + 1,
         input: currentInput,
-        camRot: rotationY.current
+        camRot: targetRotationY.current
       });
 
       // Track sent input by sequenceId for reconciliation (Phase 01).
@@ -1198,7 +1198,7 @@ export default function PlayerController({ sendUpdate }) {
           tick: netTick.current + 1,
           pos: { x: rigidBodyRef.current.translation().x, y: rigidBodyRef.current.translation().y, z: rigidBodyRef.current.translation().z },
           input: currentInput,
-          camRot: rotationY.current,
+          camRot: targetRotationY.current,
         });
       }
 
@@ -1225,7 +1225,7 @@ export default function PlayerController({ sendUpdate }) {
         tick: netTick.current + 1,
         pos: { x: pos.x, y: pos.y, z: pos.z },
         input: currentInput,
-        camRot: rotationY.current
+        camRot: targetRotationY.current
       });
       
       // Keep history buffer manageable (2 seconds @ 60fps = 120 entries)
@@ -1409,7 +1409,7 @@ export default function PlayerController({ sendUpdate }) {
       const pos = rigidBodyRef.current.translation();
       sendUpdate({
         pos: [pos.x, pos.y, pos.z],
-        rot: rotationY.current,
+        rot: targetRotationY.current,
         skin: selectedSkin
       });
     }
