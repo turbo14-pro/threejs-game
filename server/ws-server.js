@@ -32,14 +32,14 @@ let nextClientId = 0;
 worker.on('message', (msg) => {
   switch (msg.type) {
     case 'snapshot': {
-      const { players: playerList, serverTick } = msg;
+      const { players: playerList, obstacles, serverTick } = msg;
 
       for (const [ws, client] of clients) {
         if (ws.readyState === WebSocket.OPEN) {
           // Filter out the viewer from their own player list
           const filtered = playerList.filter(p => p.id !== client.playerId);
           if (filtered.length > 0) {
-            const viewerPayload = { type: 'snapshot', p: filtered, t: serverTick };
+            const viewerPayload = { type: 'snapshot', p: filtered, o: obstacles, t: serverTick };
             ws.send(encode(viewerPayload), { binary: true });
           }
         }

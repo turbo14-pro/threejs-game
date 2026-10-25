@@ -399,9 +399,10 @@ function simulate() {
     parentPort.postMessage({
       type: 'snapshot',
       players: playerList,
+      obstacles,
       serverTick,
     });
-    debugLog(`[WORKER] Snapshot sent: ${playerList.length} players, tick=${serverTick}`);
+    debugLog(`[WORKER] Snapshot sent: ${playerList.length} players, ${obstacles.length} obstacles, tick=${serverTick}`);
   }
 }
 
