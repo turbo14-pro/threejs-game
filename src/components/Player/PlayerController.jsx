@@ -1212,7 +1212,10 @@ export default function PlayerController({ sendUpdate }) {
           pos: [pos.x, pos.y, pos.z],
           rot: rotationY.current,
           facingRot: targetRotationY.current,
-            jp: currentPhase, 
+          anim: {
+            mv: moving,
+            dir: currentMoveDir,
+            jp: currentPhase,
             spr: !walkingInput
           }
         });
@@ -1225,7 +1228,8 @@ export default function PlayerController({ sendUpdate }) {
         tick: netTick.current + 1,
         pos: { x: pos.x, y: pos.y, z: pos.z },
         input: currentInput,
-        camRot: targetRotationY.current
+        camRot: rotationY.current,
+        facingRot: targetRotationY.current,
       });
       
       // Keep history buffer manageable (2 seconds @ 60fps = 120 entries)
