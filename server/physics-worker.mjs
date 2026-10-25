@@ -210,6 +210,7 @@ parentPort.on('message', (msg) => {
       p.tick = tick;
       p.skin = msg.skin || p.skin;
       p.camRot = camRot || 0;
+      p.facingRot = msg.facingRot || 0;
       break;
     }
   }
@@ -381,7 +382,7 @@ function simulate() {
   for (const p of players.values()) {
     const pos = p.body.translation();
     const vel = p.body.linvel();
-    const rot = p.camRot || 0; // Use client camera rotation for remote facing direction
+    const rot = p.facingRot || p.camRot || 0; // Use client character facing for remote display
     const groundY = getGroundY(pos, obstacles);
 
     playerList.push({

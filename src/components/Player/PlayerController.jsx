@@ -1187,7 +1187,8 @@ export default function PlayerController({ sendUpdate }) {
         type: 'input',
         tick: netTick.current + 1,
         input: currentInput,
-        camRot: targetRotationY.current
+        camRot: rotationY.current,
+        facingRot: targetRotationY.current
       });
 
       // Track sent input by sequenceId for reconciliation (Phase 01).
@@ -1198,7 +1199,8 @@ export default function PlayerController({ sendUpdate }) {
           tick: netTick.current + 1,
           pos: { x: rigidBodyRef.current.translation().x, y: rigidBodyRef.current.translation().y, z: rigidBodyRef.current.translation().z },
           input: currentInput,
-          camRot: targetRotationY.current,
+          camRot: rotationY.current,
+          facingRot: targetRotationY.current,
         });
       }
 
@@ -1208,10 +1210,8 @@ export default function PlayerController({ sendUpdate }) {
       if (netTick.current % 2 === 0) {
         sendUpdate({
           pos: [pos.x, pos.y, pos.z],
-          rot: targetRotationY.current,
-          anim: {
-            mv: moving,
-            dir: currentMoveDir,
+          rot: rotationY.current,
+          facingRot: targetRotationY.current,
             jp: currentPhase, 
             spr: !walkingInput
           }

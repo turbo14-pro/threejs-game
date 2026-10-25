@@ -43,6 +43,7 @@ export default function RemotePlayer({ data }) {
         Number.isFinite(data.vel?.[2]) ? data.vel[2] : 0
       ),
       rot,
+      facingRot: Number.isFinite(data.facingRot) ? data.facingRot : rot,
       groundY: Number.isFinite(data.groundY) ? data.groundY : -1,
       t: Date.now(),
       serverTick: data.tick || 0
@@ -81,8 +82,8 @@ export default function RemotePlayer({ data }) {
         const fraction = THREE.MathUtils.clamp(Number.isFinite(rawFraction) ? rawFraction : 0, 0, 1);
         targetPos.lerpVectors(p0.pos, p1.pos, fraction);
         
-        const q0 = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), p0.rot);
-        const q1 = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), p1.rot);
+        const q0 = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), p0.facingRot);
+        const q1 = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), p1.facingRot);
         targetQuat.slerpQuaternions(q0, q1, fraction);
 
         // Store last velocity for extrapolation
