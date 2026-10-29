@@ -92,7 +92,7 @@ export default function RemotePlayer({ data }) {
     } else {
       targetPos.copy(buffer.current[0].pos);
       lastVel.copy(buffer.current[0].vel);
-      const soloRot = Number(buffer.current[0].rot);
+      const soloRot = Number(buffer.current[0].facingRot ?? buffer.current[0].rot);
       targetQuat.setFromAxisAngle(new THREE.Vector3(0, 1, 0), Number.isFinite(soloRot) ? soloRot : 0);
     }
 

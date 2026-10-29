@@ -128,26 +128,6 @@ worker.on('message', (msg) => {
       }
       break;
     }
-    case 'yUpdate': {
-      // Forward Y-only position updates at 30Hz for reduced Y lag
-      const { players: yPlayers, serverTick } = msg;
-      for (const [ws, client] of clients) {
-        if (ws.readyState === WebSocket.OPEN) {
-          // Filter out the viewer and cull players outside interest radius
-          const viewer = yPlayers.find(p => p.id === client.playerId);
-          const filtered = yPlayers.filter(p => {
-            if (p.id === client.playerId) return false;
-            if (!viewer) return true;
-            return true; // Y updates are small — send to all within interest radius
-          });
-          if (filtered.length > 0) {
-            const viewerPayload = { type: 'yUpdate', p: filtered, t: serverTick };
-            ws.send(encode(viewerPayload), { binary: true });
-          }
-        }
-      }
-      break;
-    }
     default:
       debugLog(`[WS SERVER] Unknown worker message type: ${msg.type}`);
   }
@@ -206,6 +186,7 @@ wss.on('connection', (ws) => {
             playerId,
             input: msg.input,
             camRot: msg.camRot,
+            facingRot: msg.facingRot,
             tick: msg.tick,
             sequenceId,
             skin: msg.skin || 'avo',

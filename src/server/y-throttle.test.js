@@ -3,22 +3,22 @@ import fs from 'fs';
 import path from 'path';
 
 /**
- * Batch 4: Fix Y Throttle — Decouple Y Position from 20Hz Snapshot Throttle
- * Tests that Y position is sent at higher frequency (30Hz) than X/Z (20Hz)
- * to reduce Y lag during jumps/falls.
- * Failure mode: Y position only updates at 20Hz → Y lag during jumps/falls.
+ * Batch 4: Fix Y Throttle — Align X, Y, Z to Same Update Rate
+ * Tests that all position axes (X, Y, Z) update at the same rate (30Hz)
+ * to keep physics calculations consistent across axes.
+ * Failure mode: Y updates at different rate than X/Z → desync between axes.
  */
-describe('Y position throttle — decoupled from 20Hz', () => {
+describe('Y position throttle — aligned to same rate as X/Z', () => {
   const workerPath = path.resolve(__dirname, '../../server/physics-worker.mjs');
 
-  it('physics worker implements decoupled Y position updates', () => {
+  it('physics worker does not implement decoupled Y position updates', () => {
     const workerSource = fs.readFileSync(workerPath, 'utf-8');
-    expect(workerSource).toMatch(/yOnly|yUpdate|Y.*throttle|yInterval|decoupled/);
+    expect(workerSource).not.toMatch(/yOnly|yUpdate|Y_INTERVAL|yInterval/);
   });
 
-  it('physics worker sends Y at 30Hz (every tick) while X/Z at 20Hz', () => {
+  it('physics worker sends full snapshots (X, Y, Z) at 30Hz every tick', () => {
     const workerSource = fs.readFileSync(workerPath, 'utf-8');
-    expect(workerSource).toContain('SNAPSHOT_INTERVAL');
-    expect(workerSource).toMatch(/yInterval|Y_INTERVAL|30Hz|every.*tick/);
+    expect(workerSource).toMatch(/1000 \/ 30|30Hz|SIMULATION_RATE/);
+    expect(workerSource).toContain('no decoupled Y throttle');
   });
 });

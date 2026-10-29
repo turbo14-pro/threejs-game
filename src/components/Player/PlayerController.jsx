@@ -149,23 +149,24 @@ export default function PlayerController({ sendUpdate }) {
           // Increment desync counter for LatencyGraph
           useGameStore.getState().incrementDesyncCount();
           
-          // Authoritative Snap
+          // Authoritative Snap — fully submit to server state
+          // Set both position AND velocity so the next physics calculation
+          // starts from the server's authoritative state, not a client-predicted one.
           rigidBodyRef.current.setTranslation({ 
             x: sPos[0], 
             y: sPos[1], 
             z: sPos[2] 
           }, true);
           
-          // Match velocity to prevent post-snap drift
           if (velValid) {
             rigidBodyRef.current.setLinvel({ x: sVel[0], y: sVel[1], z: sVel[2] }, true);
           }
 
           // RE-APPLY UNACKNOWLEDGED INPUTS (client-side prediction)
-          // After snapping to server state, re-simulate all inputs that were
-          // generated after the acknowledged tick but not yet confirmed by server.
-          // Use sentInputs (sequenceId-keyed) for reliable matching with
-          // server's lastProcessedSeq acknowledgment.
+          // After snapping to server state, re-simulate only inputs the server
+          // hasn't processed yet. These are applied on top of the server's
+          // authoritative state so the client catches up without overriding
+          // the server's position/velocity calculation.
           const unacknowledged = Array.from(sentInputs.current.entries())
             .filter(([, entry]) => entry.tick > serverState.tick)
             .sort((a, b) => a[1].tick - b[1].tick)
@@ -187,21 +188,15 @@ export default function PlayerController({ sendUpdate }) {
               const vx = (nx * Math.cos(rot) + nz * Math.sin(rot)) * speed;
               const vz = (-nx * Math.sin(rot) + nz * Math.cos(rot)) * speed;
               
+              // Apply input velocity on top of server velocity, preserving Y
               const currentVel = rigidBodyRef.current.linvel();
               rigidBodyRef.current.setLinvel({ x: vx, y: currentVel.y, z: vz }, true);
             }
           });
 
-          // Apply server-equivalent damping after re-applying inputs so client
-          // velocity matches what server would have after world.step().
-          // Rapier damping: v *= (1 - damping * dt) = v * 0.98335 per 33ms tick.
-          const dampingFactor = 1 - 0.5 * 0.0333;
-          const postVel = rigidBodyRef.current.linvel();
-          rigidBodyRef.current.setLinvel({
-            x: postVel.x * dampingFactor,
-            y: postVel.y,
-            z: postVel.z * dampingFactor
-          }, true);
+          // Remove the extra damping step — the server's Rapier simulation
+          // already applies damping. Applying it again on the client causes
+          // desync between client and server velocity calculations.
         }
         
         // Also reconcile velocity drift (prevents gradual yank)

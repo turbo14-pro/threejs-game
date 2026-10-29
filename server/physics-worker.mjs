@@ -5,7 +5,6 @@
  * Input from main thread: { type: 'input', playerId, input, camRot, tick }
  * Output to main thread: { type: 'snapshot', players: [...], serverTick }
  */
-/* global setInterval */
 import { parentPort, workerData } from 'worker_threads';
 import RAPIER from '@dimforge/rapier3d-compat';
 import { debugLog } from '../src/utils/debugLog.js';
@@ -17,15 +16,6 @@ await RAPIER.init();
 const gravity = { x: 0.0, y: -90.81, z: 0.0 };
 const world = new RAPIER.World(gravity);
 world.timestep = 1 / 30; // 30Hz simulation (matching client/server Rapier timestep)
-
-// Snapshot throttle: 20Hz = 50ms between snapshots (decision #2)
-const SNAPSHOT_INTERVAL = 50; // ms
-let lastSnapshotTime = 0;
-
-// Y-only update throttle: 30Hz = every tick (33.33ms) for Y position
-// Y changes faster during jumps/falls; decoupling reduces Y lag
-const Y_UPDATE_INTERVAL = 1000 / 30; // ms
-let lastYUpdateTime = 0;
 
 // Add floor body to prevent players falling through
 const floorBodyDesc = RAPIER.RigidBodyDesc.fixed()
@@ -199,14 +189,14 @@ parentPort.on('message', (msg) => {
 
       // Buffer input by client tick
       if (!p.inputBuffer) p.inputBuffer = new Map();
-      p.inputBuffer.set(tick, { input, camRot, skin: msg.skin || p.skin });
+      p.inputBuffer.set(tick, { input, camRot, facingRot: msg.facingRot, skin: msg.skin || p.skin });
       if (p.inputBuffer.size > 120) {
         const oldestTick = Math.min(...p.inputBuffer.keys());
         p.inputBuffer.delete(oldestTick);
       }
 
       // Update current input (fallback)
-      p.input = { input, camRot, skin: msg.skin || p.skin };
+      p.input = { input, camRot, facingRot: msg.facingRot, skin: msg.skin || p.skin };
       p.tick = tick;
       p.skin = msg.skin || p.skin;
       p.camRot = camRot || 0;
@@ -222,6 +212,7 @@ const SIMULATION_RATE = 1000 / 30; // 30Hz
 
 function simulate() {
   serverTick++;
+  const now = Date.now();
 
   // 1. Process Inputs & Apply Forces
   for (const p of players.values()) {
@@ -339,8 +330,9 @@ function simulate() {
       if (dashPressed && playerIsGrounded && (!p.lastDashTick || serverTick - p.lastDashTick > 20)) {
         const dashSpeed = getDashSpeed();
         const rot = camRot;
-        const dashVx = Math.sin(rot) * dashSpeed;
-        const dashVz = Math.cos(rot) * dashSpeed;
+        // Match computeVelocity sign convention: vx = -sin(rot), vz = -cos(rot) for forward
+        const dashVx = -Math.sin(rot) * dashSpeed;
+        const dashVz = -Math.cos(rot) * dashSpeed;
         const currentVel2 = p.body.linvel();
         p.body.setLinvel({ x: dashVx, y: currentVel2.y, z: dashVz }, true);
         p.lastDashTick = serverTick;
@@ -358,8 +350,9 @@ function simulate() {
       if (slide && playerIsGrounded) {
         const slideSpeed = getSlideSpeed();
         const rot = camRot;
-        const slideVx = Math.sin(rot) * slideSpeed;
-        const slideVz = Math.cos(rot) * slideSpeed;
+        // Match computeVelocity sign convention: vx = -sin(rot), vz = -cos(rot) for forward
+        const slideVx = -Math.sin(rot) * slideSpeed;
+        const slideVz = -Math.cos(rot) * slideSpeed;
         vx = slideVx;
         vz = slideVz;
         p.anim = { ...p.anim, sl: true };
@@ -398,34 +391,14 @@ function simulate() {
     });
   }
 
-  // Send snapshot to main thread — throttled to 20Hz (50ms)
-  const snapshotNow = Date.now();
-  if (snapshotNow - lastSnapshotTime >= SNAPSHOT_INTERVAL) {
-    lastSnapshotTime = snapshotNow;
-    parentPort.postMessage({
-      type: 'snapshot',
-      players: playerList,
-      obstacles,
-      serverTick,
-    });
-    debugLog(`[WORKER] Snapshot sent: ${playerList.length} players, ${obstacles.length} obstacles, tick=${serverTick}`);
-  }
-
-  // Send Y-only position updates at 30Hz for reduced Y lag during jumps/falls
-  const yNow = Date.now();
-  if (yNow - lastYUpdateTime >= Y_UPDATE_INTERVAL) {
-    lastYUpdateTime = yNow;
-    const yUpdates = playerList.map(p => ({
-      id: p.id,
-      y: p.pos[1],
-      groundY: p.groundY,
-    }));
-    parentPort.postMessage({
-      type: 'yUpdate',
-      players: yUpdates,
-      serverTick,
-    });
-  }
+// Send snapshot to main thread at 30Hz (every tick)
+  // X, Y, Z all update together — no decoupled Y throttle
+  parentPort.postMessage({
+    type: 'snapshot',
+    players: playerList,
+    serverTick,
+  });
+  debugLog(`[WORKER] Snapshot sent: ${playerList.length} players, tick=${serverTick}`);
 }
 
 // Start simulation loop

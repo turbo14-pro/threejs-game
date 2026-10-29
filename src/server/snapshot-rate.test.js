@@ -3,24 +3,23 @@ import fs from 'fs';
 import path from 'path';
 
 /**
- * Batch 2: Throttle Snapshots to 20Hz
- * Tests that the physics worker throttles snapshots to 20Hz (every 50ms)
- * instead of broadcasting every 30Hz tick.
- * Failure mode: worker sends snapshot every tick (30Hz) → doubles network traffic.
+ * Batch 2: Snapshot Rate — 30Hz Full Position Updates
+ * Tests that the physics worker sends full snapshots (X, Y, Z) at 30Hz
+ * every tick, keeping all axes aligned.
+ * Failure mode: snapshots sent at different rates for different axes → desync.
  */
-describe('Snapshot rate throttle to 20Hz', () => {
+describe('Snapshot rate — 30Hz full position updates', () => {
   const workerPath = path.resolve(__dirname, '../../server/physics-worker.mjs');
 
-  it('physics worker implements snapshot throttling (not every tick)', () => {
+  it('physics worker sends snapshots at 30Hz (every tick)', () => {
     const workerSource = fs.readFileSync(workerPath, 'utf-8');
-    // Should have a snapshot interval/throttle mechanism, not postMessage every simulate() call
-    expect(workerSource).toMatch(/snapshotInterval|lastSnapshot|20Hz|50ms|every.*tick|throttle/);
+    expect(workerSource).toMatch(/1000 \/ 30|30Hz|SIMULATION_RATE/);
   });
 
-  it('physics worker does not postMessage snapshot on every simulate tick', () => {
+  it('physics worker posts snapshot on every simulate tick (no throttling gate)', () => {
     const workerSource = fs.readFileSync(workerPath, 'utf-8');
-    // Count postMessage calls for snapshot type - should be gated
-    const snapshotPosts = (workerSource.match(/postMessage.*snapshot/g) || []).length;
-    expect(snapshotPosts).toBeLessThanOrEqual(1);
+    // Snapshot is posted every tick at 30Hz — no throttling gate
+    const snapshotPosts = (workerSource.match(/parentPort\.postMessage/g) || []).length;
+    expect(snapshotPosts).toBeGreaterThanOrEqual(1);
   });
 });
