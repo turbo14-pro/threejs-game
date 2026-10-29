@@ -23,6 +23,12 @@ const floorBodyDesc = RAPIER.RigidBodyDesc.fixed()
 const floorBody = world.createRigidBody(floorBodyDesc);
 world.createCollider(RAPIER.ColliderDesc.cuboid(300, 1, 300), floorBody);
 
+// Add lobby platform collider (matches Arena.jsx Platform 1 at y=100)
+const lobbyPlatformBodyDesc = RAPIER.RigidBodyDesc.fixed()
+  .setTranslation(0, 100, 0);
+const lobbyPlatformBody = world.createRigidBody(lobbyPlatformBodyDesc);
+world.createCollider(RAPIER.ColliderDesc.cuboid(35, 1, 15), lobbyPlatformBody);
+
 // Shared config (imported from main thread via workerData)
 const { PLAYER_BASELINE } = workerData;
 
@@ -99,6 +105,7 @@ parentPort.on('message', (msg) => {
         .setRestitution(0);
       world.createCollider(colliderDesc, body);
       players.set(playerId, {
+        id: playerId, // FIX: Set id property so snapshot includes it
         body,
         inputBuffer: new Map(),
         lastProcessedSequenceId: -1,

@@ -73,11 +73,11 @@ export function isGrounded(pos, obstacles = []) {
  * Get the Y of the surface the player is standing on.
  * @param {Object} pos - { x, y, z } world position
  * @param {Array} obstacles - Array of { x, y, z, w, h, d } obstacle boxes
- * @returns {number} groundY (0 for floor, 100 for platforms, obstacle top Y, or -1 if airborne)
+ * @returns {number} groundY (0 for floor, 101 for platforms, obstacle top Y, or -1 if airborne)
  */
 export function getGroundY(pos, obstacles = []) {
   if (pos.y <= 5.5) return 0; // Floor
-  if (pos.y >= 99 && pos.y <= 105.5) return 100; // Platform
+  if (pos.y >= 99 && pos.y <= 105.5) return 101; // Platform top surface (body at y=100, half-height 1)
 
   for (const obs of obstacles) {
     const halfW = (obs.w || 30) / 2;
