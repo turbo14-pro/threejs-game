@@ -9,6 +9,7 @@
     "preview": "vite preview",
     "test": "vitest",
     "test:e2e": "playwright test",
+    "lint": "eslint src/ server/ --ext .js,.jsx,.mjs",
     "deploy": "npm run build && node deploy.cjs",
     "server": "node server/ws-server.js"
   },
