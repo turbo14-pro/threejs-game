@@ -144,7 +144,7 @@ parentPort.on("message", (msg) => {
             break;
         }
 
-        case "setObstacles": {
+        case 'setObstacles': {
             const {obstacles: obsList} = msg;
             obstacles.length = 0;
             for (const o of obsList) {
@@ -410,6 +410,7 @@ function simulate() {
     parentPort.postMessage({
         type: "snapshot",
         players: playerList,
+        obstacles,
         serverTick,
     });
     debugLog(`[WORKER] Snapshot sent: ${playerList.length} players, tick=${serverTick}`);
