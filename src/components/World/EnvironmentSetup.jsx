@@ -6,7 +6,7 @@ import { useGameStore } from '../../store/useGameStore';
 
 export default function EnvironmentSetup() {
   const { scene } = useThree();
-  const texture = useTexture('/skybox/skybox-kitchen.webp');
+  const texture = useTexture('skybox/skybox-kitchen.webp');
   const settings = useGameStore(state => state.settings);
 
   const cabinetColor = useMemo(() => new THREE.Color('#cfc1ad'), []);

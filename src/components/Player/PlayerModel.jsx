@@ -83,24 +83,24 @@ const PlayerModel = ({ isMoving, moveDir, isSprinting, jumpPhase = 'none', isSli
     };
   }, [config, JSON.stringify(globalAnimConfig)]);
 
-  const { scene: avoScene } = useGLTF('/skins/skin_avo.glb');
-  const { scene: eggScene } = useGLTF('/skins/skin_egg.glb');
+  const { scene: avoScene } = useGLTF('skins/skin_avo.glb');
+  const { scene: eggScene } = useGLTF('skins/skin_egg.glb');
 
-  const { animations: idleClips } = useGLTF(`/skins/actions/${activeConfig.idle}`);
-  const { animations: walkForClips } = useGLTF(`/skins/actions/${activeConfig.walk_for}`);
-  const { animations: walkBacClips } = useGLTF(`/skins/actions/${activeConfig.walk_bac}`);
-  const { animations: runForClips } = useGLTF(`/skins/actions/${activeConfig.run_for}`);
-  const { animations: runBacClips } = useGLTF(`/skins/actions/${activeConfig.run_bac}`);
-  const { animations: slideClips } = useGLTF(`/skins/actions/${activeConfig.slide || 'melee.slide.glb'}`);
+  const { animations: idleClips } = useGLTF(`skins/actions/${activeConfig.idle}`);
+  const { animations: walkForClips } = useGLTF(`skins/actions/${activeConfig.walk_for}`);
+  const { animations: walkBacClips } = useGLTF(`skins/actions/${activeConfig.walk_bac}`);
+  const { animations: runForClips } = useGLTF(`skins/actions/${activeConfig.run_for}`);
+  const { animations: runBacClips } = useGLTF(`skins/actions/${activeConfig.run_bac}`);
+  const { animations: slideClips } = useGLTF(`skins/actions/${activeConfig.slide || 'melee.slide.glb'}`);
   
   const djFile = activeConfig.doublejump?.file || (typeof activeConfig.doublejump === 'string' ? activeConfig.doublejump : 'melee.doublejump.glb');
   const djbFile = activeConfig.doublejump_back?.file || (typeof activeConfig.doublejump_back === 'string' ? activeConfig.doublejump_back : 'melee.doublejumpback.glb');
   
-  const { animations: doubleJumpClips } = useGLTF(`/skins/actions/${djFile}`);
-  const { animations: doubleJumpBacClips } = useGLTF(`/skins/actions/${djbFile}`);
-  
-  const { animations: jumpFileClips } = useGLTF(`/skins/actions/${activeConfig.jump.file}`);
-  const { animations: runJumpFileClips } = useGLTF(`/skins/actions/${activeConfig.run_jump.file}`);
+const { animations: doubleJumpClips } = useGLTF(`skins/actions/${djFile}`);
+  const { animations: doubleJumpBacClips } = useGLTF(`skins/actions/${djbFile}`);
+
+  const { animations: jumpFileClips } = useGLTF(`skins/actions/${activeConfig.jump.file}`);
+  const { animations: runJumpFileClips } = useGLTF(`skins/actions/${activeConfig.run_jump.file}`);
 
   const sourceScene = isAvo ? avoScene : eggScene;
   const scale = 2.0;
@@ -323,15 +323,15 @@ const PlayerModel = ({ isMoving, moveDir, isSprinting, jumpPhase = 'none', isSli
 
 export default memo(PlayerModel);
 
-useGLTF.preload('/skins/skin_avo.glb');
-useGLTF.preload('/skins/skin_egg.glb');
-useGLTF.preload(`/skins/actions/melee.idle.glb`);
-useGLTF.preload(`/skins/actions/melee.walk.for.glb`);
-useGLTF.preload(`/skins/actions/melee.walk.bac.glb`);
-useGLTF.preload(`/skins/actions/melee.run.for.glb`);
-useGLTF.preload(`/skins/actions/melee.run.bac.glb`);
-useGLTF.preload(`/skins/actions/melee.slide.glb`);
-useGLTF.preload(`/skins/actions/melee.doublejump.glb`);
-useGLTF.preload(`/skins/actions/melee.doublejumpback.glb`);
-useGLTF.preload(`/skins/actions/melee.jump.glb`);
-useGLTF.preload(`/skins/actions/melee.run.jump.glb`);
+useGLTF.preload('skins/skin_avo.glb');
+useGLTF.preload('skins/skin_egg.glb');
+useGLTF.preload(`skins/actions/melee.idle.glb`);
+useGLTF.preload(`skins/actions/melee.walk.for.glb`);
+useGLTF.preload(`skins/actions/melee.walk.bac.glb`);
+useGLTF.preload(`skins/actions/melee.run.for.glb`);
+useGLTF.preload(`skins/actions/melee.run.bac.glb`);
+useGLTF.preload(`skins/actions/melee.slide.glb`);
+useGLTF.preload(`skins/actions/melee.doublejump.glb`);
+useGLTF.preload(`skins/actions/melee.doublejumpback.glb`);
+useGLTF.preload(`skins/actions/melee.jump.glb`);
+useGLTF.preload(`skins/actions/melee.run.jump.glb`);

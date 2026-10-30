@@ -51,7 +51,7 @@ const getAdjustmentY = (extent, rotation) => {
  */
 function SkinPodium({ character, position, padOffset }) {
   const setPlayerSkin = useGameStore(state => state.setPlayerSkin);
-  const { scene } = useGLTF(`/skins/skin_${character.toLowerCase()}.glb`);
+  const { scene } = useGLTF(`skins/skin_${character.toLowerCase()}.glb`);
   
   const clone = useMemo(() => {
     const c = SkeletonUtils.clone(scene);

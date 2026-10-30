@@ -6,7 +6,7 @@ import { soundManager } from '../../../utils/SoundManager';
 import { useFrame } from '@react-three/fiber';
 import { debugLog } from '../../../utils/debugLog.js';
 
-useTexture.preload('/materials/sonicboom-beans.webp');
+useTexture.preload('materials/sonicboom-beans.webp');
 
 /**
  * TinCan obstacle – a cylinder with a label texture on its side and metallic caps.
@@ -14,7 +14,7 @@ useTexture.preload('/materials/sonicboom-beans.webp');
  */
 export function TinCan({ position, rotation, color }) {
   // Load the label texture (beans logo). FlipY is false because the texture is already oriented.
-  const labelTex = useTexture('/materials/sonicboom-beans.webp');
+  const labelTex = useTexture('materials/sonicboom-beans.webp');
   labelTex.flipY = false;
   labelTex.repeat.x = -1;
   labelTex.offset.x = 1;

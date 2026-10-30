@@ -5,15 +5,15 @@ import { useGLTF, useTexture } from '@react-three/drei';
 import { extractGeometry, extractMaterial } from './obstacleUtils';
 
 // Preload assets to avoid React Suspense triggering unmounts during physics simulation
-useGLTF.preload('/models/cerealbox.glb');
-useTexture.preload('/textures/cereal-munchies.webp');
+useGLTF.preload('models/cerealbox.glb');
+useTexture.preload('textures/cereal-munchies.webp');
 
 /**
  * Custom hook to load and extract cereal box geometries, materials and textures.
  */
 export function useCerealBoxAssets() {
-  const model = useGLTF('/models/cerealbox.glb');
-  const texture = useTexture('/textures/cereal-munchies.webp');
+  const model = useGLTF('models/cerealbox.glb');
+  const texture = useTexture('textures/cereal-munchies.webp');
   texture.flipY = false;
 
   const assets = useMemo(() => {
