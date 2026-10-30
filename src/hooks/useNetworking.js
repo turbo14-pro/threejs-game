@@ -50,6 +50,11 @@ export function useNetworking() {
 
     // Build WS URL: ws:// for dev, wss:// for prod
     // Strip any http:// or https:// prefix from the env URL
+    if (!rawEnvUrl) {
+      debugError('VITE_SERVER_URL_PRODUCTION is not set — cannot connect to WebSocket server');
+      setNetworkStatus('ERROR');
+      return;
+    }
     const baseAddress = rawEnvUrl
       .replace(/^https?:\/\//, '')
       .replace(':9208', '')
