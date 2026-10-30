@@ -11,7 +11,7 @@ import path from "path";
  */
 describe("Server obstacle broadcast", () => {
     const workerPath = path.resolve(__dirname, "../../server/physics-worker.mjs");
-    const serverPath = path.resolve(__dirname, "../../server/index.js");
+    const serverPath = path.resolve(__dirname, "../../server/ws-server.js");
 
     it("physics worker handles setObstacles message", () => {
         const workerSource = fs.readFileSync(workerPath, "utf-8");
@@ -23,8 +23,8 @@ describe("Server obstacle broadcast", () => {
         expect(workerSource).toContain("obstacles");
     });
 
-    it("server/index.js can send obstacles to worker", () => {
+    it("ws-server.js can send obstacles to worker", () => {
         const serverSource = fs.readFileSync(serverPath, "utf-8");
-        expect(serverSource).toContain("'setObstacles'");
+        expect(serverSource).toContain('"setObstacles"');
     });
 });

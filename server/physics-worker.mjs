@@ -144,7 +144,7 @@ parentPort.on("message", (msg) => {
             break;
         }
 
-        case 'setObstacles': {
+        case "setObstacles": {
             const {obstacles: obsList} = msg;
             obstacles.length = 0;
             for (const o of obsList) {
@@ -407,12 +407,7 @@ function simulate() {
 
     // Send snapshot to main thread at 30Hz (every tick)
     // X, Y, Z all update together — no decoupled Y throttle
-    parentPort.postMessage({
-        type: "snapshot",
-        players: playerList,
-        obstacles,
-        serverTick,
-    });
+    parentPort.postMessage({type: "snapshot", players: playerList, obstacles, serverTick});
     debugLog(`[WORKER] Snapshot sent: ${playerList.length} players, tick=${serverTick}`);
 }
 

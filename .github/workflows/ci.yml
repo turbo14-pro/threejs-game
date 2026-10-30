@@ -1,55 +1,189 @@
 name: CI
 
 on:
-  pull_request:
-    branches: [main]
-  push:
-    branches: [main]
+    pull_request:
+        branches: [main]
+    push:
+        branches: [main]
 
 jobs:
-  quality:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
+    quality:
+        runs-on: ubuntu-latest
+        steps:
+            - uses: actions/checkout@v4
 
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '24'
-          cache: 'npm'
+            - uses: actions/setup-node@v4
+              with:
+                  node-version: "24"
+                  cache: "npm"
 
-      - name: Install dependencies
-        run: npm ci
+            - name: Install dependencies
+              run: npm ci
 
-      - name: Lint
-        run: npm run lint
+            - name: Collect environment info
+              run: |
+                  echo "=== Node version ===" && node --version
+                  echo "=== npm version ===" && npm --version
+                  echo "=== OS ===" && uname -a
+                  echo "=== Working directory ===" && pwd
+                  echo "=== Git log (last 5) ===" && git log --oneline -5
 
-      - name: Test
-        run: npm test -- --coverage
+            - name: Lint
+              run: npm run lint
 
-      - name: Build
-        run: npm run build
+            - name: Test
+              run: npm test -- --coverage --reporter=verbose
 
-      - name: Security audit
-        run: npm audit --audit-level=high
+            - name: Build
+              run: npm run build
 
-  e2e:
-    needs: quality
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '24'
-          cache: 'npm'
-      - run: npm ci
-      - name: Install Playwright
-        run: npx playwright install --with-deps chromium
-      - name: Build
-        run: npm run build
-      - name: Run E2E tests
-        run: npx playwright test
-      - uses: actions/upload-artifact@v4
+            - name: Security audit
+              run: npm audit --audit-level=high
+
+            - name: Upload test artifacts on failure
+              if: failure()
+              uses: actions/upload-artifact@v4
+              with:
+                  name: ci-test-artifacts
+                  path: |
+                      coverage/
+                      vitest-reports/
+                      npm-debug.log*
+                  retention-days: 7
+
+            - name: Upload build artifacts on failure
+              if: failure()
+              uses: actions/upload-artifact@v4
+              with:
+                  name: ci-build-artifacts
+                  path: |
+                      dist/
+                      build_output.txt
+                      build-output.txt
+                      buildout.txt
+                  retention-days: 7
+
+    e2e:
+        needs: quality
+        runs-on: ubuntu-latest
+        steps:
+            - uses: actions/checkout@v4
+            - uses: actions/setup-node@v4
+              with:
+                  node-version: "24"
+                  cache: "npm"
+            - run: npm ci
+            - name: Install Playwright
+              run: npx playwright install --with-deps chromium
+            - name: Build
+              run: npm run build
+            - name: Run E2E tests
+              run: npx playwright test --reporter=line,junit
+            - name: Upload Playwright report on failure
+              if: failure()
+              uses: actions/upload-artifact@v4
+              with:
+                  name: playwright-report
+                  path: playwright-report/
+                  retention-days: 7
+            - name: Upload test results on failure
+              if: failure()
+              uses: actions/upload-artifact@v4
+              with:
+                  name: e2e-test-results
+                  path: |
+                      test-results/
+                      playwright-report/
+                  retention-days: 7
+
+    ci-debug:
+        needs: [quality, e2e]
         if: failure()
-        with:
-          name: playwright-report
-          path: playwright-report/
+        runs-on: ubuntu-latest
+        steps:
+            - uses: actions/checkout@v4
+
+            - uses: actions/setup-node@v4
+              with:
+                  node-version: "24"
+                  cache: "npm"
+
+            - name: Install dependencies
+              run: npm ci
+
+            - name: Run diagnostics
+              run: |
+                  echo "=== CI Debug Info ==="
+                  echo "Workflow run: ${{ github.run_id }}"
+                  echo "Run attempt: ${{ github.run_attempt }}"
+                  echo "SHA: ${{ github.sha }}"
+                  echo "Ref: ${{ github.ref }}"
+                  echo "Actor: ${{ github.actor }}"
+                  echo "=== Node ===" && node --version
+                  echo "=== npm ===" && npm --version
+                  echo "=== Git status ===" && git status --short
+                  echo "=== Git log ===" && git log --oneline -10
+                  echo "=== Package scripts ===" && npm run
+                  echo "=== Installed packages (top 20) ===" && npm ls --depth=0 2>&1 | head -30
+
+            - name: Run lint with full output
+              run: npm run lint || true
+
+            - name: Run tests with verbose output
+              run: npm test -- --reporter=verbose || true
+
+            - name: Run build with verbose output
+              run: npm run build -- --verbose || true
+
+            - name: Upload debug artifacts
+              uses: actions/upload-artifact@v4
+              with:
+                  name: ci-debug-artifacts
+                  path: |
+                      coverage/
+                      vitest-reports/
+                      test-results/
+                      playwright-report/
+                      npm-debug.log*
+                      build_output.txt
+                      build-output.txt
+                      buildout.txt
+                      p_err.txt
+                      p_out.txt
+                      v_err.txt
+                      v_out.txt
+                  retention-days: 14
+
+            - name: Create debug summary
+              run: |
+                  cat > debug-summary.md << 'EOF'
+                  # CI Debug Summary
+
+                  ## Run Info
+                  - Run ID: ${{ github.run_id }}
+                  - Attempt: ${{ github.run_attempt }}
+                  - SHA: ${{ github.sha }}
+                  - Ref: ${{ github.ref }}
+                  - Actor: ${{ github.actor }}
+
+                  ## Failed Jobs
+                  ${{ toJson(needs) }}
+
+                  ## How to debug
+                  1. Download the `ci-debug-artifacts` artifact from this workflow run.
+                  2. Check `coverage/` for test coverage gaps.
+                  3. Check `test-results/` and `playwright-report/` for E2E failures.
+                  4. Check `npm-debug.log*` for npm install errors.
+                  5. Check `build_output.txt`, `build-output.txt`, `buildout.txt` for build errors.
+                  6. Run `npm run lint` locally to reproduce lint failures.
+                  7. Run `npm test` locally to reproduce unit test failures.
+                  8. Run `npm run build` locally to reproduce build failures.
+                  EOF
+                  cat debug-summary.md
+
+            - name: Upload debug summary
+              uses: actions/upload-artifact@v4
+              with:
+                  name: ci-debug-summary
+                  path: debug-summary.md
+                  retention-days: 14

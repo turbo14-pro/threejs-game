@@ -32,7 +32,10 @@ let nextClientId = 0;
 const INTEREST_RADIUS = 200;
 
 // Change detection: per-viewer last-sent state hash
-const viewerState = new Map(); // ws -> { lastHash, lastPlayers }
+const viewerState = new Map(); // ws -> { lastHash, lastPlayers, lastYByPlayer }
+
+// Per-viewer/player last-sent Y for culling re-entry interpolation
+const viewerLastY = new Map(); // ws -> Map<playerId, lastY>
 
 // Track player positions for bot AI (updated from snapshots)
 const playerPositions = new Map(); // playerId -> { x, y, z }
@@ -86,15 +89,29 @@ worker.on("message", (msg) => {
                         return Math.sqrt(dx * dx + dz * dz) <= INTEREST_RADIUS;
                     });
 
+                    // Track last Y per viewer per player for culling re-entry interpolation
+                    const lastYMap = viewerLastY.get(ws) || new Map();
+                    const interpolated = filtered.map((p) => {
+                        const lastY = lastYMap.get(p.id);
+                        let y = p.pos[1];
+                        if (lastY !== undefined) {
+                            // Interpolate Y on re-entry instead of snapping
+                            y = lastY + (p.pos[1] - lastY) * 0.25; // 25% lerp per frame
+                        }
+                        lastYMap.set(p.id, y);
+                        return {...p, pos: [p.pos[0], y, p.pos[2]]};
+                    });
+                    viewerLastY.set(ws, lastYMap);
+
                     // Change detection: only send if state hash changed for this viewer
-                    const currentHash = hashState(filtered);
+                    const currentHash = hashState(interpolated);
                     const prev = viewerState.get(ws);
                     if (prev && prev.hash === currentHash) continue; // No change — skip
 
-                    viewerState.set(ws, {hash: currentHash, players: filtered});
+                    viewerState.set(ws, {hash: currentHash, players: interpolated});
 
-                    if (filtered.length > 0) {
-                        const viewerPayload = {type: "snapshot", p: filtered, o: obstacles, t: serverTick};
+                    if (interpolated.length > 0) {
+                        const viewerPayload = {type: "snapshot", p: interpolated, o: obstacles, t: serverTick};
                         ws.send(encode(viewerPayload), {binary: true});
                     }
                 }
@@ -177,6 +194,15 @@ wss.on("connection", (ws) => {
                             force: true,
                         });
                     }
+                    break;
+                }
+
+                case "addBot": {
+                    // Forward addBot to physics worker
+                    worker.postMessage({
+                        type: "addBot",
+                        playerId: msg.playerId || `bot-${Date.now()}`,
+                    });
                     break;
                 }
 

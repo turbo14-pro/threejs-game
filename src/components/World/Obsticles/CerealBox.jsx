@@ -1,123 +1,122 @@
-import React, { useMemo } from 'react';
-import * as THREE from 'three';
-import { RigidBody, CuboidCollider } from '@react-three/rapier';
-import { useGLTF, useTexture } from '@react-three/drei';
-import { extractGeometry, extractMaterial } from './obstacleUtils';
+import React, {useMemo} from "react";
+import * as THREE from "three";
+import {RigidBody, CuboidCollider} from "@react-three/rapier";
+import {useGLTF, useTexture} from "@react-three/drei";
+import {extractGeometry, extractMaterial} from "./obstacleUtils";
 
 // Preload assets to avoid React Suspense triggering unmounts during physics simulation
-useGLTF.preload('models/cerealbox.glb');
-useTexture.preload('textures/cereal-munchies.webp');
+useGLTF.preload("models/cerealbox.glb");
+useTexture.preload("textures/cereal-munchies.webp");
 
 /**
  * Custom hook to load and extract cereal box geometries, materials and textures.
  */
 export function useCerealBoxAssets() {
-  const model = useGLTF('models/cerealbox.glb');
-  const texture = useTexture('textures/cereal-munchies.webp');
-  texture.flipY = false;
+    const model = useGLTF("models/cerealbox.glb");
+    const texture = useTexture("textures/cereal-munchies.webp");
+    texture.flipY = false;
 
-  const assets = useMemo(() => {
-    let geometry = null;
-    let material = extractMaterial(model);
+    const assets = useMemo(() => {
+        let geometry = null;
+        let material = extractMaterial(model);
 
-    if (model && model.scene) {
-      const meshes = [];
-      model.scene.traverse((child) => {
-        if (child.isMesh) {
-          child.updateMatrixWorld(true);
-          const clonedGeo = child.geometry.clone();
-          // Ensure normals and UVs exist on the source geometry
-          if (!clonedGeo.attributes.normal) {
-            clonedGeo.computeVertexNormals();
-          }
-          if (!clonedGeo.attributes.uv) {
-            clonedGeo.computeUVs();
-          }
-          // Use matrixWorld to capture the full transform (including any
-          // Blender +Y-up axis conversion rotation stored on parent nodes).
-          clonedGeo.applyMatrix4(child.matrixWorld);
-          meshes.push(clonedGeo);
+        if (model && model.scene) {
+            const meshes = [];
+            model.scene.traverse((child) => {
+                if (child.isMesh) {
+                    child.updateMatrixWorld(true);
+                    const clonedGeo = child.geometry.clone();
+                    // Ensure normals and UVs exist on the source geometry
+                    if (!clonedGeo.attributes.normal) {
+                        clonedGeo.computeVertexNormals();
+                    }
+                    if (!clonedGeo.attributes.uv) {
+                        clonedGeo.computeUVs();
+                    }
+                    // Use matrixWorld to capture the full transform (including any
+                    // Blender +Y-up axis conversion rotation stored on parent nodes).
+                    clonedGeo.applyMatrix4(child.matrixWorld);
+                    meshes.push(clonedGeo);
+                }
+            });
+
+            if (meshes.length > 0) {
+                // Use the first mesh's geometry directly to preserve the GLB's UVs.
+                // mergeGeometries can drop or remap UV attributes, causing the
+                // shader to sample incorrect texture coordinates.
+                geometry = meshes[0];
+                geometry.center();
+                // Recompute normals after center to ensure proper lighting
+                geometry.computeVertexNormals();
+                // Ensure UV attribute is bound to the standard 'uv' name
+                // so the shader can sample it via vMapUv / vUv
+                if (!geometry.attributes.uv) {
+                    geometry.computeUVs();
+                }
+                geometry.attributes.uv.name = "uv";
+            }
         }
-      });
 
-      if (meshes.length > 0) {
-        // Use the first mesh's geometry directly to preserve the GLB's UVs.
-        // mergeGeometries can drop or remap UV attributes, causing the
-        // shader to sample incorrect texture coordinates.
-        geometry = meshes[0];
-        geometry.center();
-        // Recompute normals after center to ensure proper lighting
-        geometry.computeVertexNormals();
-        // Ensure UV attribute is bound to the standard 'uv' name
-        // so the shader can sample it via vMapUv / vUv
-        if (!geometry.attributes.uv) {
-          geometry.computeUVs();
+        // If merging failed, fallback to standard extraction
+        if (!geometry) {
+            geometry = extractGeometry(model);
+            if (geometry) {
+                geometry.center();
+                if (!geometry.attributes.normal) {
+                    geometry.computeVertexNormals();
+                }
+                if (!geometry.attributes.uv) {
+                    geometry.computeUVs();
+                }
+                if (geometry.attributes.uv) {
+                    geometry.attributes.uv.name = "uv";
+                }
+            }
         }
-        geometry.attributes.uv.name = 'uv';
-      }
-    }
 
-    // If merging failed, fallback to standard extraction
-    if (!geometry) {
-      geometry = extractGeometry(model);
-      if (geometry) {
-        geometry.center();
-        if (!geometry.attributes.normal) {
-          geometry.computeVertexNormals();
+        let extent = new THREE.Vector3(15, 18, 6); // Default fallback (half of 30x36x12)
+        if (geometry) {
+            geometry.computeBoundingBox();
+            const bb = geometry.boundingBox;
+            if (bb) {
+                extent = new THREE.Vector3().subVectors(bb.max, bb.min).multiplyScalar(0.5);
+            }
         }
-        if (!geometry.attributes.uv) {
-          geometry.computeUVs();
-        }
-        if (geometry.attributes.uv) {
-          geometry.attributes.uv.name = 'uv';
-        }
-      }
-    }
 
-    let extent = new THREE.Vector3(15, 18, 6); // Default fallback (half of 30x36x12)
-    if (geometry) {
-      geometry.computeBoundingBox();
-      const bb = geometry.boundingBox;
-      if (bb) {
-        extent = new THREE.Vector3().subVectors(bb.max, bb.min).multiplyScalar(0.5);
-      }
-    }
+        return {geometry, material, texture, extent};
+    }, [model, texture]);
 
-    return { geometry, material, texture, extent };
-  }, [model, texture]);
-
-  return assets;
+    return assets;
 }
 
 /**
  * Visual mesh component for a Cereal Box.
  */
-export function CerealBoxMesh({ position, rotation, color, geometry, material, texture }) {
-  return (
-    <mesh
-      geometry={geometry}
-      position={position}
-      rotation={rotation}
-      castShadow
-      receiveShadow
-      layers={0}
-      frustumCulled={false}
-    >
-      <meshStandardMaterial
-        map={texture}
-        color={color}
-        side={THREE.DoubleSide}
-        onBeforeCompile={(shader) => {
-          // 1. Prevent standard color multiplication by vColor in color_fragment
-          shader.fragmentShader = shader.fragmentShader.replace(
-            '#include <color_fragment>',
-            '// Mixing handled in map_fragment'
-          );
-          
-          // 2. Inject custom two-sided mix logic at map_fragment inclusion point
-          shader.fragmentShader = shader.fragmentShader.replace(
-            '#include <map_fragment>',
-            `
+export function CerealBoxMesh({position, rotation, color, geometry, material, texture}) {
+    return (
+        <mesh
+            geometry={geometry}
+            position={position}
+            rotation={rotation}
+            castShadow
+            receiveShadow
+            layers={0}
+            frustumCulled={false}>
+            <meshStandardMaterial
+                map={texture}
+                color={color}
+                side={THREE.DoubleSide}
+                onBeforeCompile={(shader) => {
+                    // 1. Prevent standard color multiplication by vColor in color_fragment
+                    shader.fragmentShader = shader.fragmentShader.replace(
+                        "#include <color_fragment>",
+                        "// Mixing handled in map_fragment"
+                    );
+
+                    // 2. Inject custom two-sided mix logic at map_fragment inclusion point
+                    shader.fragmentShader = shader.fragmentShader.replace(
+                        "#include <map_fragment>",
+                        `
             #if defined( USE_MAP )
               // Use vMapUv which is the standard UV for maps in newer Three.js versions
               vec4 logoTexel = texture2D( map, vMapUv );
@@ -141,46 +140,41 @@ export function CerealBoxMesh({ position, rotation, color, geometry, material, t
             // Force fully opaque result for solid boxes
             diffuseColor.a = 1.0;
             `
-          );
-        }}
-      />
-    </mesh>
-  );
+                    );
+                }}
+            />
+        </mesh>
+    );
 }
 
 /**
  * Physics collider component for a Cereal Box.
  */
-export function CerealBoxPhysics({ position, rotation, boxSize }) {
-  const { x: w, y: h, z: d } = boxSize;
-  const thickness = 0.5; // Thickness of the "cardboard"
-  const t2 = thickness / 2; // Half-thickness for centering
-  const doorHeight = 16; // Height of the doorway
+export function CerealBoxPhysics({position, rotation, boxSize}) {
+    const {x: w, y: h, z: d} = boxSize;
+    const thickness = 0.5; // Thickness of the "cardboard"
+    const t2 = thickness / 2; // Half-thickness for centering
+    const doorHeight = 16; // Height of the doorway
 
-  return (
-    <RigidBody
-      type="fixed"
-      position={position}
-      rotation={rotation}
-      collisionGroups={0x0001FFFF}
-    >
-      {/* 1. Floor - Inset by half thickness so top surface matches visual bottom */}
-      <CuboidCollider args={[d/2, t2, w/2]} position={[0, -h/2 + t2, 0]} />
+    return (
+        <RigidBody type="fixed" position={position} rotation={rotation} collisionGroups={0x0001ffff}>
+            {/* 1. Floor - Inset by half thickness so top surface matches visual bottom */}
+            <CuboidCollider args={[d / 2, t2, w / 2]} position={[0, -h / 2 + t2, 0]} />
 
-      {/* 2. Side Walls - Inset so outer surface matches visual width */}
-      <CuboidCollider args={[t2, h/2, w/2]} position={[-d/2 + t2, 0, 0]} />
-      <CuboidCollider args={[t2, h/2, w/2]} position={[d/2 - t2, 0, 0]} />
+            {/* 2. Side Walls - Inset so outer surface matches visual width */}
+            <CuboidCollider args={[t2, h / 2, w / 2]} position={[-d / 2 + t2, 0, 0]} />
+            <CuboidCollider args={[t2, h / 2, w / 2]} position={[d / 2 - t2, 0, 0]} />
 
-      {/* 3. Back Wall - Inset so visual depth matches */}
-      <CuboidCollider args={[d/2, h/2, t2]} position={[0, 0, -w/2 + t2]} />
+            {/* 3. Back Wall - Inset so visual depth matches */}
+            <CuboidCollider args={[d / 2, h / 2, t2]} position={[0, 0, -w / 2 + t2]} />
 
-      {/* 4. Front Wall with Doorway - Inset so visual depth matches */}
-      <CuboidCollider 
-        args={[d/2, (h - doorHeight)/2, t2]} 
-        position={[0, h/2 - (h - doorHeight)/2, w/2 - t2]} 
-      />
+            {/* 4. Front Wall with Doorway - Inset so visual depth matches */}
+            <CuboidCollider
+                args={[d / 2, (h - doorHeight) / 2, t2]}
+                position={[0, h / 2 - (h - doorHeight) / 2, w / 2 - t2]}
+            />
 
-      {/* NO TOP: Open for jumping in */}
-    </RigidBody>
-  );
+            {/* NO TOP: Open for jumping in */}
+        </RigidBody>
+    );
 }

@@ -13,7 +13,7 @@ describe("Server-controlled bots broadcast", () => {
 
     it("physics worker handles addBot message", () => {
         const workerSource = fs.readFileSync(workerPath, "utf-8");
-        expect(workerSource).toContain("'addBot'");
+        expect(workerSource).toContain('"addBot"');
     });
 
     it("physics worker creates bot physics body", () => {
@@ -26,9 +26,9 @@ describe("Server-controlled bots broadcast", () => {
         expect(workerSource).toContain("players.values()");
     });
 
-    it("server/index.js forwards addBot to worker", () => {
-        const serverPath = path.resolve(__dirname, "../../server/index.js");
+    it("ws-server.js forwards addBot to worker", () => {
+        const serverPath = path.resolve(__dirname, "../../server/ws-server.js");
         const serverSource = fs.readFileSync(serverPath, "utf-8");
-        expect(serverSource).toContain("'addBot'");
+        expect(serverSource).toContain('"addBot"');
     });
 });
