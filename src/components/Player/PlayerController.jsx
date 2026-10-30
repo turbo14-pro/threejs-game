@@ -274,7 +274,7 @@ export default function PlayerController({ sendUpdate }) {
   // Load animation configuration dynamically
   useEffect(() => {
     if (animConfig) return; // Already loaded!
-    fetch('/skins/animations.json')
+    fetch('skins/animations.json')
       .then(res => res.json())
       .then(d => setPlayerAnimations(d.Melee))
       .catch(err => debugError("PlayerController failed to load animations.json", err));

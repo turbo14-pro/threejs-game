@@ -193,25 +193,25 @@ export const POWERUP_DESCRIPTIONS = {
   jump: {
     label: 'Jump',
     hint: (rarity) => `You can jump ${getPowerUpEffect('jump', rarity, 'jumpCount')} times!`,
-    icon: '/materials/items/powerup.jump.svg',
+    icon: 'materials/items/powerup.jump.svg',
     color: '#00ff88',
   },
   speed: {
     label: 'Speed',
     hint: (rarity) => `${getPowerUpEffect('speed', rarity, 'speedMultiplier')}x movement speed!`,
-    icon: '/materials/items/powerup.run.svg',
+    icon: 'materials/items/powerup.run.svg',
     color: '#ff8800',
   },
   dash: {
     label: 'Dash',
     hint: () => 'Dash forward instantly! Press Q',
-    icon: '/materials/items/powerup.dash.svg',
+    icon: 'materials/items/powerup.dash.svg',
     color: '#4488ff',
   },
   slide: {
     label: 'Slide',
     hint: (rarity) => `${getPowerUpEffect('slide', rarity, 'blastPowerMultiplier')}x slide power! Press C`,
-    icon: '/materials/items/powerup.slide.svg',
+    icon: 'materials/items/powerup.slide.svg',
     color: '#ff44ff',
   },
 };

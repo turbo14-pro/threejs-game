@@ -112,10 +112,10 @@ function renderIconTextures(svgUrl) {
 // One emissive+bump pair per category (shared across rarities)
 const iconData = {};
 const iconPromises = Object.entries({
-  jump:  '/materials/items/powerup.jump.svg',
-  speed: '/materials/items/powerup.run.svg',
-  dash:  '/materials/items/powerup.dash.svg',
-  slide: '/materials/items/powerup.slide.svg',
+  jump:  'materials/items/powerup.jump.svg',
+  speed: 'materials/items/powerup.run.svg',
+  dash:  'materials/items/powerup.dash.svg',
+  slide: 'materials/items/powerup.slide.svg',
 }).map(([cat, url]) =>
   renderIconTextures(url).then((data) => { iconData[cat] = data; })
 );
