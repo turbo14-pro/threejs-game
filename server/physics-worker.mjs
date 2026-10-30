@@ -212,7 +212,6 @@ const SIMULATION_RATE = 1000 / 30; // 30Hz
 
 function simulate() {
     serverTick++;
-    const now = Date.now();
 
     // 1. Process Inputs & Apply Forces
     for (const p of players.values()) {
@@ -417,4 +416,4 @@ function simulate() {
 }
 
 // Start simulation loop
-setInterval(simulate, SIMULATION_RATE);
+globalThis.setInterval(simulate, SIMULATION_RATE);

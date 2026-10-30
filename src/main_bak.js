@@ -646,8 +646,8 @@ function updateCamera() {
 const raycaster = new THREE.Raycaster();
 const pointer = new THREE.Vector2();
 
-window.addEventListener('keydown', (e) => { if(keys.hasOwnProperty(e.key)) keys[e.key] = true; });
-window.addEventListener('keyup', (e) => { if(keys.hasOwnProperty(e.key)) keys[e.key] = false; });
+window.addEventListener('keydown', (e) => { if(Object.prototype.hasOwnProperty.call(keys, e.key)) keys[e.key] = true; });
+window.addEventListener('keyup', (e) => { if(Object.prototype.hasOwnProperty.call(keys, e.key)) keys[e.key] = false; });
 
 canvas.addEventListener('mousedown', (e) => {
     if (currentState === 'GAME') {
