@@ -156,7 +156,7 @@ export function TinCanPhysics({position, rotation, color, mass = 1, linearDampin
             lastSoundTime.current = now;
             groundHitRef.current = true;
             const impactVol = Math.min(Math.round(Math.abs(vel.y), 2) / 30, 1);
-            debugLog("🥫 TinCan bounce! velY:", Math.abs(vel.y), "vol:", impactVol);
+            //debugLog("🥫 TinCan bounce! velY:", Math.abs(vel.y), "vol:", impactVol);
             try {
                 if (soundManager && soundManager.listener)
                     soundManager.playPositional("metal-ground", rigidRef.current, impactVol, 15, 1.0, false);
@@ -219,7 +219,7 @@ export function TinCanPhysics({position, rotation, color, mass = 1, linearDampin
             const force = Math.max(speed * 800 * slideMultiplier, 25);
 
             const impactVol = Math.max(Math.min(Math.round(speed, 2), 1), 0.1);
-            debugLog(
+            /*debugLog(
                 "🥫 TinCan hit! speed:",
                 speed,
                 "multiplier:",
@@ -228,7 +228,7 @@ export function TinCanPhysics({position, rotation, color, mass = 1, linearDampin
                 force,
                 "vol:",
                 impactVol
-            );
+            );*/
             try {
                 if (soundManager && soundManager.listener)
                     soundManager.playPositional("metal-ground", rigidRef.current, impactVol, 15, 1.0, false);

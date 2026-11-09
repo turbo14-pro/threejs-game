@@ -294,6 +294,9 @@ export default function PlayerController({sendUpdate}) {
     );
     const preImpactVelocity = useRef(new THREE.Vector3());
     const isSlidingRef = useRef(false); // Mirror isSliding state for collision handler (avoids stale closure)
+    const slideFadeRef = useRef(false); // True while slide sound is fading out
+    const slideCooldown = useRef(0); // Seconds remaining before another slide can start
+    const intendedSlideDuration = useRef(0.6); // The slide duration set at slide start
     const runningSoundRef = useRef(null); // Positional loop for running footsteps
     const walkingSoundRef = useRef(null); // Positional loop for walking
 
@@ -935,9 +938,20 @@ export default function PlayerController({sendUpdate}) {
         }
 
         // 2. SLIDE LOGIC
-        if (slidingInput && !isSliding && currentlyGrounded && moving && !walkingInput) {
+        // Decay slide cooldown each frame
+        if (slideCooldown.current > 0) slideCooldown.current -= delta;
+
+        if (slidingInput && !isSliding && currentlyGrounded && moving && !walkingInput && slideCooldown.current <= 0) {
             setIsSliding(true);
-            slideTimer.current = 0.6; // 0.6s slide
+            // Tie slide duration to horizontal velocity — if blocked by an obstacle
+            // (low velocity), the slide is very brief. If moving freely, full duration.
+            const slideStartVel = rigidBodyRef.current.linvel();
+            const slideHSpeed = Math.sqrt(slideStartVel.x * slideStartVel.x + slideStartVel.z * slideStartVel.z);
+            // Scale slide duration: 0.1s at low speed, up to 0.6s at full speed
+            const slideDuration = Math.max(0.1, Math.min(0.6, slideHSpeed / 10));
+            slideTimer.current = slideDuration;
+            intendedSlideDuration.current = slideDuration;
+            debugLog("[SlideSound] Slide duration=", slideDuration.toFixed(2), "hSpeed=", slideHSpeed.toFixed(2));
             // Add a burst of speed
             direction.multiplyScalar(1.5);
             // Ensure we don't carry upward momentum when starting a slide
@@ -947,17 +961,41 @@ export default function PlayerController({sendUpdate}) {
             // removed duplicate curVel declaration
             rigidBodyRef.current.setLinvel({x: curVel.x, y: -5, z: curVel.z}, true);
             // --- AUDIO DEBUG (bisect step 1) -------------------------------------
-            // The slide-sound block below is an UNCOMMITTED addition (the slide
-            // sound itself did not exist in HEAD). It is now gated behind the
-            // `slideSound` debug flag so we can toggle it from the console and
-            // prove whether the slide sound is the source of the "audio lifecycle
-            // error" that fires on every movement input.
+            // The slide-sound block is gated behind the `slideSound` debug flag
+            // so we can toggle it from the console during bisecting.
             //
             //   audioDebug.set('slideSound', true)   // re-enable the slide sound
-            //   audioDebug.set('slideSound', false)  // keep it disabled (default)
+            //   audioDebug.set('slideSound', false)  // disable the slide sound
             //
             // Enable slide sound — plays at player position with volume based on horizontal speed
-            if (!slideSoundRef.current) {
+            const slideFlag = audioFlag("slideSound");
+            debugLog(
+                "[SlideSound] flag=",
+                slideFlag,
+                "existing=",
+                !!slideSoundRef.current,
+                "slidingInput=",
+                slidingInput,
+                "isSliding=",
+                isSliding,
+                "currentlyGrounded=",
+                currentlyGrounded,
+                "moving=",
+                moving,
+                "walkingInput=",
+                walkingInput
+            );
+            if (!slideFlag) {
+                debugLog("[SlideSound] Blocked by slideSound flag = false");
+            } else {
+                // Release any existing slide sound so a fresh one plays on every slide start.
+                // Without this, the old fading-out sound blocks creation of a new one.
+                if (slideSoundRef.current) {
+                    debugLog("[SlideSound] Releasing existing slide sound before creating new one");
+                    stopLoopSound(slideSoundRef);
+                    slideSoundRef.current = null;
+                }
+                debugLog("[SlideSound] Creating slide sound node");
                 slideSoundRef.current = soundManager.playPositional(
                     "slide",
                     playerGroupRef.current,
@@ -967,6 +1005,14 @@ export default function PlayerController({sendUpdate}) {
                     50,
                     false
                 );
+                debugLog(
+                    "[SlideSound] Created=",
+                    !!slideSoundRef.current,
+                    "isPlaying=",
+                    slideSoundRef.current?.isPlaying,
+                    "volume=",
+                    slideSoundRef.current?.volume
+                );
             }
         }
 
@@ -974,31 +1020,55 @@ export default function PlayerController({sendUpdate}) {
             slideTimer.current -= delta;
             if (slideTimer.current <= 0 || !currentlyGrounded) {
                 setIsSliding(false);
-                // --- AUDIO DEBUG (bisect step 1) -------------------------------------
-                // Fade-out of the slide sound. The slide sound's creation is gated by
-                // the `slideSound` debug flag, so the fade-out must be gated by the
-                // same flag — otherwise a disabled slide sound would still leave a
-                // half-alive node in the audio lifecycle.
+                // Set slide cooldown to prevent spamming when blocked by an obstacle.
+                // Cooldown scales with how brief the slide was — short slides (blocked)
+                // get a shorter cooldown, full slides get a longer one.
+                slideCooldown.current = Math.max(0.3, intendedSlideDuration.current * 2);
+                debugLog("[SlideSound] Slide ended, cooldown=", slideCooldown.current.toFixed(2));
+                // Start rapid fade-out of the slide sound when sliding stops.
                 if (audioFlag("slideSound") && slideSoundRef.current) {
-                    try {
-                        // THREE.Audio uses .volume property, not .getVolume() method
-                        const cur = Number.isFinite(slideSoundRef.current.volume) ? slideSoundRef.current.volume : 1.0;
-                        const next = Math.max(0, cur - 2 * delta);
-                        slideSoundRef.current.volume = next;
-                        if (next <= 0.01) {
-                            // P0-#2: defer the detach — an inline parent.remove() here splices
-                            // the children array while three is traversing it.
-                            stopLoopSound(slideSoundRef);
-                            slideSoundRef.current = null;
-                            debugLog("[Sound] Slide sound faded out and stopped");
-                        }
-                    } catch {
-                        stopLoopSound(slideSoundRef);
-                        slideSoundRef.current = null;
-                        debugLog("[Sound] Slide sound stopped due to error");
-                    }
+                    slideFadeRef.current = true;
+                    debugLog("[SlideSound] Slide ended, starting rapid fade-out");
                 }
             }
+        }
+
+        // Rapid fade-out of the slide sound — runs every frame until volume reaches 0.
+        // Gated by slideFadeRef (not isSliding) so the fade continues across frames
+        // after setIsSliding(false) has been called.
+        if (slideFadeRef.current && slideSoundRef.current) {
+            if (!audioFlag("slideSound")) {
+                debugLog("[SlideSound] Has sound node but flag is false, releasing");
+                stopLoopSound(slideSoundRef);
+                slideSoundRef.current = null;
+                slideFadeRef.current = false;
+            } else {
+                try {
+                    // THREE.Audio uses .volume property, not .getVolume() method
+                    // Rapid fade: drop volume by ~5 per second (0.05 per 10ms frame)
+                    const cur = Number.isFinite(slideSoundRef.current.volume) ? slideSoundRef.current.volume : 1.0;
+                    const next = Math.max(0, cur - 6 * delta);
+                    slideSoundRef.current.volume = next;
+                    debugLog("[SlideSound] Rapid fade volume=", next.toFixed(3), "delta=", delta.toFixed(4));
+                    if (next <= 0.01) {
+                        // P0-#2: defer the detach — an inline parent.remove() here splices
+                        // the children array while three is traversing it.
+                        stopLoopSound(slideSoundRef);
+                        slideSoundRef.current = null;
+                        slideFadeRef.current = false;
+                        debugLog("[SlideSound] Rapid fade complete, sound released");
+                    }
+                } catch {
+                    stopLoopSound(slideSoundRef);
+                    slideSoundRef.current = null;
+                    slideFadeRef.current = false;
+                    debugLog("[SlideSound] Rapid fade stopped due to error");
+                }
+            }
+        } else if (slideSoundRef.current && !audioFlag("slideSound")) {
+            debugLog("[SlideSound] Has sound node but flag is false, releasing");
+            stopLoopSound(slideSoundRef);
+            slideSoundRef.current = null;
         }
 
         // 3. PASSIVE REGENERATION (Heals if not damaged for 5s)
@@ -1024,6 +1094,16 @@ export default function PlayerController({sendUpdate}) {
         }
 
         const currentVelocity = rigidBodyRef.current.linvel();
+
+        // --- VELOCITY-BASED ANIMATION STATE ---
+        // Tie animations to actual horizontal velocity, not input.
+        // If the player is blocked by an obstacle (velocity ≈ 0), no walk/run animation plays.
+        // If running but velocity is low (blocked sideways), walk animation plays instead.
+        const hSpeed = Math.sqrt(currentVelocity.x * currentVelocity.x + currentVelocity.z * currentVelocity.z);
+        const ACTUAL_MOVE_THRESHOLD = 0.5; // m/s — below this, no walk/run animation
+        const WALK_SPEED_THRESHOLD = walkSpeed * 0.6; // below this = walk, above = run
+        const actualMoving = hSpeed > ACTUAL_MOVE_THRESHOLD && currentlyGrounded && jumpPhase === "none";
+        const actualWalking = actualMoving && hSpeed < WALK_SPEED_THRESHOLD;
 
         // Ground detection already calculated above
 
@@ -1168,8 +1248,9 @@ export default function PlayerController({sendUpdate}) {
         if (externalForce.current.lengthSq() < 0.1) externalForce.current.set(0, 0, 0);
 
         // Sync movement direction for animations with hysteresis
-        if (moving !== isMoving) setIsMoving(moving);
-        if (walkingInput !== isWalking) setIsWalking(walkingInput);
+        // Use actual velocity-based state, not input-based state
+        if (actualMoving !== isMoving) setIsMoving(actualMoving);
+        if (actualWalking !== isWalking) setIsWalking(actualWalking);
         // Keep ref in sync for collision handler (avoids stale closure)
         isSlidingRef.current = isSliding;
         // Propagate sliding state to physics body so TinCan can read it
@@ -1181,12 +1262,12 @@ export default function PlayerController({sendUpdate}) {
         useGameStore.getState().setPlayerMovement(moving, isDashing.current);
 
         // WALKING LOOP (slower, lower volume)
+        // Use velocity-based actualWalking so footsteps don't play when blocked by an obstacle
         const shouldWalk =
             audioFlag("movementLoops") &&
             currentlyGrounded &&
-            moving &&
+            actualWalking &&
             currentPhase === "none" &&
-            walkingInput &&
             playerGroupRef.current;
         if (shouldWalk && !walkingSoundRef.current) {
             try {
@@ -1234,10 +1315,12 @@ export default function PlayerController({sendUpdate}) {
         }
 
         // RUNNING LOOP (4-step cycle from running.ogg) — start/stop, not restart
+        // Use velocity-based actualMoving so footsteps don't play when blocked by an obstacle
         const shouldRun =
             audioFlag("movementLoops") &&
             currentlyGrounded &&
-            moving &&
+            actualMoving &&
+            !actualWalking &&
             currentPhase === "none" &&
             playerGroupRef.current;
         if (shouldRun && !runningSoundRef.current) {
@@ -1658,6 +1741,17 @@ export default function PlayerController({sendUpdate}) {
             if (isSlidingRef.current) {
                 debugLog("🛠️ LOCAL COLLISION: sliding:", isSlidingRef.current, "target:", other.userData?.id);
                 debugLog("💥 Slide IMPACT! Launching Victim...");
+
+                // --- SLIDE TERMINATION ON IMPACT ---
+                // When a sliding player collides with an obstacle that impacts their
+                // velocity, end the slide immediately (animation + sound).
+                // A simple clip off the side won't trigger this — only real impacts.
+                if (isSliding && slideSoundRef.current) {
+                    debugLog("[SlideSound] Collision impact ending slide immediately");
+                    setIsSliding(false);
+                    slideFadeRef.current = true;
+                    debugLog("[SlideSound] Slide ended by collision, starting rapid fade-out");
+                }
 
                 // 1. PHYSICAL KICK (Newtonian Interaction)
                 // We apply an impulse to the other body locally on our screen

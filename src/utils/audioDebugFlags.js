@@ -30,12 +30,12 @@ const STORAGE_KEY = 'food-frenzy-audio-debug-flags';
  * source of the crash.
  */
 export const AUDIO_DEBUG_DEFAULTS = {
-  // Uncommitted slide-sound additions (playPositional('slide') + fade-out).
-  // DISABLED BY DEFAULT => the slide sound is out of the audio lifecycle while
-  // we bisect. Set to true to re-enable and confirm whether it is the culprit.
-  slideSound: false,
+  // Slide-sound additions (playPositional('slide') + fade-out).
+  // Enabled by default. Set to false to disable during bisecting.
+  slideSound: true,
   // Movement loops (walk / running) — the other movement-tied audio path.
-  movementLoops: false,
+  // Enabled by default. Set to false to disable during bisecting.
+  movementLoops: true,
   // Positional one-shots (jump / land / hit / teleport / launch).
   oneShots: true,
   // The global (non-positional) fallback used when playPositional() fails.
@@ -66,6 +66,8 @@ function persist() {
 
 readStored();
 
+debugLog("[AudioDebug] Initial flags:", { ...FLAGS });
+
 /** Read a flag (unknown keys fall back to `true` so code stays enabled). */
 export function audioFlag(name) {
   if (!(name in FLAGS)) return true;
@@ -74,6 +76,7 @@ export function audioFlag(name) {
 
 /** Set a flag and persist it. Returns the new value. */
 export function setAudioFlag(name, value) {
+  debugLog("[AudioDebug] setAudioFlag:", name, "=", Boolean(value), "previous=", FLAGS[name]);
   if (!(name in FLAGS)) {
     console.warn(`[audioDebug] unknown flag "${name}"`);
     return true;
@@ -91,6 +94,7 @@ export function listAudioFlags() {
 
 /** Reset every flag back to its default (all enabled). */
 export function resetAudioFlags() {
+  debugLog("[AudioDebug] resetAudioFlags:", { ...FLAGS }, "-> defaults:", { ...AUDIO_DEBUG_DEFAULTS });
   Object.assign(FLAGS, AUDIO_DEBUG_DEFAULTS);
   persist();
   console.log('[audioDebug] flags reset', { ...FLAGS });
