@@ -542,6 +542,7 @@ export default function PlayerController({sendUpdate}) {
         }
     }, [knockbackCount]);
 
+    console.time("useFrame");
     useFrame((state, delta) => {
         if (gameState !== "PLAYING" || !rigidBodyRef.current || !playerGroupRef.current) {
             // Publish the player's world position even when the match isn't live. Power-up
@@ -1575,6 +1576,7 @@ export default function PlayerController({sendUpdate}) {
             });
         }
     });
+    console.timeEnd("useFrame");
 
     /**
      * NEWTONIAN KNOCKBACK
