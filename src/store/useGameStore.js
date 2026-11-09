@@ -8,7 +8,7 @@ import {
   POWERUP_DURATIONS,
   POWERUP_DESCRIPTIONS,
 } from '../config/playerConfig';
-import { BOT_DIFFICULTY, buildBotRoster } from '../components/Player/BotAI.jsx';
+import { BOT_DIFFICULTY, buildBotRoster } from '../components/Player/botRoster.js';
 
 // Re-export for backward compatibility with existing imports
 export { POWERUP_EFFECTS, POWERUP_DURATIONS, POWERUP_DESCRIPTIONS };

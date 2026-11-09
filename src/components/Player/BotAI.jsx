@@ -10,14 +10,17 @@
  */
 
 import { POWERUP_EFFECTS, PLAYER_BASELINE } from '../../config/playerConfig';
+import {
+  BOT_DIFFICULTY,
+  BOT_NAME_POOL,
+  randomBotName,
+  pickRandomBotNames,
+  normalizeBotCount,
+  buildBotRoster,
+} from './botRoster.js';
 
-// Difficulty presets — 0 (easy) → 1 (ruthless)
-export const BOT_DIFFICULTY = {
-  easy:   0.25,
-  normal: 0.45,
-  hard:   0.7,
-  insane: 0.95,
-};
+// Re-export for backward compatibility
+export { BOT_DIFFICULTY, BOT_NAME_POOL, randomBotName, pickRandomBotNames, normalizeBotCount, buildBotRoster };
 
 // Tunables for the adaptive heuristic
 export const BOT_TUNING = {
@@ -44,31 +47,6 @@ export const BOT_TUNING = {
   aimWobbleSpeed: 2.4,  // how fast the aim error oscillates (rad/s) so it reads as imprecision
   slideRollInterval: 1.5, // seconds per slide-chance roll (stable within one approach)
   slideCooldown: 2.5,   // seconds a bot rests between committed lunges (slides less often)
-};
-
-// Naming pool for the floating name tags — a fresh random name from this list
-// is picked on every spawn and every respawn, so tags keep changing.
-export const BOT_NAME_POOL = [
-  'Mr. Feast',
-  'IShowSeed',
-  'Steak Paul',
-  'Lionel Cheesy',
-  'Cider-Man',
-  'Avacado Ronaldo',
-  "Fryin' Man",
-  'Soup-erman',
-  'Breadpool',
-  'Bob',
-  "S'more",
-];
-
-/**
- * Random name from the pool — different (almost) every call. `rng` is injectable
- * so tests can seed it; the game passes nothing and gets Math.random.
- */
-export const randomBotName = (rng = Math.random) => {
-  const pool = BOT_NAME_POOL;
-  return pool[Math.floor(rng() * pool.length) % pool.length];
 };
 
 // Seconds between a bot's scoring tags (see shouldRegisterTag)
@@ -556,65 +534,6 @@ export function shouldRegisterTag({ distance, lastTagAt = -Infinity, now = 0, co
 export function makeBotName(index = 0, pool = BOT_NAME_POOL) {
   const names = Array.isArray(pool) && pool.length ? pool : BOT_NAME_POOL;
   return names[Math.abs(Math.trunc(index)) % names.length];
-}
-
-/**
- * Picks `count` random names from the pool, avoiding duplicates within the batch
- * when the pool is big enough (11 names vs 3 bots, so spawns are always unique).
- * `rng` is injectable so tests can seed it.
- */
-export function pickRandomBotNames(count = 0, rng = Math.random) {
-  const total = Math.max(0, Math.trunc(count));
-  const names = [];
-  const used = new Set();
-  for (let i = 0; i < total; i++) {
-    let name = randomBotName(rng);
-    // Avoid a duplicate within this batch — bounded retries, then accept any.
-    for (let retry = 0; retry < 10 && used.has(name); retry++) {
-      name = randomBotName(rng);
-    }
-    used.add(name);
-    names.push(name);
-  }
-  return names;
-}
-
-/**
- * Parses a lobby bot-count selection into a safe number of bots (0-3).
- * Accepts the raw string values used by the menu buttons.
- */
-export function normalizeBotCount(value) {
-  const parsed = typeof value === 'number' ? value : parseInt(value, 10);
-  if (!Number.isFinite(parsed)) return 0;
-  return Math.max(0, Math.min(3, Math.trunc(parsed)));
-}
-
-/**
- * Builds the immutable bot roster used by the runtime renderer.
- * Each bot gets a random name from the pool (unique within the batch), so the
- * floating tags differ every match.
- *
- * @param {object} options
- *   - {number|string} count   how many bots to spawn (0-3)
- *   - {number} difficulty     one of BOT_DIFFICULTY
- *   - {number} baseScore      starting score for the bots
- * @returns {Array<{id, name, isBot, difficultyName, difficulty, score}>}
- */
-export function buildBotRoster({ count = 0, difficulty = BOT_DIFFICULTY.normal, baseScore = 0 } = {}) {
-  const total = normalizeBotCount(count);
-  const difficultyName = Object.keys(BOT_DIFFICULTY).find(
-    (key) => BOT_DIFFICULTY[key] === difficulty
-  ) || 'normal';
-  const names = pickRandomBotNames(total);
-
-  return Array.from({ length: total }, (_, index) => ({
-    id: `bot-${index}`,
-    name: names[index] ?? randomBotName(),
-    isBot: true,
-    difficultyName,
-    difficulty,
-    score: baseScore,
-  }));
 }
 
 // ---------------------------------------------------------------------------
