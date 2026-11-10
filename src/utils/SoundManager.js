@@ -268,10 +268,10 @@ class SoundManager {
     // Uses a large refDistance so it's audible everywhere, with volume
     // --- AMBIENT BED (seamless dual-bed crossfade) ---------------------------------
     // Looping ambient bed attached to the camera (follows the player).
-    // Uses two PositionalAudio instances crossfading to eliminate the OGG/Vorbis
-    // encoder-delay stall at the loop point. Built-in loop is disabled; we
-    // manually restart each bed when it ends, crossfading between them so there
-    // is never an audible gap. Volume is controlled by the store's audio.ambientVolume.
+    // Uses two PositionalAudio instances with built-in loop, crossfading between
+    // them to eliminate the OGG/Vorbis encoder-delay stall at the loop point.
+    // Both beds loop continuously; we alternate which one is audible via volume
+    // crossfade so there is never an audible gap.
     playAmbientBed(name, volume = 0.5) {
         if (!this.listener || !this.sounds.has(name)) return null;
         const buffer = this.sounds.get(name);
@@ -288,50 +288,31 @@ class SoundManager {
         if (this.ambientBed) this.releaseAmbientBed(this.ambientBed);
         if (this.ambientBedB) this.releaseAmbientBed(this.ambientBedB);
 
-        // Create both beds (loop disabled — we handle restart manually)
+        // Create both beds with built-in loop enabled
         const bedA = this._createAmbientBedInstance(name, buffer, safeVolume, 1.0);
         const bedB = this._createAmbientBedInstance(name, buffer, safeVolume, 0.0);
 
         this.camera.add(bedA);
         this.camera.add(bedB);
 
-        // Set onEnded BEFORE play() — three binds source.onended inside play(),
-        // so assigning after play() means the callback never fires (P0-#2).
-        bedA.onEnded = () => {
-            runBaseOnEnded(bedA);
-            try {
-                bedA.__reverbSend?.disconnect();
-            } catch {}
-            bedA.__reverbSend = null;
-            handleEnd();
-        };
-        bedB.onEnded = () => {
-            runBaseOnEnded(bedB);
-            try {
-                bedB.__reverbSend?.disconnect();
-            } catch {}
-            bedB.__reverbSend = null;
-            handleEnd();
-        };
-
-        // Start bed A immediately
+        // Start bed A immediately (bedB starts at volume 0, will be faded in)
         if (this.ensureRunning() && !bedA.isPlaying) {
             try {
                 bedA.play();
             } catch {}
         }
 
-        // Seamless loop: when A ends, crossfade to B; when B ends, crossfade to A
+        // Timer-based crossfade: every (duration - crossfadeTime) seconds,
+        // fade from the current bed to the other bed over crossfadeTime seconds.
         let active = "A";
-        const handleEnd = () => {
+        let fadeTimer = null;
+
+        const startCrossfade = () => {
             const current = active === "A" ? bedA : bedB;
             const other = active === "A" ? bedB : bedA;
 
-            if (other._crossfading || other.isPlaying) return; // already crossfading or playing
-
-            other._crossfading = true;
-            other._startTime = performance.now();
-            if (this.ensureRunning()) {
+            // Ensure the other bed is playing (it loops, so start once)
+            if (this.ensureRunning() && !other.isPlaying) {
                 try {
                     other.play();
                 } catch {}
@@ -340,39 +321,34 @@ class SoundManager {
             // Crossfade over crossfadeTime seconds
             const fadeSteps = Math.ceil(crossfadeTime * 60); // ~60fps
             let step = 0;
-            const fadeInterval = setInterval(() => {
+            fadeTimer = setInterval(() => {
                 step++;
                 const t = step / fadeSteps;
                 if (!current.isPlaying || !other.isPlaying) {
-                    clearInterval(fadeInterval);
+                    clearInterval(fadeTimer);
+                    fadeTimer = null;
                     return;
                 }
                 current.volume = safeVolume * (1 - t);
                 other.volume = safeVolume * t;
                 if (t >= 1) {
-                    clearInterval(fadeInterval);
-                    current.stop();
-                    this._untrackInstance(current);
-                    scheduleDetach(current);
-                    if (active === "A") {
-                        this.ambientBed = other;
-                        this.ambientBedB = null;
-                    } else {
-                        this.ambientBedB = other;
-                        this.ambientBed = null;
-                    }
+                    clearInterval(fadeTimer);
+                    fadeTimer = null;
+                    current.volume = 0;
+                    other.volume = safeVolume;
                     active = active === "A" ? "B" : "A";
-                    other._crossfading = false;
-                    // Do NOT restart the silent bed here — it will be started
-                    // when the other bed ends in the next handleEnd() call.
-                    // Restarting it now would mark it as isPlaying and break
-                    // the alternation on the next cycle.
+                    // Schedule next crossfade after the other bed plays for (duration - crossfadeTime)
+                    fadeTimer = setTimeout(startCrossfade, (duration - crossfadeTime) * 1000);
                 }
             }, 16);
         };
 
+        // Schedule first crossfade after bed A has played for (duration - crossfadeTime)
+        fadeTimer = setTimeout(startCrossfade, (duration - crossfadeTime) * 1000);
+
         this.ambientBed = bedA;
         this.ambientBedB = bedB;
+        this._ambientFadeTimer = fadeTimer;
         return bedA;
     }
 
@@ -380,7 +356,7 @@ class SoundManager {
         const sound = new THREE.PositionalAudio(this.listener);
         sound.__smName = name;
         sound.setBuffer(buffer);
-        sound.setLoop(false); // manual loop via crossfade
+        sound.setLoop(true); // built-in loop, we crossfade between beds
         sound.setVolume(volume * initialVolume);
         sound.setRefDistance(100);
         sound.setRolloffFactor(1.0);
@@ -404,6 +380,11 @@ class SoundManager {
         if (sound === this.ambientBed) this.ambientBed = null;
         if (sound === this.ambientBedB) this.ambientBedB = null;
         this.release(sound);
+        // Clear fade timer when both beds are released
+        if (!this.ambientBed && !this.ambientBedB && this._ambientFadeTimer) {
+            clearTimeout(this._ambientFadeTimer);
+            this._ambientFadeTimer = null;
+        }
     }
 
     // Resume ambient beds after AudioContext suspension (user gesture / focus regain).
@@ -890,6 +871,11 @@ class SoundManager {
             });
         } catch {}
         this.instances.clear();
+        // Clear ambient fade timer
+        if (this._ambientFadeTimer) {
+            clearTimeout(this._ambientFadeTimer);
+            this._ambientFadeTimer = null;
+        }
     }
 }
 
