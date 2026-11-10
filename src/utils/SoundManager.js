@@ -295,9 +295,30 @@ class SoundManager {
         this.camera.add(bedA);
         this.camera.add(bedB);
 
+        // Set onEnded BEFORE play() — three binds source.onended inside play(),
+        // so assigning after play() means the callback never fires (P0-#2).
+        bedA.onEnded = () => {
+            runBaseOnEnded(bedA);
+            try {
+                bedA.__reverbSend?.disconnect();
+            } catch {}
+            bedA.__reverbSend = null;
+            handleEnd();
+        };
+        bedB.onEnded = () => {
+            runBaseOnEnded(bedB);
+            try {
+                bedB.__reverbSend?.disconnect();
+            } catch {}
+            bedB.__reverbSend = null;
+            handleEnd();
+        };
+
         // Start bed A immediately
         if (this.ensureRunning()) {
-            try { bedA.play(); } catch {}
+            try {
+                bedA.play();
+            } catch {}
         }
 
         // Seamless loop: when A ends, crossfade to B; when B ends, crossfade to A
@@ -311,7 +332,9 @@ class SoundManager {
             other._crossfading = true;
             other._startTime = performance.now();
             if (this.ensureRunning()) {
-                try { other.play(); } catch {}
+                try {
+                    other.play();
+                } catch {}
             }
 
             // Crossfade over crossfadeTime seconds
@@ -331,8 +354,13 @@ class SoundManager {
                     current.stop();
                     this._untrackInstance(current);
                     scheduleDetach(current);
-                    if (active === "A") { this.ambientBed = other; this.ambientBedB = null; }
-                    else { this.ambientBedB = other; this.ambientBed = null; }
+                    if (active === "A") {
+                        this.ambientBed = other;
+                        this.ambientBedB = null;
+                    } else {
+                        this.ambientBedB = other;
+                        this.ambientBed = null;
+                    }
                     active = active === "A" ? "B" : "A";
                     other._crossfading = false;
                     // Restart the now-silent bed for next cycle
@@ -340,23 +368,12 @@ class SoundManager {
                     silentBed.volume = 0;
                     silentBed._startTime = performance.now();
                     if (this.ensureRunning()) {
-                        try { silentBed.play(); } catch {}
+                        try {
+                            silentBed.play();
+                        } catch {}
                     }
                 }
             }, 16);
-        };
-
-        bedA.onEnded = () => {
-            runBaseOnEnded(bedA);
-            try { bedA.__reverbSend?.disconnect(); } catch {}
-            bedA.__reverbSend = null;
-            handleEnd();
-        };
-        bedB.onEnded = () => {
-            runBaseOnEnded(bedB);
-            try { bedB.__reverbSend?.disconnect(); } catch {}
-            bedB.__reverbSend = null;
-            handleEnd();
         };
 
         this.ambientBed = bedA;
@@ -369,7 +386,7 @@ class SoundManager {
         sound.__smName = name;
         sound.setBuffer(buffer);
         sound.setLoop(false); // manual loop via crossfade
-        sound.setVolume(initialVolume);
+        sound.setVolume(volume * initialVolume);
         sound.setRefDistance(100);
         sound.setRolloffFactor(1.0);
         sound.setMaxDistance(500);

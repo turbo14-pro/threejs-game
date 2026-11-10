@@ -10,7 +10,7 @@ export default function AmbientBed() {
     const ambientVolume = useGameStore((state) => state.audio.ambientVolume);
     const reverbZone = useGameStore((state) => state.audio.reverbZone);
     const occlusionGain = useGameStore((state) => state.audio.occlusionGain);
-    const bedRef = useRef({ primary: null, secondary: null });
+    const bedRef = useRef({primary: null, secondary: null});
 
     useEffect(() => {
         // Load amb-bed.ogg if not already cached
