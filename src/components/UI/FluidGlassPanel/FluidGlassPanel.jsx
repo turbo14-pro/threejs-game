@@ -124,7 +124,7 @@ struct FluidGlassTrace {
   bool escaped;
   float travel;
   int bounces;
-}
+};
 
 FluidGlassTrace glassTraceRay(vec3 ro, vec3 rd) {
   FluidGlassTrace tr;
