@@ -38,13 +38,14 @@ export default function AmbientBed() {
         };
     }, []); // Run once on mount
 
-    // Update volume when the slider changes
+    // Update volume when the slider changes — ambient bed is always capped at 1/4
     useEffect(() => {
+        const cappedVolume = Math.min(ambientVolume, 0.25);
         if (bedRef.current.primary && typeof bedRef.current.primary.setVolume === "function") {
-            bedRef.current.primary.setVolume(ambientVolume);
+            bedRef.current.primary.setVolume(cappedVolume);
         }
         if (bedRef.current.secondary && typeof bedRef.current.secondary.setVolume === "function") {
-            bedRef.current.secondary.setVolume(ambientVolume);
+            bedRef.current.secondary.setVolume(cappedVolume);
         }
     }, [ambientVolume]);
 
