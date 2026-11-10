@@ -16,12 +16,12 @@ export default function AmbientBed() {
         // Load amb-bed.ogg if not already cached
         if (!soundManager.sounds.has("amb-bed")) {
             soundManager.load("amb-bed", "audio/amb-bed.ogg").then(() => {
-                const bed = soundManager.playAmbientBed("amb-bed", ambientVolume);
+                const bed = soundManager.playAmbientBed("amb-bed", ambientVolume * 0.25);
                 bedRef.current.primary = bed;
                 bedRef.current.secondary = soundManager.ambientBedB;
             });
         } else {
-            const bed = soundManager.playAmbientBed("amb-bed", ambientVolume);
+            const bed = soundManager.playAmbientBed("amb-bed", ambientVolume * 0.25);
             bedRef.current.primary = bed;
             bedRef.current.secondary = soundManager.ambientBedB;
         }
@@ -38,14 +38,14 @@ export default function AmbientBed() {
         };
     }, []); // Run once on mount
 
-    // Update volume when the slider changes — ambient bed is always capped at 1/4
+    // Update volume when the slider changes — ambient bed is slider * 0.25 multiplier
     useEffect(() => {
-        const cappedVolume = Math.min(ambientVolume, 0.25);
+        const bedVolume = ambientVolume * 0.25;
         if (bedRef.current.primary && typeof bedRef.current.primary.setVolume === "function") {
-            bedRef.current.primary.setVolume(cappedVolume);
+            bedRef.current.primary.setVolume(bedVolume);
         }
         if (bedRef.current.secondary && typeof bedRef.current.secondary.setVolume === "function") {
-            bedRef.current.secondary.setVolume(cappedVolume);
+            bedRef.current.secondary.setVolume(bedVolume);
         }
     }, [ambientVolume]);
 

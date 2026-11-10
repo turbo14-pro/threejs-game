@@ -279,8 +279,9 @@ class SoundManager {
         if (!buffer) return null;
         if (!this.camera) return null;
 
-        // Ambient bed is always capped at 1/4 volume regardless of slider position
-        const safeVolume = clampVolume(Math.min(volume, 0.25), 0.5) * clampVolume(this.masterVolume, 1.0);
+        // Ambient bed volume is controlled by the caller (slider * multiplier).
+        // No internal cap — the caller applies the multiplier.
+        const safeVolume = clampVolume(volume, 0.5) * clampVolume(this.masterVolume, 1.0);
         if (!Number.isFinite(safeVolume)) return null;
 
         const duration = Number.isFinite(buffer.duration) && buffer.duration > 0 ? buffer.duration : 15;
