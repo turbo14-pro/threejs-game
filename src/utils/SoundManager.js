@@ -282,7 +282,8 @@ class SoundManager {
         if (!Number.isFinite(safeVolume)) return null;
 
         const duration = Number.isFinite(buffer.duration) && buffer.duration > 0 ? buffer.duration : 15;
-        const crossfadeTime = 0.8; // seconds to crossfade between beds
+        const crossfadeTime = 2.0; // seconds to crossfade between beds (longer overlap for OGG gapless)
+        const crossfadeStartOffset = 2.0; // start crossfade this many seconds before the loop point
 
         // Stop any existing ambient beds
         if (this.ambientBed) this.releaseAmbientBed(this.ambientBed);
@@ -337,14 +338,14 @@ class SoundManager {
                     current.volume = 0;
                     other.volume = safeVolume;
                     active = active === "A" ? "B" : "A";
-                    // Schedule next crossfade after the other bed plays for (duration - crossfadeTime)
-                    fadeTimer = setTimeout(startCrossfade, (duration - crossfadeTime) * 1000);
+                    // Schedule next crossfade after the other bed plays for (duration - crossfadeStartOffset)
+                    fadeTimer = setTimeout(startCrossfade, (duration - crossfadeStartOffset) * 1000);
                 }
             }, 16);
         };
 
-        // Schedule first crossfade after bed A has played for (duration - crossfadeTime)
-        fadeTimer = setTimeout(startCrossfade, (duration - crossfadeTime) * 1000);
+        // Schedule first crossfade after bed A has played for (duration - crossfadeStartOffset)
+        fadeTimer = setTimeout(startCrossfade, (duration - crossfadeStartOffset) * 1000);
 
         this.ambientBed = bedA;
         this.ambientBedB = bedB;
