@@ -34,9 +34,9 @@ export default function Options({ onBack }) {
       
       <div className="options-list">
         {/* MAIN PRESET DROPDOWN */}
-        <div className="option-item preset-item" style={{ cursor: 'default', background: 'rgba(255,255,255,0.05)', padding: '1.5rem', borderRadius: '12px', border: '1px solid rgba(255,255,255,0.1)' }}>
+        <div className="option-item preset-item">
           <div className="option-info">
-            <label htmlFor="performance-preset" className="option-name" style={{ fontSize: '1.2rem', color: '#fff' }}>Performance Preset</label>
+            <label htmlFor="performance-preset" className="option-name-label">Performance Preset</label>
             <span className="option-desc">Quickly adjust all graphics settings</span>
           </div>
           <select 
@@ -59,21 +59,12 @@ export default function Options({ onBack }) {
         <div 
           className="advanced-trigger" 
           onClick={() => setAdvancedOpen(!advancedOpen)}
-          style={{ 
-            marginTop: '1rem', 
-            textAlign: 'center', 
-            cursor: 'pointer', 
-            padding: '0.5rem', 
-            opacity: 0.7,
-            fontSize: '0.8rem',
-            letterSpacing: '1px'
-          }}
         >
           {advancedOpen ? '▼ HIDE ADVANCED SETTINGS' : '▶ SHOW ADVANCED SETTINGS'}
         </div>
 
         {advancedOpen && (
-          <div className="advanced-options" style={{ marginTop: '1rem', borderTop: '1px solid rgba(255,255,255,0.1)', paddingTop: '1rem' }}>
+          <div className="advanced-options">
             
             {/* SHADOWS */}
             <div className="option-item">
@@ -262,8 +253,8 @@ export default function Options({ onBack }) {
         )}
       </div>
 
-      <button className="char-btn back-btn" onClick={onBack} style={{ marginTop: '2rem', padding: '1rem 3rem' }}>
-        <span className="btn-name" style={{ fontSize: '0.9rem' }}>SAVE & BACK</span>
+      <button className="char-btn back-btn" onClick={onBack}>
+        <span className="btn-name btn-name-sm">SAVE & BACK</span>
       </button>
 
       <div className="options-footer">

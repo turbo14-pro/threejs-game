@@ -40,67 +40,32 @@ export function PowerUpNotification() {
   const hint = desc.hint(data.rarity, effectVal);
 
   return (
-    <div style={{
-      position: 'fixed',
-      top: 60,
-      left: '50%',
-      transform: 'translateX(-50%)',
-      width: 'max-content',
-      maxWidth: 'calc(100vw - 32px)',
-      boxSizing: 'border-box',
-      zIndex: 'var(--z-toast)',
-      display: 'flex',
-      alignItems: 'center',
-      gap: 12,
-      padding: '12px 24px',
-      background: 'rgba(0,0,0,0.75)',
-      backdropFilter: 'blur(8px)',
-      border: `2px solid ${desc.color}`,
-      borderRadius: 12,
-      boxShadow: `0 0 20px ${desc.color}44, 0 4px 12px rgba(0,0,0,0.5)`,
-      animation: 'notifSlideIn 0.3s ease-out',
-      transition: 'opacity 0.3s, transform 0.3s',
-      opacity: visible ? 1 : 0,
-      pointerEvents: 'none',
-    }}>
+    <div
+      className="power-up-notification"
+      style={{
+        borderColor: desc.color,
+        boxShadow: `0 0 20px ${desc.color}44, 0 4px 12px rgba(0,0,0,0.5)`,
+        opacity: visible ? 1 : 0,
+      }}
+    >
       <img
         src={desc.icon}
         alt={desc.label}
+        className="power-up-notification-icon"
         style={{
-          width: 32,
-          height: 32,
-          flexShrink: 0,
-          objectFit: 'contain',
           filter: `drop-shadow(0 0 6px ${desc.color})`,
         }}
       />
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 2, minWidth: 0 }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <span style={{
-            fontSize: 13,
-            fontWeight: 700,
-            color: rarityColor,
-            textTransform: 'uppercase',
-            letterSpacing: 1,
-          }}>
+      <div className="power-up-notification-content">
+        <div className="power-up-notification-header">
+          <span className="power-up-notification-rarity" style={{ color: rarityColor }}>
             {rarityLabel}
           </span>
-          <span style={{
-            fontSize: 16,
-            fontWeight: 700,
-            color: desc.color,
-            textShadow: `0 0 8px ${desc.color}88`,
-            whiteSpace: 'nowrap',
-          }}>
+          <span className="power-up-notification-label" style={{ color: desc.color }}>
             {desc.label}
           </span>
         </div>
-        <div style={{
-          fontSize: 12,
-          color: '#ccc',
-          fontFamily: 'monospace',
-          overflowWrap: 'anywhere',
-        }}>
+        <div className="power-up-notification-hint">
           {hint}
         </div>
       </div>

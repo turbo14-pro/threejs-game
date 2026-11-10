@@ -45,47 +45,25 @@ export function PowerUpHUD() {
 
   return (
     <div
-      style={{
-        position: 'fixed',
-        top: 20,
-        right: 20,
-        background: 'rgba(0,0,0,0.6)',
-        borderRadius: 8,
-        padding: '10px 16px',
-        minWidth: 120,
-        fontFamily: 'monospace',
-        color: '#fff',
-        transition: 'opacity 0.3s',
-        opacity: powerUp ? 1 : 0,
-      }}
+      className="power-up-hud"
+      style={{ opacity: powerUp ? 1 : 0 }}
     >
-      <div style={{ fontSize: 14, fontWeight: 'bold', color: catCfg.color }}>
+      <div className="power-up-hud-label" style={{ color: catCfg.color }}>
         {catCfg.label}
       </div>
-      <div style={{ fontSize: 12, color: rarCfg.color, textTransform: 'uppercase' }}>
+      <div className="power-up-hud-rarity" style={{ color: rarCfg.color }}>
         {powerUp.rarity}
       </div>
-      <div
-        style={{
-          marginTop: 6,
-          width: '100%',
-          height: 4,
-          background: '#333',
-          borderRadius: 2,
-          overflow: 'hidden',
-        }}
-      >
+      <div className="power-up-hud-bar-bg">
         <div
+          className="power-up-hud-bar-fill"
           style={{
             width: `${progress * 100}%`,
-            height: '100%',
             background: catCfg.color,
-            borderRadius: 2,
-            transition: 'width 0.1s linear',
           }}
         />
       </div>
-      <div style={{ fontSize: 10, color: '#aaa', marginTop: 4, textAlign: 'right' }}>
+      <div className="power-up-hud-time">
         {remaining > 0 ? `${(remaining / 1000).toFixed(1)}s` : 'Expired'}
       </div>
     </div>
