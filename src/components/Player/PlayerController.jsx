@@ -706,7 +706,10 @@ export default function PlayerController({sendUpdate}) {
         const rand = seededRandom(42);
         let insideBox = false;
         for (let i = 0; i < 20; i++) {
-            let bx, bz, valid = false, attempts = 0;
+            let bx,
+                bz,
+                valid = false,
+                attempts = 0;
             while (!valid && attempts < 100) {
                 bx = (rand() - 0.5) * 520;
                 bz = (rand() - 0.5) * 520;

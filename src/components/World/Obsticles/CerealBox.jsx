@@ -224,11 +224,5 @@ export function CerealBoxInteriorSensor({position, rotation, boxSize, onEnter, o
     }, [position, setInsideCerealBox, setCurrentZone, onEnter, onExit]);
 
     // Sensor collider that fills the interior of the box (no collision response)
-    return (
-        <CuboidCollider
-            args={[w / 2 - 1, h / 2 - 1, d / 2 - 1]}
-            position={[0, 0, 0]}
-            sensor
-        />
-    );
+    return <CuboidCollider args={[w / 2 - 1, h / 2 - 1, d / 2 - 1]} position={[0, 0, 0]} sensor />;
 }

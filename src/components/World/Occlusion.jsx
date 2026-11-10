@@ -40,9 +40,7 @@ export default function Occlusion({playerPos}) {
         const hits = raycasterRef.current.intersectObjects(scene.children, true);
 
         // Filter out hits that are the camera itself
-        const obstructed = hits.some(
-            (hit) => hit.object !== camera && hit.distance < distance - 0.5
-        );
+        const obstructed = hits.some((hit) => hit.object !== camera && hit.distance < distance - 0.5);
 
         // Apply occlusion gain: 1.0 = no occlusion, 0.25 = heavy occlusion
         const gain = obstructed ? 0.25 : 1.0;

@@ -30,11 +30,7 @@ export default function AmbientSFX() {
             if (!soundManager.sounds.has(name)) return;
 
             // Spawn at a random offset near the camera
-            const offset = new THREE.Vector3(
-                (Math.random() - 0.5) * 20,
-                0,
-                (Math.random() - 0.5) * 20
-            );
+            const offset = new THREE.Vector3((Math.random() - 0.5) * 20, 0, (Math.random() - 0.5) * 20);
             const pos = camera.position.clone().add(offset);
 
             // Create a temporary empty object to parent the sound to

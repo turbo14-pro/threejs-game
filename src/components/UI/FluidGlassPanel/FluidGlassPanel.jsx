@@ -115,7 +115,7 @@ float shadowAt(vec3 ro, vec3 rd) {
   return occlusion;
 }
 
-struct GlassTrace {
+struct FluidGlassTrace {
   bool hit;
   float t;
   vec3 normal;
@@ -126,8 +126,8 @@ struct GlassTrace {
   int bounces;
 }
 
-GlassTrace glassTraceRay(vec3 ro, vec3 rd) {
-  GlassTrace tr;
+FluidGlassTrace glassTraceRay(vec3 ro, vec3 rd) {
+  FluidGlassTrace tr;
   tr.hit = false;
   tr.t = 0.0;
   tr.normal = vec3(0.0);
@@ -212,7 +212,7 @@ void main() {
   vec3 rd = normalize(vec3((uv - 0.5) * uView.x / uFocal, -1.0));
   rd = uInverse * rd;
 
-  GlassTrace tr = glassTraceRay(ro, rd);
+  FluidGlassTrace tr = glassTraceRay(ro, rd);
 
   vec4 color = uBackground;
   vec4 refractedColor = vec4(0.0);

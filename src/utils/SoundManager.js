@@ -155,7 +155,8 @@ class SoundManager {
         this.reverbEnabled = true;
         this.reverbWet = 1; // 25% wet by default
         // --- Ambient bed ---
-        this.ambientBed = null; // Currently playing looping bed
+        this.ambientBed = null; // Currently playing looping bed (primary)
+        this.ambientBedB = null; // Secondary bed for seamless crossfade looping
         this.occlusionGain = 1; // Occlusion multiplier for ambient bed [0,1]
         this._reverbZone = "outside"; // Current reverb zone
         // AUDIO LIFECYCLE DEBUG: per-node bookkeeping for post-crash inspection.
@@ -265,34 +266,125 @@ class SoundManager {
     // --- AMBIENT BED -------------------------------------------------------
     // Looping ambient bed attached to the camera (follows the player).
     // Uses a large refDistance so it's audible everywhere, with volume
-    // controlled by the store's audio.ambientVolume.
+    // --- AMBIENT BED (seamless dual-bed crossfade) ---------------------------------
+    // Looping ambient bed attached to the camera (follows the player).
+    // Uses two PositionalAudio instances crossfading to eliminate the OGG/Vorbis
+    // encoder-delay stall at the loop point. When bed A nears its end, bed B is
+    // started at volume 0 and crossfaded in while A fades out, then the roles
+    // swap. Volume is controlled by the store's audio.ambientVolume.
     playAmbientBed(name, volume = 0.5) {
         if (!this.listener || !this.sounds.has(name)) return null;
         const buffer = this.sounds.get(name);
         if (!buffer) return null;
+        if (!this.camera) return null;
 
         const safeVolume = clampVolume(volume, 0.5) * clampVolume(this.masterVolume, 1.0);
         if (!Number.isFinite(safeVolume)) return null;
 
-        // Stop any existing ambient bed before starting a new one
-        if (this.ambientBed) {
-            this.releaseAmbientBed(this.ambientBed);
+        const duration = Number.isFinite(buffer.duration) && buffer.duration > 0 ? buffer.duration : 15;
+        const crossfadeTime = 0.5; // seconds to crossfade between beds
+
+        // Stop any existing ambient beds
+        if (this.ambientBed) this.releaseAmbientBed(this.ambientBed);
+        if (this.ambientBedB) this.releaseAmbientBed(this.ambientBedB);
+
+        // Create both beds
+        const bedA = this._createAmbientBedInstance(name, buffer, safeVolume, 1.0);
+        const bedB = this._createAmbientBedInstance(name, buffer, safeVolume, 0.0);
+
+        this.camera.add(bedA);
+        this.camera.add(bedB);
+
+        // Start bed A immediately
+        if (this.ensureRunning()) {
+            try { bedA.play(); } catch {}
         }
 
+        // Crossfade loop: when A nears end, fade B in and A out, then swap
+        let active = "A";
+        const checkLoop = () => {
+            if (!bedA || !bedB) return;
+            const aPlaying = bedA.isPlaying;
+            const bPlaying = bedB.isPlaying;
+
+            if (!aPlaying && !bPlaying) {
+                // Both stopped (context suspended?) — try to restart A
+                if (this.ensureRunning()) {
+                    try { bedA.play(); } catch {}
+                    active = "A";
+                }
+                return;
+            }
+
+            const current = active === "A" ? bedA : bedB;
+            const other = active === "A" ? bedB : bedA;
+
+            // If current is near the end, start crossfade
+            if (current.isPlaying && current._startTime !== undefined) {
+                const elapsed = (performance.now() - current._startTime) / 1000;
+                if (elapsed >= duration - crossfadeTime && !other._crossfading) {
+                    other._crossfading = true;
+                    other._startTime = performance.now();
+                    if (this.ensureRunning()) {
+                        try { other.play(); } catch {}
+                    }
+                    // Crossfade over crossfadeTime seconds
+                    const fadeSteps = Math.ceil(crossfadeTime * 60); // ~60fps
+                    let step = 0;
+                    const fadeInterval = setInterval(() => {
+                        step++;
+                        const t = step / fadeSteps;
+                        if (!current.isPlaying || !other.isPlaying) {
+                            clearInterval(fadeInterval);
+                            return;
+                        }
+                        current.volume = safeVolume * (1 - t);
+                        other.volume = safeVolume * t;
+                        if (t >= 1) {
+                            clearInterval(fadeInterval);
+                            current.stop();
+                            this._untrackInstance(current);
+                            scheduleDetach(current);
+                            if (active === "A") { this.ambientBed = other; this.ambientBedB = null; }
+                            else { this.ambientBedB = other; this.ambientBed = null; }
+                            active = active === "A" ? "B" : "A";
+                            other._crossfading = false;
+                            // Restart the now-silent bed for next cycle
+                            const silentBed = active === "A" ? bedA : bedB;
+                            silentBed.volume = 0;
+                            silentBed._startTime = performance.now();
+                            if (this.ensureRunning()) {
+                                try { silentBed.play(); } catch {}
+                            }
+                        }
+                    }, 16);
+                }
+            }
+
+            if (aPlaying || bPlaying) {
+                requestAnimationFrame(checkLoop);
+            }
+        };
+
+        bedA._startTime = performance.now();
+        requestAnimationFrame(checkLoop);
+
+        this.ambientBed = bedA;
+        this.ambientBedB = bedB;
+        return bedA;
+    }
+
+    _createAmbientBedInstance(name, buffer, volume, initialVolume) {
         const sound = new THREE.PositionalAudio(this.listener);
         sound.__smName = name;
         sound.setBuffer(buffer);
         sound.setLoop(true);
-        sound.setVolume(safeVolume);
-        sound.setRefDistance(100); // Large radius so bed is audible everywhere
+        sound.setVolume(initialVolume);
+        sound.setRefDistance(100);
         sound.setRolloffFactor(1.0);
         sound.setMaxDistance(500);
         sound.setDistanceModel("exponential");
 
-        // No random detune on looping sounds
-        // applyRandomVariation(sound, buffer, true) — skipped intentionally for loops
-
-        // Connect to reverb if enabled
         if (this.reverbEnabled && this.reverb) {
             const send = this.listener.context.createGain();
             send.gain.value = this.reverbWet;
@@ -311,38 +403,24 @@ class SoundManager {
             scheduleDetach(sound);
         };
         this._trackInstance(sound);
-        this.camera.add(sound);
-
-        // Only play if the AudioContext is running; if suspended, the sound
-        // is still created and configured — it will play once the context
-        // resumes (see resumeAmbientBed / ensureRunning).
-        if (this.ensureRunning()) {
-            try {
-                sound.play();
-            } catch {
-                this._untrackInstance(sound);
-                scheduleDetach(sound);
-                return null;
-            }
-        }
-        this.ambientBed = sound;
         return sound;
-    }
-
-    // Resume a previously created ambient bed that couldn't play because the
-    // AudioContext was suspended. Called on user gesture / focus regain.
-    resumeAmbientBed() {
-        if (!this.ambientBed) return;
-        if (!this.ensureRunning()) return;
-        try {
-            if (!this.ambientBed.isPlaying) this.ambientBed.play();
-        } catch {}
     }
 
     releaseAmbientBed(sound) {
         if (!sound) return;
         if (sound === this.ambientBed) this.ambientBed = null;
+        if (sound === this.ambientBedB) this.ambientBedB = null;
         this.release(sound);
+    }
+
+    // Resume ambient beds after AudioContext suspension (user gesture / focus regain).
+    resumeAmbientBed() {
+        if (!this.ambientBed && !this.ambientBedB) return;
+        if (!this.ensureRunning()) return;
+        try {
+            if (this.ambientBed && !this.ambientBed.isPlaying) this.ambientBed.play();
+            if (this.ambientBedB && !this.ambientBedB.isPlaying) this.ambientBedB.play();
+        } catch {}
     }
 
     // --- AMBIENT SFX PRELOAD ----------------------------------------------
