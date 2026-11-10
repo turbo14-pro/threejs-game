@@ -10,6 +10,7 @@ export default function Options({ onBack }) {
 
   const [advancedOpen, setAdvancedOpen] = useState(false);
   const [debugEnabled, setDebugEnabledState] = useState(isDebugEnabled);
+  const [isSaving, setIsSaving] = useState(false);
 
   // Auto-expand advanced settings if Custom is selected
   useEffect(() => {
@@ -253,8 +254,8 @@ export default function Options({ onBack }) {
         )}
       </div>
 
-      <button className="char-btn back-btn" onClick={onBack}>
-        <span className="btn-name btn-name-sm">SAVE & BACK</span>
+      <button className="char-btn back-btn" onClick={onBack} disabled={isSaving}>
+        <span className="btn-name btn-name-sm">{isSaving ? 'SAVING...' : 'SAVE & BACK'}</span>
       </button>
 
       <div className="options-footer">

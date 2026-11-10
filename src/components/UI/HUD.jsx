@@ -23,6 +23,7 @@ export default function HUD() {
   const [showControls, setShowControls] = useState(false); // Added Controls state
   const [showTutorial, setShowTutorial] = useState(true);
   const [isTouchDevice, setIsTouchDevice] = useState(false);
+  const [isResuming, setIsResuming] = useState(false);
   const menuScreen = showOptions ? 'OPTIONS' : showControls ? 'CONTROLS' : showHelp ? 'HELP' : 'PAUSED';
   const menuRef = useMenuKeyboard({
     enabled: isPaused,
@@ -63,12 +64,17 @@ export default function HUD() {
     };
   }, []);
 
-  const handleResume = () => {
+  const handleResume = async () => {
+    setIsResuming(true);
     if (isTouchDevice) {
       setIsPaused(false);
+      setIsResuming(false);
     } else {
       const canvas = document.querySelector('canvas');
-      if (canvas) canvas.requestPointerLock();
+      if (canvas) {
+        canvas.requestPointerLock();
+        setIsResuming(false);
+      }
     }
   };
 
@@ -271,8 +277,8 @@ export default function HUD() {
               <>
                 <h1>PAUSED</h1>
                 <div className="menu-stack">
-                  <button className="char-btn main-btn" onClick={handleResume}>
-                    <span className="btn-name">RESUME</span>
+                  <button className="char-btn main-btn" onClick={handleResume} disabled={isResuming}>
+                    <span className="btn-name">{isResuming ? 'RESUMING...' : 'RESUME'}</span>
                   </button>
                   <button 
                     className="char-btn main-btn" 
