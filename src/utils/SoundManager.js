@@ -315,7 +315,7 @@ class SoundManager {
         };
 
         // Start bed A immediately
-        if (this.ensureRunning()) {
+        if (this.ensureRunning() && !bedA.isPlaying) {
             try {
                 bedA.play();
             } catch {}
@@ -327,7 +327,7 @@ class SoundManager {
             const current = active === "A" ? bedA : bedB;
             const other = active === "A" ? bedB : bedA;
 
-            if (other._crossfading) return; // already crossfading
+            if (other._crossfading || other.isPlaying) return; // already crossfading or playing
 
             other._crossfading = true;
             other._startTime = performance.now();
@@ -367,7 +367,7 @@ class SoundManager {
                     const silentBed = active === "A" ? bedA : bedB;
                     silentBed.volume = 0;
                     silentBed._startTime = performance.now();
-                    if (this.ensureRunning()) {
+                    if (this.ensureRunning() && !silentBed.isPlaying) {
                         try {
                             silentBed.play();
                         } catch {}
