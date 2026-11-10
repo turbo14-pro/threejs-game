@@ -2,6 +2,7 @@ import {useEffect, useRef} from "react";
 import {useThree} from "@react-three/fiber";
 import * as THREE from "three";
 
+import {useGameStore} from "../../store/useGameStore";
 import {soundManager} from "../../utils/SoundManager";
 
 /**
@@ -10,6 +11,7 @@ import {soundManager} from "../../utils/SoundManager";
  */
 export default function AmbientSFX() {
     const {camera} = useThree();
+    const ambientVolume = useGameStore((state) => state.audio.ambientVolume);
     const intervalRef = useRef(null);
     const enabledRef = useRef(true);
 
@@ -37,7 +39,7 @@ export default function AmbientSFX() {
             const dummy = new THREE.Object3D();
             dummy.position.copy(pos);
 
-            soundManager.playAmbientSFX(name, dummy, 1.0);
+            soundManager.playAmbientSFX(name, dummy, ambientVolume);
         };
 
         // Random interval between 8-20 seconds
