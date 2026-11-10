@@ -34,7 +34,7 @@ export default function AmbientBed() {
 
     // Update volume when the slider changes
     useEffect(() => {
-        if (bedRef.current) {
+        if (bedRef.current && typeof bedRef.current.setVolume === "function") {
             bedRef.current.setVolume(ambientVolume);
         }
     }, [ambientVolume]);

@@ -327,7 +327,6 @@ export default function Options({ onBack }) {
           min="0"
           max="1"
           step="0.1"
-          defaultValue="0.5"
           value={ambientVolume}
           onChange={(e) => setAmbientVolume(parseFloat(e.target.value))}
           className="volume-slider"

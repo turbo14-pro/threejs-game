@@ -266,7 +266,7 @@ class SoundManager {
     // Looping ambient bed attached to the camera (follows the player).
     // Uses a large refDistance so it's audible everywhere, with volume
     // controlled by the store's audio.ambientVolume.
-    async playAmbientBed(name, volume = 0.5) {
+    playAmbientBed(name, volume = 0.5) {
         if (!this.listener || !this.sounds.has(name)) return null;
         const buffer = this.sounds.get(name);
         if (!buffer) return null;
