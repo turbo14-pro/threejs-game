@@ -7,6 +7,7 @@ import Options from './Options.jsx';
 import LatencyGraph from './LatencyGraph.jsx';
 import { PowerUpHUD } from './PowerUpHUD.jsx';
 import { PowerUpNotification } from './PowerUpNotification.jsx';
+import FluidGlassPanel from './FluidGlassPanel/FluidGlassPanel';
 
 export default function HUD() {
   const matchPhase = useGameStore(state => state.game.phase);
@@ -230,7 +231,20 @@ export default function HUD() {
       {/* Pause Menu Overlay */}
       {isPaused && (
         <div className="menu-overlay">
-          <div className="menu-content" ref={menuRef} style={{ pointerEvents: 'auto' }}>
+          <FluidGlassPanel
+            ref={menuRef}
+            refraction={0.25}
+            spin={0}
+            frost={0.5}
+            shadow={1}
+            dispersion={1}
+            interaction="follow"
+            smoothness={0.5}
+            wobble={0.5}
+            idle={true}
+            intro={true}
+            style={{ pointerEvents: 'auto' }}
+          >
             {showOptions ? (
               <Options onBack={() => setShowOptions(false)} />
             ) : showControls ? (
@@ -284,7 +298,7 @@ export default function HUD() {
                 </div>
               </>
             )}
-          </div>
+          </FluidGlassPanel>
         </div>
       )}
 

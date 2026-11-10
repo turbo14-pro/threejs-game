@@ -7,6 +7,8 @@ export default function Options({ onBack }) {
   const performancePreset = useGameStore(state => state.performancePreset);
   const setSetting = useGameStore(state => state.setSetting);
   const setPerformancePreset = useGameStore(state => state.setPerformancePreset);
+  const ambientVolume = useGameStore(state => state.audio.ambientVolume);
+  const setAmbientVolume = useGameStore(state => state.setAmbientVolume);
 
   const [submenu, setSubmenu] = useState('graphics'); // 'graphics' | 'controls' | 'audio'
   const [advancedOpen, setAdvancedOpen] = useState(false);
@@ -311,6 +313,23 @@ export default function Options({ onBack }) {
           max="1"
           step="0.1"
           defaultValue="1"
+          className="volume-slider"
+        />
+      </div>
+      <div className="option-item preset-item">
+        <div className="option-info">
+          <label htmlFor="volume-ambient" className="option-name-label">Ambient Volume</label>
+          <span className="option-desc">Background ambience bed</span>
+        </div>
+        <input
+          id="volume-ambient"
+          type="range"
+          min="0"
+          max="1"
+          step="0.1"
+          defaultValue="0.5"
+          value={ambientVolume}
+          onChange={(e) => setAmbientVolume(parseFloat(e.target.value))}
           className="volume-slider"
         />
       </div>

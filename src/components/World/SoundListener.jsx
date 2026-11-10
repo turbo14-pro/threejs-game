@@ -19,6 +19,10 @@ const SFX = [
     ["dash", "audio/dash.ogg"],
 ];
 
+// Ambient bed (loaded eagerly). Ambient SFX are downloaded lazily by
+// preloadAmbientSFX() below.
+const AMBIENT_BED = ["amb-bed", "audio/amb-bed.ogg"];
+
 /**
  * THE EARS OF THE GAME (SoundListener)
  * This component adds the 'AudioListener' to the camera.
@@ -35,6 +39,12 @@ export default function SoundListener() {
 
         // Pre-load common sounds (even if files are missing, it sets up the slots)
         for (const [name, url] of SFX) soundManager.load(name, url);
+
+        // Load ambient bed
+        soundManager.load(...AMBIENT_BED);
+
+        // Kick off lazy background download of amb-sfx one-shots (one at a time)
+        soundManager.preloadAmbientSFX();
 
         // Resume AudioContext on first user gesture (browser policy).
         // P1-#6: mobile needs pointerdown/touchend (not just click/keydown), iOS

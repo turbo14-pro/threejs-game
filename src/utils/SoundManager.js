@@ -142,6 +142,7 @@ class SoundManager {
 
     constructor() {
         this.listener = null;
+        this.camera = null; // Camera the ambient bed attaches to
         this.audioLoader = new THREE.AudioLoader();
         this.sounds = new Map(); // Buffer Cache
         this.instances = new Set(); // Active sounds
@@ -153,6 +154,10 @@ class SoundManager {
         this.reverbSend = null; // GainNode (send amount)
         this.reverbEnabled = true;
         this.reverbWet = 1; // 25% wet by default
+        // --- Ambient bed ---
+        this.ambientBed = null; // Currently playing looping bed
+        this.occlusionGain = 1; // Occlusion multiplier for ambient bed [0,1]
+        this._reverbZone = "outside"; // Current reverb zone
         // AUDIO LIFECYCLE DEBUG: per-node bookkeeping for post-crash inspection.
         this._debugMeta = new Map();
         this._debugCounter = 0;
@@ -205,6 +210,7 @@ class SoundManager {
             }
             if (!camera || typeof camera.add !== "function") return;
             this.listener = new THREE.AudioListener();
+            this.camera = camera;
             camera.add(this.listener);
             // Resume AudioContext after user interaction (browser policy)
             try {
@@ -254,6 +260,157 @@ class SoundManager {
         const v = Math.max(0, Math.min(1, Number(value) || 0));
         this.reverbWet = v;
         if (this.reverbGain) this.reverbGain.gain.value = v;
+    }
+
+    // --- AMBIENT BED -------------------------------------------------------
+    // Looping ambient bed attached to the camera (follows the player).
+    // Uses a large refDistance so it's audible everywhere, with volume
+    // controlled by the store's audio.ambientVolume.
+    async playAmbientBed(name, volume = 0.5) {
+        if (!this.listener || !this.sounds.has(name)) return null;
+        const buffer = this.sounds.get(name);
+        if (!buffer) return null;
+        if (!this.ensureRunning()) return null;
+        if (!this.camera) return null;
+
+        const safeVolume = clampVolume(volume, 0.5) * clampVolume(this.masterVolume, 1.0);
+        if (!Number.isFinite(safeVolume)) return null;
+
+        // Stop any existing ambient bed before starting a new one
+        if (this.ambientBed) {
+            this.releaseAmbientBed(this.ambientBed);
+        }
+
+        const sound = new THREE.PositionalAudio(this.listener);
+        sound.__smName = name;
+        sound.setBuffer(buffer);
+        sound.setLoop(true);
+        sound.setVolume(safeVolume);
+        sound.setRefDistance(100); // Large radius so bed is audible everywhere
+        sound.setRolloffFactor(1.0);
+        sound.setMaxDistance(500);
+        sound.setDistanceModel("exponential");
+
+        // No random detune on looping sounds
+        // applyRandomVariation(sound, buffer, true) — skipped intentionally for loops
+
+        // Connect to reverb if enabled
+        if (this.reverbEnabled && this.reverb) {
+            const send = this.listener.context.createGain();
+            send.gain.value = this.reverbWet;
+            sound.gain.connect(send);
+            send.connect(this.reverb);
+            sound.__reverbSend = send;
+        }
+
+        sound.onEnded = () => {
+            runBaseOnEnded(sound);
+            try {
+                sound.__reverbSend?.disconnect();
+            } catch {}
+            sound.__reverbSend = null;
+            this._untrackInstance(sound);
+            scheduleDetach(sound);
+        };
+        this._trackInstance(sound);
+        this.camera.add(sound);
+        try {
+            sound.play();
+        } catch {
+            this._untrackInstance(sound);
+            scheduleDetach(sound);
+            return null;
+        }
+        this.ambientBed = sound;
+        return sound;
+    }
+
+    releaseAmbientBed(sound) {
+        if (!sound) return;
+        if (sound === this.ambientBed) this.ambientBed = null;
+        this.release(sound);
+    }
+
+    // --- AMBIENT SFX PRELOAD ----------------------------------------------
+    // Lazy background download of amb-sfx01-10.ogg, one at a time.
+    // Caches each buffer in `this.sounds` for later positional playback.
+    async preloadAmbientSFX() {
+        if (!this.listener) return;
+        const base = "public/audio/";
+        for (let i = 1; i <= 10; i++) {
+            const name = `amb-sfx${i.toString().padStart(2, "0")}`;
+            if (this.sounds.has(name)) continue; // skip already-cached
+            const url = `${base}${name}.ogg`;
+            await new Promise((resolve) => {
+                this.audioLoader.load(
+                    url,
+                    (buffer) => {
+                        if (buffer) this.sounds.set(name, buffer);
+                        resolve();
+                    },
+                    undefined,
+                    (err) => {
+                        debugWarn(`[Sound] Could not preload ${name} from ${url}`);
+                        resolve();
+                    }
+                );
+            });
+        }
+    }
+
+    // Play a positional ambient SFX one-shot near a parent object.
+    playAmbientSFX(name, parent, volume = 0.5) {
+        return this.playPositional(name, parent, volume, 8, 1.0, 60, false);
+    }
+
+    // --- REVERB ZONES ------------------------------------------------------
+    // Zone-aware reverb: different IR + wet level per zone.
+    // Zones: 'outside' (open kitchen, moderate reverb), 'inside' (cereal box,
+    // small boxy space, short reverb), 'edge' (near arena edge, more echo).
+    setReverbZone(zone) {
+        if (!this.listener || !this.reverb) return;
+        const ctx = this.listener.context;
+        let duration, decay, wet;
+        switch (zone) {
+            case "inside":
+                // Small boxy space — short, tight reverb
+                duration = 0.4;
+                decay = 0.5;
+                wet = 0.3;
+                break;
+            case "edge":
+                // Near arena edge — more echo, longer tail
+                duration = 1.2;
+                decay = 0.8;
+                wet = 0.8;
+                break;
+            case "outside":
+            default:
+                // Open kitchen — moderate reverb
+                duration = 0.6;
+                decay = 0.6;
+                wet = 0.5;
+                break;
+        }
+        this.reverb.buffer = generateImpulseResponse(ctx, duration, decay);
+        this.setReverbWet(wet);
+        this._reverbZone = zone;
+    }
+
+    getReverbZone() {
+        return this._reverbZone || "outside";
+    }
+
+    // --- OCCLUSION ---------------------------------------------------------
+    // Occlusion gain multiplier applied to the ambient bed when the camera
+    // → player path is obstructed. Value in [0, 1].
+    setOcclusionGain(gain) {
+        const v = Math.max(0, Math.min(1, Number(gain) || 1));
+        this.occlusionGain = v;
+    }
+
+    getOcclusionGain() {
+        return this.occlusionGain ?? 1;
     }
 
     toggleReverb() {

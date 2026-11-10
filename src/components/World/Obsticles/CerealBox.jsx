@@ -1,8 +1,9 @@
-import React, {useMemo} from "react";
+import React, {useMemo, useEffect, useRef} from "react";
 import * as THREE from "three";
 import {RigidBody, CuboidCollider} from "@react-three/rapier";
 import {useGLTF, useTexture} from "@react-three/drei";
 import {extractGeometry, extractMaterial} from "./obstacleUtils";
+import {useGameStore} from "../../../store/useGameStore";
 
 // Preload assets to avoid React Suspense triggering unmounts during physics simulation
 useGLTF.preload("models/cerealbox.glb");
@@ -176,5 +177,58 @@ export function CerealBoxPhysics({position, rotation, boxSize}) {
 
             {/* NO TOP: Open for jumping in */}
         </RigidBody>
+    );
+}
+
+/**
+ * Interior sensor for a Cereal Box. Detects when the player enters/exits the
+ * box and updates the store's player.insideCerealBox and player.currentZone.
+ * Uses a sensor collider (no collision response) that overlaps the box interior.
+ */
+export function CerealBoxInteriorSensor({position, rotation, boxSize, onEnter, onExit}) {
+    const {x: w, y: h, z: d} = boxSize;
+    const insideRef = useRef(false);
+    const setInsideCerealBox = useGameStore((state) => state.setInsideCerealBox);
+    const setCurrentZone = useGameStore((state) => state.setCurrentZone);
+
+    useEffect(() => {
+        // Called when player enters the sensor volume
+        const handleEnter = () => {
+            if (insideRef.current) return;
+            insideRef.current = true;
+            setInsideCerealBox(true);
+            setCurrentZone("inside");
+            onEnter?.();
+        };
+
+        // Called when player exits the sensor volume
+        const handleExit = () => {
+            if (!insideRef.current) return;
+            insideRef.current = false;
+            setInsideCerealBox(false);
+            setCurrentZone("outside");
+            onExit?.();
+        };
+
+        // Expose handlers globally so PlayerController can check overlap
+        // (Rapier sensor events are handled via contact callbacks in the parent)
+        window.__cerealBoxSensorHandlers = window.__cerealBoxSensorHandlers || {};
+        window.__cerealBoxSensorHandlers[`${position.x},${position.y},${position.z}`] = {
+            enter: handleEnter,
+            exit: handleExit,
+        };
+
+        return () => {
+            delete window.__cerealBoxSensorHandlers[`${position.x},${position.y},${position.z}`];
+        };
+    }, [position, setInsideCerealBox, setCurrentZone, onEnter, onExit]);
+
+    // Sensor collider that fills the interior of the box (no collision response)
+    return (
+        <CuboidCollider
+            args={[w / 2 - 1, h / 2 - 1, d / 2 - 1]}
+            position={[0, 0, 0]}
+            sensor
+        />
     );
 }

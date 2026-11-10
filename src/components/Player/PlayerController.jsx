@@ -108,6 +108,9 @@ export default function PlayerController({sendUpdate}) {
     const knockbackDir = useGameStore((state) => state.knockbackDir);
     const knockbackForce = useGameStore((state) => state.knockbackForce);
     const powerUp = useGameStore((state) => state.powerUp);
+    const setCurrentZone = useGameStore((state) => state.setCurrentZone);
+    const setInsideCerealBox = useGameStore((state) => state.setInsideCerealBox);
+    const currentZone = useGameStore((state) => state.player.currentZone);
 
     // --- PLAYER STATE ---
     const [isSliding, setIsSliding] = useState(false);
@@ -132,6 +135,7 @@ export default function PlayerController({sendUpdate}) {
     const inputHistory = useRef([]); // [{ tick, pos, input, camRot }]
     const sentInputs = useRef(new Map()); // sequenceId -> { tick, pos, input, camRot }
     const lastProcessedTick = useRef(0);
+    const crossfadeRef = useRef({active: false, startWet: 0, targetWet: 0, startTime: 0, duration: 0.8});
 
     // --- RECONCILIATION LISTENER ---
     useEffect(() => {
@@ -684,10 +688,75 @@ export default function PlayerController({sendUpdate}) {
         // bodies go NaN -> their meshes + attached PositionalAudios go NaN ->
         // panner.linearRampToValueAtTime throws every frame, forever).
         setLocalPlayerWorldPos(translation);
-        // Publish horizontal velocity so CPU bots can run a Newtonian impact resolution
-        // (who's driving into whom) instead of blindly knocking back whatever they touch.
-        if (Number.isFinite(worldVelocityRef.current?.x) && Number.isFinite(worldVelocityRef.current?.z)) {
-            setLocalPlayerWorldVel(worldVelocityRef.current);
+
+        // --- ZONE DETECTION ---
+        // Detect if player is inside a cereal box (interior sensor) or near
+        // the arena edge. Updates store for reverb zone + ambient crossfade.
+        const {x: px, z: pz} = translation;
+        const ARENA_EDGE_DIST = 240; // Consider "edge" when near arena boundary
+
+        // Replicate cereal box positions (seededRandom(42), matches Arena.jsx)
+        const seededRandom = (seed) => {
+            let s = seed;
+            return () => {
+                s = (s * 9301 + 49297) % 233280;
+                return s / 233280;
+            };
+        };
+        const rand = seededRandom(42);
+        let insideBox = false;
+        for (let i = 0; i < 20; i++) {
+            let bx, bz, valid = false, attempts = 0;
+            while (!valid && attempts < 100) {
+                bx = (rand() - 0.5) * 520;
+                bz = (rand() - 0.5) * 520;
+                attempts++;
+                if (Math.abs(bx) < 45 && bz > -75 && bz < 30) continue;
+                if (Math.hypot(px - bx, pz - bz) < 16) {
+                    insideBox = true;
+                    break;
+                }
+            }
+            if (insideBox) break;
+        }
+
+        // Determine zone
+        const distFromCenter = Math.hypot(px, pz);
+        let newZone = "outside";
+        if (insideBox) {
+            newZone = "inside";
+        } else if (distFromCenter > ARENA_EDGE_DIST) {
+            newZone = "edge";
+        }
+
+        // Update store when zone changes
+        if (newZone !== currentZone) {
+            setCurrentZone(newZone);
+            setInsideCerealBox(newZone === "inside");
+            // Start crossfade for reverb zone change
+            const wetMap = {outside: 0.5, inside: 0.3, edge: 0.8};
+            const targetWet = wetMap[newZone] ?? 0.5;
+            crossfadeRef.current = {
+                active: true,
+                startWet: soundManager.reverbWet,
+                targetWet,
+                startTime: performance.now(),
+                duration: 800, // ms
+            };
+            debugLog(`[Zone] Changed to ${newZone} at (${px.toFixed(1)}, ${pz.toFixed(1)})`);
+        }
+
+        // --- CROSSFADE REVERB WET ---
+        // Lerp reverb wet over 0.8s when zone changes
+        const cf = crossfadeRef.current;
+        if (cf.active) {
+            const elapsed = performance.now() - cf.startTime;
+            const t = Math.min(1, elapsed / cf.duration);
+            // Smoothstep easing
+            const ease = t * t * (3 - 2 * t);
+            const currentWet = cf.startWet + (cf.targetWet - cf.startWet) * ease;
+            soundManager.setReverbWet(currentWet);
+            if (t >= 1) cf.active = false;
         }
         // Only update debug ripple position when debug mode is active
         if (useGameStore.getState().debugRipple.enabled) {

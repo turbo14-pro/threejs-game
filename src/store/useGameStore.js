@@ -52,6 +52,14 @@ export const useGameStore = create(
           desyncCount: 0,
         },
 
+        // --- AUDIO STATE ---
+        audio: {
+          ambientVolume: 0.5, // 0-1 ambient bed volume
+          reverbWet: 1.0,     // 0-1 reverb wet level
+          reverbZone: 'outside', // 'outside' | 'inside' | 'edge'
+          occlusionGain: 1.0, // 0-1 occlusion multiplier for ambient bed
+        },
+
         // --- PLAYER STATE ---
         player: {
           username: 'Guest Player',
@@ -61,6 +69,8 @@ export const useGameStore = create(
           isGrounded: true,
           networkId: null,
           playerAnimations: null, // Shared animation config
+          currentZone: 'outside', // 'outside' | 'inside' | 'edge'
+          insideCerealBox: false, // true when player is inside a cereal box
           // Stats for persistence
           stats: {
             kills: 0,
@@ -257,6 +267,12 @@ export const useGameStore = create(
         setPlayerAnimations: (anim) => set((s) => ({ player: { ...s.player, playerAnimations: anim } })),
         setUsername: (name) => set((s) => ({ player: { ...s.player, username: name } })),
         setIsHiding: (hiding) => set((s) => ({ player: { ...s.player, isHiding: hiding } })),
+        setCurrentZone: (zone) => set((s) => ({ player: { ...s.player, currentZone: zone } })),
+        setInsideCerealBox: (inside) => set((s) => ({ player: { ...s.player, insideCerealBox: inside } })),
+        setAmbientVolume: (vol) => set((s) => ({ audio: { ...s.audio, ambientVolume: vol } })),
+        setReverbWet: (wet) => set((s) => ({ audio: { ...s.audio, reverbWet: wet } })),
+        setReverbZone: (zone) => set((s) => ({ audio: { ...s.audio, reverbZone: zone } })),
+        setOcclusionGain: (gain) => set((s) => ({ audio: { ...s.audio, occlusionGain: gain } })),
         
         damagePlayer: (amount) => {
           const newHealth = Math.max(0, get().player.health - amount);

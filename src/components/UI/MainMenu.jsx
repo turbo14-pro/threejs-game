@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { useGameStore } from '../../store/useGameStore';
 import { useMenuKeyboard } from '../../hooks/useMenuKeyboard.js';
 import Options from './Options.jsx';
+import FluidGlassPanel from './FluidGlassPanel/FluidGlassPanel';
 
 export default function MainMenu() {
   const setGameState = useGameStore(state => state.setGameState);
@@ -28,8 +29,19 @@ export default function MainMenu() {
 
   return (
     <div className="menu-overlay">
-      <div className="menu-content" ref={menuRef}>
-        
+      <FluidGlassPanel
+        ref={menuRef}
+        refraction={0.25}
+        spin={0}
+        frost={0.5}
+        shadow={1}
+        dispersion={1}
+        interaction="follow"
+        smoothness={0.5}
+        wobble={0.5}
+        idle={true}
+        intro={true}
+      >
         {page === 'START' && (
           <>
             <h1>FOOD FRENZY</h1>
@@ -56,7 +68,7 @@ export default function MainMenu() {
           <Options onBack={() => setPage('START')} />
         )}
 
-      </div>
+      </FluidGlassPanel>
     </div>
   );
 }
