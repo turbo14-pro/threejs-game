@@ -363,15 +363,10 @@ class SoundManager {
                     }
                     active = active === "A" ? "B" : "A";
                     other._crossfading = false;
-                    // Restart the now-silent bed for next cycle
-                    const silentBed = active === "A" ? bedA : bedB;
-                    silentBed.volume = 0;
-                    silentBed._startTime = performance.now();
-                    if (this.ensureRunning() && !silentBed.isPlaying) {
-                        try {
-                            silentBed.play();
-                        } catch {}
-                    }
+                    // Do NOT restart the silent bed here — it will be started
+                    // when the other bed ends in the next handleEnd() call.
+                    // Restarting it now would mark it as isPlaying and break
+                    // the alternation on the next cycle.
                 }
             }, 16);
         };
