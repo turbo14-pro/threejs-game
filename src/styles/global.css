@@ -2,7 +2,7 @@
 
 :root {
     --primary: #00f2ff;
-    --bg-dark: #05050811;
+    --bg-dark: #050508;
     --glass: rgba(255, 255, 255, 0.05);
     --glass-border: rgba(255, 255, 255, 0.1);
 }
@@ -58,7 +58,7 @@ body {
     /* NOTE: centre via `.menu-content { margin: auto }` rather than `align-items: center`
      so that tall lobbies (bot roster, options) stay scrollable instead of being clipped. */
     overflow-y: auto;
-    background: radial-gradient(circle at center, rgba(0, 0, 0, 0.5) 0%, var(--bg-dark) 100%);
+    background: radial-gradient(circle at center, rgba(0, 0, 0, 0.5) 0%, #05050511 100%);
     z-index: 100;
     transition: opacity 0.5s ease, visibility 0.5s ease;
 }
@@ -754,6 +754,16 @@ h1 {
 .premium-toggle.active .toggle-knob {
     left: calc(100% - 19px);
     transform: scale(1.1);
+}
+
+.premium-toggle:focus-visible {
+    outline: 2px solid var(--primary);
+    outline-offset: 4px;
+}
+
+.touch-target {
+    min-width: 44px;
+    min-height: 44px;
 }
 
 .premium-select {

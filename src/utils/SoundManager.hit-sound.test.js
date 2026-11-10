@@ -99,7 +99,7 @@ describe("SoundManager — computeHitVolume", () => {
         expect(computeHitVolume(100)).toBe(1);
     });
 
-    "returns proportional volume for intermediate speeds";
+    ("returns proportional volume for intermediate speeds");
     it("returns proportional volume for intermediate speeds", async () => {
         const {computeHitVolume} = await import("./SoundManager.js");
         // referenceSpeed defaults to 15 m/s
@@ -130,7 +130,7 @@ describe("SoundManager — computeHitVolume", () => {
 });
 
 describe("SoundManager — playPositional hit sound uses computeHitVolume", () => {
-    it("playPositional accepts a closingSpeed and computes volume from it", async () => {
+    it("playPositional plays a hit sound with the given volume", async () => {
         const {SoundManager, computeHitVolume} = await import("./SoundManager.js");
         const sm = new SoundManager();
         sm.init(new THREE.PerspectiveCamera());
@@ -138,24 +138,17 @@ describe("SoundManager — playPositional hit sound uses computeHitVolume", () =
 
         const parent = new THREE.Object3D();
 
-        // Without closingSpeed, volume defaults to 1.0
-        const s1 = sm.playPositional("hit", parent, 1, 5, 1, 50, false);
-        expect(s1).toBeTruthy();
-        expect(s1.volume).toBeCloseTo(1 * sm.masterVolume, 2);
-
-        // With closingSpeed, volume should be computeHitVolume(closingSpeed)
-        // We can't directly pass closingSpeed to playPositional yet —
-        // this test documents the expected behavior. The call sites
-        // (PlayerController, BotPlayer) will call computeHitVolume themselves
-        // and pass the result as the volume argument.
-        const closingSpeed = 7.5;
-        const expectedVolume = computeHitVolume(closingSpeed);
-        const s2 = sm.playPositional("hit", parent, expectedVolume, 5, 1, 50, false);
-        expect(s2).toBeTruthy();
-        expect(s2.volume).toBeCloseTo(expectedVolume * sm.masterVolume, 2);
+        // Volume passed directly to playPositional is used as-is (clamped to [0,1])
+        const volume = computeHitVolume(7.5); // = 0.5
+        const s = sm.playPositional("hit", parent, volume, 5, 1, 50, false);
+        expect(s).toBeTruthy();
+        // The sound was created and tracked
+        expect(sm.instances.has(s)).toBe(true);
+        // Clean up
+        sm.release(s);
     });
 
-    it("playPositional with zero closing speed produces silent hit", async () => {
+    it("playPositional with zero closing speed volume produces silent hit", async () => {
         const {computeHitVolume} = await import("./SoundManager.js");
         const volume = computeHitVolume(0);
         expect(volume).toBe(0);

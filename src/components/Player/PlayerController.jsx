@@ -17,7 +17,7 @@ import {
 import {setLocalPlayerWorldPos, setLocalPlayerWorldVel} from "../World/items/PowerUpCoin.jsx";
 import {damageBot, applyBotKnockback, getBotVelocity} from "./botRegistry.js";
 import {BOT_COMBAT, resolveImpact} from "./BotAI.jsx";
-import {soundManager} from "../../utils/SoundManager";
+import {soundManager, computeHitVolume} from "../../utils/SoundManager";
 import {audioFlag} from "../../utils/audioDebugFlags";
 import {useGamepad} from "../../hooks/useGamepad.js";
 // The debug helpers are also published on globalThis by utils/debugLog.js, but
@@ -47,6 +47,16 @@ const scratchLookTarget = new THREE.Vector3();
 // P0-#3: states where the physics simulation must not advance. MENU keeps the
 // old "attract mode" fall-through; PAUSED now freezes movement/physics/net.
 const SIM_RUNNING_STATES = new Set(["PLAYING", "BATTLE", "DROP", "PREMATCH", "LOBBY"]);
+
+// --- FOOTSTEP PLAYBACK RATE ---
+// Maps horizontal velocity to a playback rate for movement loops.
+// rate = hSpeed / referenceSpeed, so normal speed = 1.0 and a speed power-up
+// that doubles velocity makes footsteps play 2x faster (higher pitch).
+// Clamped to [0.5, 2.0] to avoid unnatural pitch shifts.
+function footstepRate(hSpeed, referenceSpeed) {
+    const r = referenceSpeed > 0 ? hSpeed / referenceSpeed : 1.0;
+    return Math.max(0.5, Math.min(2.0, r));
+}
 
 // P1-#9: teleport targets must be finite + inside the world.
 const TELEPORT_BOUNDS = {x: 290, yMin: -50, yMax: 400, z: 290};
@@ -262,6 +272,10 @@ export default function PlayerController({sendUpdate}) {
     const prevJumpingInput = useRef(false);
     const externalForce = useRef(new THREE.Vector3());
     const worldVelocityRef = useRef(new THREE.Vector3());
+    const hSpeedRef = useRef(0); // Horizontal velocity, synced from useFrame for animation speed
+    const currentlyGroundedRef = useRef(false); // Synced from useFrame for footstep callback
+    const currentPhaseRef = useRef("none"); // Synced from useFrame for footstep callback
+    const actualWalkingRef = useRef(false); // Synced from useFrame for footstep callback
 
     // P0-#4: unmount cleanup — stop loop sounds + detach them OUTSIDE the render
     // traversal (direct parent.remove() here is safe: we are in a React effect
@@ -286,9 +300,8 @@ export default function PlayerController({sendUpdate}) {
     }, []);
     useEffect(
         () => () => {
-            stopLoopSound(walkingSoundRef);
-            stopLoopSound(runningSoundRef);
             stopLoopSound(slideSoundRef);
+            stopLoopSound(dashSoundRef);
         },
         [stopLoopSound]
     );
@@ -297,8 +310,40 @@ export default function PlayerController({sendUpdate}) {
     const slideFadeRef = useRef(false); // True while slide sound is fading out
     const slideCooldown = useRef(0); // Seconds remaining before another slide can start
     const intendedSlideDuration = useRef(0.6); // The slide duration set at slide start
-    const runningSoundRef = useRef(null); // Positional loop for running footsteps
-    const walkingSoundRef = useRef(null); // Positional loop for walking
+    const dashSoundRef = useRef(null); // Reference to fade dash sound
+    const dashFadeRef = useRef(false); // True while dash sound is fading out
+
+    // Baseline movement speeds (from PLAYER_BASELINE) — used by the footstep callback
+    // which lives outside useFrame and needs stable references.
+    const WALK_SPEED = PLAYER_BASELINE.movement.walkSpeed; // 4 m/s
+    const SPRINT_SPEED = PLAYER_BASELINE.movement.sprintSpeed; // 35 m/s
+
+    // 2-STEP ONE-SHOT FOOTSTEPS
+    // Triggered by PlayerModel's animation loop event (once per 2-step cycle).
+    // Two footsteps fire per loop (left + right) to match the 2-step animation.
+    // Each footstep is a one-shot positional sound with velocity-based playback rate
+    // so speed power-ups make footsteps play faster. Random detune on one-shots
+    // provides variety without breaking velocity sync (detune is skipped on loops).
+    // Uses refs synced from useFrame so the callback is stable and doesn't
+    // recreate every frame.
+    const playFootstep = useCallback(
+        (foot) => {
+            if (!audioFlag("movementLoops")) return;
+            if (!currentlyGroundedRef.current || currentPhaseRef.current !== "none") return;
+            if (!playerGroupRef.current) return;
+
+            const volume = actualWalkingRef.current ? 0.6 : 0.8;
+            const rate = actualWalkingRef.current
+                ? footstepRate(hSpeedRef.current, WALK_SPEED)
+                : footstepRate(hSpeedRef.current, SPRINT_SPEED);
+
+            const stepSound = soundManager.playPositional("step", playerGroupRef.current, volume, 5, 1.0, 50, false);
+            if (stepSound) {
+                soundManager.setPlaybackRate(stepSound, rate);
+            }
+        },
+        [audioFlag, playerGroupRef.current]
+    );
 
     // Load animation configuration dynamically
     useEffect(() => {
@@ -770,8 +815,6 @@ export default function PlayerController({sendUpdate}) {
         const simPaused = !SIM_RUNNING_STATES.has(liveState);
         if (simPaused) {
             // Silence movement loops so PAUSED doesn't keep panning 3D audio.
-            stopLoopSound(walkingSoundRef);
-            stopLoopSound(runningSoundRef);
             stopLoopSound(slideSoundRef);
             return;
         }
@@ -838,6 +881,21 @@ export default function PlayerController({sendUpdate}) {
                 rigidBodyRef.current.setLinvel({x: 0, y: rigidBodyRef.current.linvel().y, z: 0}, true);
                 // Enable radial blur
                 useGameStore.getState().setDashBlur(true);
+                // --- Dash sound (same strategy as slide sound) ---
+                // Release any existing dash sound so a fresh one plays on every dash start.
+                if (dashSoundRef.current) {
+                    stopLoopSound(dashSoundRef);
+                    dashSoundRef.current = null;
+                }
+                dashSoundRef.current = soundManager.playPositional(
+                    "dash",
+                    playerGroupRef.current,
+                    1.0,
+                    5,
+                    1.0,
+                    50,
+                    false
+                );
             }
         }
 
@@ -857,6 +915,10 @@ export default function PlayerController({sendUpdate}) {
                 dashCooldown.current = getDashConfig(useGameStore.getState().powerUp?.rarity).cooldown;
                 rigidBodyRef.current.setLinvel({x: 0, y: vel.y, z: 0}, true);
                 useGameStore.getState().setDashBlur(false);
+                // Start rapid fade-out of the dash sound when dash ends.
+                if (dashSoundRef.current) {
+                    dashFadeRef.current = true;
+                }
             }
         }
 
@@ -919,6 +981,9 @@ export default function PlayerController({sendUpdate}) {
             // Fallback if castShape fails for some reason during hot-reload
             currentlyGrounded = false;
         }
+
+        // Sync refs for the footstep callback (stable useCallback outside useFrame)
+        currentlyGroundedRef.current = currentlyGrounded;
 
         // 1. PHASE HANDLING: Freeze player during PREMATCH and DROP
         if (matchPhase === "PREMATCH" || (matchPhase === "DROP" && countdown > 0)) {
@@ -1071,6 +1136,32 @@ export default function PlayerController({sendUpdate}) {
             slideSoundRef.current = null;
         }
 
+        // Rapid fade-out of the dash sound — runs every frame until volume reaches 0.
+        // Gated by dashFadeRef (not isDashing) so the fade continues across frames
+        // after the dash has ended.
+        if (dashFadeRef.current && dashSoundRef.current) {
+            try {
+                // THREE.Audio uses .volume property, not .getVolume() method
+                // Rapid fade: drop volume by ~5 per second (0.05 per 10ms frame)
+                const cur = Number.isFinite(dashSoundRef.current.volume) ? dashSoundRef.current.volume : 1.0;
+                const next = Math.max(0, cur - 6 * delta);
+                dashSoundRef.current.volume = next;
+                if (next <= 0.01) {
+                    stopLoopSound(dashSoundRef);
+                    dashSoundRef.current = null;
+                    dashFadeRef.current = false;
+                }
+            } catch {
+                stopLoopSound(dashSoundRef);
+                dashSoundRef.current = null;
+                dashFadeRef.current = false;
+            }
+        } else if (dashSoundRef.current && !dashFadeRef.current) {
+            // Dash is still active and the sound is playing — let it play through.
+            // Do NOT release it here; the one-shot will stop on its own via onEnded,
+            // or be faded out when dashFadeRef becomes true (dash ended).
+        }
+
         // 3. PASSIVE REGENERATION (Heals if not damaged for 5s)
         if (Date.now() - lastDamageTime.current > 5000 && playerHealth < 100) {
             healPlayer(10 * delta); // Heal 10 HP per second
@@ -1081,12 +1172,10 @@ export default function PlayerController({sendUpdate}) {
         const speedMultiplier = hasSpeedPowerUp
             ? getPowerUpEffect("speed", currentPowerUp.rarity, "speedMultiplier")
             : 1;
-        const walkSpeed = PLAYER_BASELINE.movement.walkSpeed;
-        const sprintSpeed = PLAYER_BASELINE.movement.sprintSpeed;
         const slideSpeed = PLAYER_BASELINE.movement.slideSpeed;
         const speed = isSliding
             ? slideSpeed * speedMultiplier
-            : (walkingInput ? walkSpeed : sprintSpeed) * speedMultiplier;
+            : (walkingInput ? WALK_SPEED : SPRINT_SPEED) * speedMultiplier;
 
         // apply speed and rotation to direction
         if (direction.lengthSq() > 0) {
@@ -1100,10 +1189,12 @@ export default function PlayerController({sendUpdate}) {
         // If the player is blocked by an obstacle (velocity ≈ 0), no walk/run animation plays.
         // If running but velocity is low (blocked sideways), walk animation plays instead.
         const hSpeed = Math.sqrt(currentVelocity.x * currentVelocity.x + currentVelocity.z * currentVelocity.z);
+        hSpeedRef.current = hSpeed; // Sync for animation speed in PlayerModel
         const ACTUAL_MOVE_THRESHOLD = 0.5; // m/s — below this, no walk/run animation
-        const WALK_SPEED_THRESHOLD = walkSpeed * 0.6; // below this = walk, above = run
+        const WALK_SPEED_THRESHOLD = WALK_SPEED * 0.6; // below this = walk, above = run
         const actualMoving = hSpeed > ACTUAL_MOVE_THRESHOLD && currentlyGrounded && jumpPhase === "none";
         const actualWalking = actualMoving && hSpeed < WALK_SPEED_THRESHOLD;
+        actualWalkingRef.current = actualWalking;
 
         // Ground detection already calculated above
 
@@ -1220,6 +1311,9 @@ export default function PlayerController({sendUpdate}) {
             setJumpPhase(currentPhase);
         }
 
+        // Sync currentPhase ref for the footstep callback
+        currentPhaseRef.current = currentPhase;
+
         // Apply Horizontal Velocity ONLY (preserve vertical velocity)
         // ADDITION: Apply and decay external forces (knockback)
         let finalX, finalZ;
@@ -1260,102 +1354,6 @@ export default function PlayerController({sendUpdate}) {
 
         // Update store with current movement state for post-effects system
         useGameStore.getState().setPlayerMovement(moving, isDashing.current);
-
-        // WALKING LOOP (slower, lower volume)
-        // Use velocity-based actualWalking so footsteps don't play when blocked by an obstacle
-        const shouldWalk =
-            audioFlag("movementLoops") &&
-            currentlyGrounded &&
-            actualWalking &&
-            currentPhase === "none" &&
-            playerGroupRef.current;
-        if (shouldWalk && !walkingSoundRef.current) {
-            try {
-                // Guard: ensure playerGroupRef.current exists and has valid matrix before attempting positional audio
-                const pg = playerGroupRef.current;
-                if (!pg || !pg.matrix) {
-                    walkingSoundRef.current = soundManager.playPositional(
-                        "walk",
-                        playerGroupRef.current,
-                        1.0,
-                        5,
-                        1.0,
-                        50,
-                        true
-                    );
-                } else {
-                    try {
-                        const audio = soundManager.playPositional(
-                            "walk",
-                            playerGroupRef.current,
-                            1.0,
-                            5,
-                            1.0,
-                            50,
-                            true
-                        );
-                        if (audio) {
-                            walkingSoundRef.current = audio;
-                        } else {
-                            walkingSoundRef.current = soundManager.playGlobal("walk", 0.8, true);
-                        }
-                    } catch {
-                        walkingSoundRef.current = soundManager.playGlobal("walk", 0.8, true);
-                    }
-                }
-            } catch {
-                walkingSoundRef.current = soundManager.playGlobal("walk", 0.8, true);
-            }
-        } else if (!shouldWalk && walkingSoundRef.current) {
-            // P0-#2: stop + DETACH via the deferred helper. Removing the node inline
-            // here (inside useFrame) splices the parent's children array while three
-            // is traversing it -> "Cannot read properties of undefined (reading
-            // 'updateMatrixWorld')" in the same frame.
-            stopLoopSound(walkingSoundRef);
-        }
-
-        // RUNNING LOOP (4-step cycle from running.ogg) — start/stop, not restart
-        // Use velocity-based actualMoving so footsteps don't play when blocked by an obstacle
-        const shouldRun =
-            audioFlag("movementLoops") &&
-            currentlyGrounded &&
-            actualMoving &&
-            !actualWalking &&
-            currentPhase === "none" &&
-            playerGroupRef.current;
-        if (shouldRun && !runningSoundRef.current) {
-            try {
-                if (!soundManager.listener && camera) soundManager.init(camera);
-                // Guard: ensure playerGroupRef.current exists and has valid matrix before attempting positional audio
-                const pg = playerGroupRef.current;
-                if (!pg || !pg.matrix) {
-                    runningSoundRef.current = soundManager.playPositional(
-                        "running",
-                        playerGroupRef.current,
-                        1.0,
-                        5,
-                        1.0,
-                        50,
-                        true
-                    );
-                } else {
-                    // Wrap in anonymous function to catch any Three.js internal errors
-                    const audio = soundManager.playPositional("running", playerGroupRef.current, 1.0, 5, 1.0, 50, true);
-                    if (audio) {
-                        runningSoundRef.current = audio;
-                    } else {
-                        runningSoundRef.current = soundManager.playGlobal("running", 1, true);
-                    }
-                }
-            } catch {
-                if (!runningSoundRef.current) {
-                    runningSoundRef.current = soundManager.playGlobal("running", 1, true);
-                }
-            }
-        } else if (!shouldRun && runningSoundRef.current) {
-            // P0-#2: same deferred-detach requirement as the walk loop.
-            stopLoopSound(runningSoundRef);
-        }
 
         // Contextual movement: Backwards logic
         // Determine if we should walk backwards based on mesh forward vs camera forward
@@ -1831,6 +1829,11 @@ export default function PlayerController({sendUpdate}) {
                         damageBot(other.userData.id, BOT_COMBAT.hitDamage, "local");
                         addShockwave(shockwavePos, shockwaveIntensity);
                         triggerRipple();
+                        // Hit sound — volume scales with closing speed
+                        const hitVol = computeHitVolume(impact.closingSpeed);
+                        try {
+                            soundManager.playPositional("hit", playerGroupRef.current, hitVol, 5, 1.0, 50, false);
+                        } catch {}
                     } else {
                         // The bot is driving into us — defer. Its slide system applies our knockback.
                         debugLog(
@@ -1859,6 +1862,12 @@ export default function PlayerController({sendUpdate}) {
                     // Trigger visual effects instantly for attacker
                     debugLog("💥 Calling triggerRipple() from collision handler");
                     triggerRipple();
+
+                    // Hit sound — volume scales with closing speed (attacker's horizontal speed)
+                    const hitVol = computeHitVolume(Math.hypot(worldVelocityRef.current.x, worldVelocityRef.current.z));
+                    try {
+                        soundManager.playPositional("hit", playerGroupRef.current, hitVol, 5, 1.0, 50, false);
+                    } catch {}
 
                     // Send network message for server validation
                     if (sendUpdate) {
@@ -1986,6 +1995,8 @@ export default function PlayerController({sendUpdate}) {
                         jumpPhase="none"
                         isSprinting={true}
                         isSliding={false}
+                        hSpeed={0}
+                        onFootstep={playFootstep}
                         config={animConfig}
                         jumpTransitionId={jumpTransitionId}
                     />
@@ -1996,6 +2007,8 @@ export default function PlayerController({sendUpdate}) {
                         jumpPhase={jumpPhase}
                         isSprinting={jumpPhase === "none" ? !isWalking : jumpLock.current.sprint}
                         isSliding={isSliding}
+                        hSpeed={hSpeedRef.current}
+                        onFootstep={playFootstep}
                         config={animConfig}
                         jumpTransitionId={jumpTransitionId}
                     />

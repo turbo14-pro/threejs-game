@@ -5,6 +5,7 @@ import {soundManager} from "../../utils/SoundManager";
 // P0-#2: single source of truth for bundled SFX. public/audio/*.ogg exists
 // (verified), so these URLs are correct — do NOT point at src/audio-mp3.
 const SFX = [
+    ["step", "audio/step.ogg"],
     ["running", "audio/running.ogg"],
     ["walk", "audio/walk.ogg"],
     ["metal-hit", "audio/metal-hit.ogg"],
@@ -15,6 +16,7 @@ const SFX = [
     ["launch", "audio/launch.ogg"],
     ["land", "audio/land.ogg"],
     ["slide", "audio/slide.ogg"],
+    ["dash", "audio/dash.ogg"],
 ];
 
 /**

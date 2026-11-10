@@ -23,6 +23,7 @@ import { registerBot, unregisterBot, getBotCandidates, damageBot, applyBotKnockb
 import { getLocalPlayerWorldPos, getLocalPlayerWorldVel, getActivePowerUps } from '../World/items/PowerUpCoin.jsx';
 import { BOT_DIFFICULTY } from './BotAI.jsx';
 import { SKINS } from '../../data/registries';
+import {soundManager, computeHitVolume} from '../../utils/SoundManager';
 import { POWERUP_DURATIONS, POWERUP_EFFECTS, getMaxJumps } from '../../config/playerConfig';
 
 /**
@@ -536,6 +537,13 @@ export default function BotPlayer({ bot }) {
           damageBot(target.id, BOT_COMBAT.hitDamage);
           applyBotKnockback(target.id, dir, force);
         }
+        // Hit sound — volume scales with closing speed
+        const hitVol = computeHitVolume(impact.closingSpeed);
+        try {
+          if (bodyRef.current) {
+            soundManager.playPositional("hit", bodyRef.current, hitVol, 5, 1.0, 50, false);
+          }
+        } catch {}
         // --- BOT ATTACK REPORT: who tackled whom, for how much, at what range ---
         const victim = target.kind === 'player' ? 'PLAYER' : `bot:${target.id}`;
         const boosted = combatBoost.knockbackForce > BOT_COMBAT.knockbackForce;

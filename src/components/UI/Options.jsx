@@ -36,10 +36,11 @@ export default function Options({ onBack }) {
         {/* MAIN PRESET DROPDOWN */}
         <div className="option-item preset-item" style={{ cursor: 'default', background: 'rgba(255,255,255,0.05)', padding: '1.5rem', borderRadius: '12px', border: '1px solid rgba(255,255,255,0.1)' }}>
           <div className="option-info">
-            <span className="option-name" style={{ fontSize: '1.2rem', color: '#fff' }}>Performance Preset</span>
+            <label htmlFor="performance-preset" className="option-name" style={{ fontSize: '1.2rem', color: '#fff' }}>Performance Preset</label>
             <span className="option-desc">Quickly adjust all graphics settings</span>
           </div>
           <select 
+            id="performance-preset"
             className="premium-select" 
             value={performancePreset} 
             onChange={(e) => setPerformancePreset(e.target.value)}
@@ -77,9 +78,10 @@ export default function Options({ onBack }) {
             {/* SHADOWS */}
             <div className="option-item">
               <div className="option-info">
-                <span className="option-name">Shadow Quality</span>
+                <label htmlFor="shadow-quality" className="option-name">Shadow Quality</label>
               </div>
               <select 
+                id="shadow-quality"
                 className="premium-select" 
                 value={settings.shadowQuality || 'Medium'} 
                 onChange={(e) => setSetting('shadowQuality', e.target.value)}
@@ -95,15 +97,24 @@ export default function Options({ onBack }) {
             {/* SKYBOX */}
             <div className="option-item" onClick={() => toggleSetting('skybox')}>
               <div className="option-info"><span className="option-name">Skybox</span></div>
-              <div className={`premium-toggle ${settings.skybox ? 'active' : ''}`}><div className="toggle-knob" /></div>
+              <button
+                role="switch"
+                aria-checked={settings.skybox}
+                aria-label="Skybox"
+                className={`premium-toggle touch-target ${settings.skybox ? 'active' : ''}`}
+                onClick={() => toggleSetting('skybox')}
+              >
+                <div className="toggle-knob" />
+              </button>
             </div>
 
             {/* ANTIALIASING */}
             <div className="option-item">
               <div className="option-info">
-                <span className="option-name">Antialiasing</span>
+                <label htmlFor="antialiasing" className="option-name">Antialiasing</label>
               </div>
               <select 
+                id="antialiasing"
                 className="premium-select" 
                 value={settings.antialiasing || 'None'} 
                 onChange={(e) => setSetting('antialiasing', e.target.value)}
@@ -118,43 +129,99 @@ export default function Options({ onBack }) {
             {/* BLOOM */}
             <div className="option-item" onClick={() => toggleSetting('bloom')}>
               <div className="option-info"><span className="option-name">Bloom Effect</span></div>
-              <div className={`premium-toggle ${settings.bloom ? 'active' : ''}`}><div className="toggle-knob" /></div>
+              <button
+                role="switch"
+                aria-checked={settings.bloom}
+                aria-label="Bloom Effect"
+                className={`premium-toggle touch-target ${settings.bloom ? 'active' : ''}`}
+                onClick={() => toggleSetting('bloom')}
+              >
+                <div className="toggle-knob" />
+              </button>
             </div>
 
             {/* DEPTH OF FIELD */}
             <div className="option-item" onClick={() => toggleSetting('depthOfField')}>
               <div className="option-info"><span className="option-name">Depth of Field</span></div>
-              <div className={`premium-toggle ${settings.depthOfField ? 'active' : ''}`}><div className="toggle-knob" /></div>
+              <button
+                role="switch"
+                aria-checked={settings.depthOfField}
+                aria-label="Depth of Field"
+                className={`premium-toggle touch-target ${settings.depthOfField ? 'active' : ''}`}
+                onClick={() => toggleSetting('depthOfField')}
+              >
+                <div className="toggle-knob" />
+              </button>
             </div>
 
             {/* SSAO */}
             <div className="option-item" onClick={() => toggleSetting('ssao')}>
               <div className="option-info"><span className="option-name">SSAO (Corners)</span></div>
-              <div className={`premium-toggle ${settings.ssao ? 'active' : ''}`}><div className="toggle-knob" /></div>
+              <button
+                role="switch"
+                aria-checked={settings.ssao}
+                aria-label="SSAO (Corners)"
+                className={`premium-toggle touch-target ${settings.ssao ? 'active' : ''}`}
+                onClick={() => toggleSetting('ssao')}
+              >
+                <div className="toggle-knob" />
+              </button>
             </div>
 
             {/* LIGHT RAYS */}
             <div className="option-item" onClick={() => toggleSetting('lightRays')}>
               <div className="option-info"><span className="option-name">Light Rays</span></div>
-              <div className={`premium-toggle ${settings.lightRays ? 'active' : ''}`}><div className="toggle-knob" /></div>
+              <button
+                role="switch"
+                aria-checked={settings.lightRays}
+                aria-label="Light Rays"
+                className={`premium-toggle touch-target ${settings.lightRays ? 'active' : ''}`}
+                onClick={() => toggleSetting('lightRays')}
+              >
+                <div className="toggle-knob" />
+              </button>
             </div>
 
             {/* SHOCKWAVE */}
             <div className="option-item" onClick={() => toggleSetting('shockwave')}>
               <div className="option-info"><span className="option-name">Impact Ripples</span></div>
-              <div className={`premium-toggle ${settings.shockwave ? 'active' : ''}`}><div className="toggle-knob" /></div>
+              <button
+                role="switch"
+                aria-checked={settings.shockwave}
+                aria-label="Impact Ripples"
+                className={`premium-toggle touch-target ${settings.shockwave ? 'active' : ''}`}
+                onClick={() => toggleSetting('shockwave')}
+              >
+                <div className="toggle-knob" />
+              </button>
             </div>
 
             {/* VIGNETTE */}
             <div className="option-item" onClick={() => toggleSetting('vignette')}>
               <div className="option-info"><span className="option-name">Vignette</span></div>
-              <div className={`premium-toggle ${settings.vignette ? 'active' : ''}`}><div className="toggle-knob" /></div>
+              <button
+                role="switch"
+                aria-checked={settings.vignette}
+                aria-label="Vignette"
+                className={`premium-toggle touch-target ${settings.vignette ? 'active' : ''}`}
+                onClick={() => toggleSetting('vignette')}
+              >
+                <div className="toggle-knob" />
+              </button>
             </div>
 
             {/* GRAIN */}
             <div className="option-item" onClick={() => toggleSetting('grain')}>
               <div className="option-info"><span className="option-name">Film Grain</span></div>
-              <div className={`premium-toggle ${settings.grain ? 'active' : ''}`}><div className="toggle-knob" /></div>
+              <button
+                role="switch"
+                aria-checked={settings.grain}
+                aria-label="Film Grain"
+                className={`premium-toggle touch-target ${settings.grain ? 'active' : ''}`}
+                onClick={() => toggleSetting('grain')}
+              >
+                <div className="toggle-knob" />
+              </button>
             </div>
 
             {/* PHYSICS DEBUG */}
@@ -163,7 +230,15 @@ export default function Options({ onBack }) {
                 <span className="option-name">Physics Debug</span>
                 <span className="option-desc">Show collision wireframes</span>
               </div>
-              <div className={`premium-toggle ${settings.physicsDebug ? 'active' : ''}`}><div className="toggle-knob" /></div>
+              <button
+                role="switch"
+                aria-checked={settings.physicsDebug}
+                aria-label="Physics Debug"
+                className={`premium-toggle touch-target ${settings.physicsDebug ? 'active' : ''}`}
+                onClick={() => toggleSetting('physicsDebug')}
+              >
+                <div className="toggle-knob" />
+              </button>
             </div>
 
             {/* DEBUG MODE */}
@@ -172,7 +247,15 @@ export default function Options({ onBack }) {
                 <span className="option-name">Debug Mode</span>
                 <span className="option-desc">Enable global debug logging</span>
               </div>
-              <div className={`premium-toggle ${debugEnabled ? 'active' : ''}`}><div className="toggle-knob" /></div>
+              <button
+                role="switch"
+                aria-checked={debugEnabled}
+                aria-label="Debug Mode"
+                className={`premium-toggle touch-target ${debugEnabled ? 'active' : ''}`}
+                onClick={toggleDebug}
+              >
+                <div className="toggle-knob" />
+              </button>
             </div>
 
           </div>

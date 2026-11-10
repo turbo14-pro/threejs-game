@@ -102,12 +102,19 @@ function matrixWorldPositionFinite(obj) {
 }
 function applyRandomVariation(sound, buffer, loop) {
     try {
-        const pitchFactor = 1 + (Math.random() * 2 - 1) * AUDIO_VARIATION;
-        const detune = 1200 * Math.log2(Math.max(0.0001, pitchFactor));
-        if (Number.isFinite(detune)) {
-            try {
-                sound.setDetune(detune);
-            } catch {}
+        // Never apply random detune to looping sounds (walk/run loops).
+        // A constant random pitch shift on a loop makes the velocity-based
+        // playbackRate set by setPlaybackRate() inconsistent — footsteps
+        // sometimes match movement speed, sometimes don't. Looping sounds
+        // get their speed purely from setPlaybackRate().
+        if (!loop) {
+            const pitchFactor = 1 + (Math.random() * 2 - 1) * AUDIO_VARIATION;
+            const detune = 1200 * Math.log2(Math.max(0.0001, pitchFactor));
+            if (Number.isFinite(detune)) {
+                try {
+                    sound.setDetune(detune);
+                } catch {}
+            }
         }
 
         // Audio.duration caps total playback, so leave looping sounds unbounded.
@@ -223,7 +230,7 @@ class SoundManager {
         if (!ctx || this.reverb) return;
         try {
             this.reverb = ctx.createConvolver();
-            this.reverb.buffer = generateImpulseResponse(ctx, 1.2, 2.0);
+            this.reverb.buffer = generateImpulseResponse(ctx, 0.5, 3.0);
 
             this.reverbGain = ctx.createGain();
             this.reverbGain.gain.value = this.reverbWet;
@@ -590,6 +597,22 @@ class SoundManager {
         this.masterVolume = Math.max(0, Math.min(1, v));
     }
 
+    // Set the playback rate (speed/pitch) on an existing sound instance.
+    // Used to tie movement loop speed to velocity — e.g. a speed power-up
+    // makes footsteps play faster. Rate is clamped to [0.5, 2.0] to avoid
+    // extreme pitch shifts that sound unnatural or break the audio graph.
+    setPlaybackRate(sound, rate) {
+        if (!sound) return;
+        try {
+            const r = Math.max(0.5, Math.min(2.0, Number(rate) || 1.0));
+            if (!Number.isFinite(r)) return;
+            sound.setPlaybackRate(r);
+            sound.__smPlaybackRate = r;
+        } catch {
+            /* never let playback-rate changes break audio */
+        }
+    }
+
     // Release a sound that the caller owns (e.g. a movement loop the player
     // controller stops itself). Stops playback, untracks it from `instances`
     // and defers the scene-graph detach so we never splice a parent's children
@@ -630,7 +653,7 @@ class SoundManager {
 
 // Synthetic impulse response — exponentially decaying stereo noise.
 // No external .wav file required; works offline.
-function generateImpulseResponse(context, duration = 1.2, decay = 2.0) {
+function generateImpulseResponse(context, duration = 0.5, decay = 1.0) {
     const sampleRate = context.sampleRate;
     const length = Math.floor(sampleRate * duration);
     const impulse = context.createBuffer(2, length, sampleRate);
@@ -641,6 +664,23 @@ function generateImpulseResponse(context, duration = 1.2, decay = 2.0) {
         }
     }
     return impulse;
+}
+
+// --- HIT SOUND VOLUME SCALING -------------------------------------------
+// Maps a closing speed (m/s) to a 0-1 volume for hit sounds.
+//   - 0 m/s        -> 0 (silent)
+//   - referenceSpeed (default 15 m/s) -> 1 (full volume)
+//   - intermediate -> linear interpolation
+//   - negative     -> 0
+//   - above ref    -> clamped to 1
+// Never returns NaN or Infinity.
+export function computeHitVolume(closingSpeed, referenceSpeed = 15) {
+    const speed = Number(closingSpeed);
+    const ref = Number(referenceSpeed);
+    if (!Number.isFinite(speed) || !Number.isFinite(ref) || ref <= 0) return 0;
+    if (speed <= 0) return 0;
+    if (speed >= ref) return 1;
+    return speed / ref;
 }
 
 // Exported for unit tests (each test needs its own instance so the shared

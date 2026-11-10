@@ -16,6 +16,8 @@
     "devDependencies": {
         "@eslint/js": "^9.7.0",
         "@playwright/test": "^1.58.2",
+        "@testing-library/jest-dom": "^7.0.1",
+        "@testing-library/react": "^16.3.3",
         "@vitest/coverage-v8": "^5.0.5",
         "dotenv": "^17.3.1",
         "eslint": "^9.7.0",
@@ -45,6 +47,7 @@
         "framer-motion": "^12.38.0",
         "gltf-pipeline": "^4.3.0",
         "lil-gui": "^0.21.0",
+        "lucide-react": "^1.70.0",
         "miniplex": "^2.0.0",
         "msgpackr": "^2.1.2",
         "react": "^19.2.4",

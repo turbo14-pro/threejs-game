@@ -64,6 +64,8 @@ const PlayerModel = ({
     isSprinting,
     jumpPhase = "none",
     isSliding = false,
+    hSpeed = 0,
+    onFootstep,
     config,
     skinOverride,
     jumpTransitionId = 0,
@@ -127,6 +129,7 @@ const PlayerModel = ({
 
     const actionsRef = React.useRef({});
     const prevAnimState = React.useRef(null);
+    const cycleTimeRef = React.useRef("none"); // "left" | "right" | "none"
 
     const clone = useMemo(() => {
         if (!sourceScene) return null;
@@ -258,6 +261,11 @@ const PlayerModel = ({
         JSON.stringify(activeConfig),
     ]);
 
+    // Keep the blob shadow glued to the ground under the character: the shadow
+    // mesh is a child of the model group, so subtract the world Y to cancel the
+    // body's height. Below the table (y < -1, e.g. falling off or hidden while
+    // downed) the shadow hides instead of floating at table height.
+
     useEffect(() => {
         const actions = actionsRef.current;
         if (!actions || Object.keys(actions).length === 0) return;
@@ -302,11 +310,20 @@ const PlayerModel = ({
             prevAnimState.current = targetKey;
         }
 
-        // Always update speed
+        // Always update speed — tie walk/run animation speed to actual velocity
+        // so the visual cycle matches the footstep audio playback rate.
         let speedScale = 1.0;
-        if (animState.includes("walk")) speedScale = 1.3;
-        if (animState.includes("run")) speedScale = 1.2;
-        if (animState.includes("land")) speedScale = 1.6;
+        if (animState.includes("land")) {
+            speedScale = 1.6;
+        } else if (animState.includes("walk")) {
+            // Scale from 1.0 (at 0.5 m/s) to 1.3 (at walkSpeed = 4 m/s)
+            const t = Math.max(0, Math.min(1, (hSpeed - 0.5) / (4 - 0.5)));
+            speedScale = 1.0 + t * 0.3;
+        } else if (animState.includes("run")) {
+            // Scale from 1.0 (at walkSpeed = 4 m/s) to 1.2 (at sprintSpeed = 35 m/s)
+            const t = Math.max(0, Math.min(1, (hSpeed - 4) / (35 - 4)));
+            speedScale = 1.0 + t * 0.2;
+        }
 
         action.setEffectiveTimeScale(speedScale);
     }, [animState, activeConfig, mixer, jumpTransitionId, jumpPhase]);
@@ -315,6 +332,35 @@ const PlayerModel = ({
 
     useFrame((state, delta) => {
         if (mixer) mixer.update(delta);
+
+        // --- Footstep timing — left at cycle start, right at cycle midpoint ---
+        // Uses animation time so footsteps are perfectly synced to the animation
+        // cycle (not a drifting timer) and fire immediately when movement starts.
+        const actions = actionsRef.current;
+        const targetKey = actions && Object.keys(actions).length > 0
+            ? Object.keys(actions).find((k) => k.startsWith(animState)) || Object.keys(actions)[0]
+            : null;
+        const action = actions?.[targetKey];
+        if (action && onFootstep) {
+            const clipName = action._clip?.name || "";
+            if (clipName.includes("walk") || clipName.includes("run")) {
+                const time = action.time % action._clip.duration;
+                const cycle = time / action._clip.duration;
+
+                if (cycle < 0.05 && cycleTimeRef.current !== "left") {
+                    onFootstep("left");
+                    cycleTimeRef.current = "left";
+                } else if (cycle >= 0.45 && cycle < 0.55 && cycleTimeRef.current !== "right") {
+                    onFootstep("right");
+                    cycleTimeRef.current = "right";
+                } else if (cycle >= 0.95) {
+                    cycleTimeRef.current = "none";
+                }
+            } else {
+                cycleTimeRef.current = "none";
+            }
+        }
+
         // Keep the blob shadow glued to the ground under the character: the shadow
         // mesh is a child of the model group, so subtract the world Y to cancel the
         // body's height. Below the table (y < -1, e.g. falling off or hidden while
