@@ -19,12 +19,11 @@ export default function HUD() {
   
   const [isPaused, setIsPaused] = useState(false);
   const [showOptions, setShowOptions] = useState(false);
-  const [showHelp, setShowHelp] = useState(false);
   const [showControls, setShowControls] = useState(false); // Added Controls state
   const [showTutorial, setShowTutorial] = useState(true);
   const [isTouchDevice, setIsTouchDevice] = useState(false);
   const [isResuming, setIsResuming] = useState(false);
-  const menuScreen = showOptions ? 'OPTIONS' : showControls ? 'CONTROLS' : showHelp ? 'HELP' : 'PAUSED';
+  const menuScreen = showOptions ? 'OPTIONS' : showControls ? 'CONTROLS' : 'PAUSED';
   const menuRef = useMenuKeyboard({
     enabled: isPaused,
     screen: menuScreen,
@@ -32,7 +31,6 @@ export default function HUD() {
       ? () => {
           if (showOptions) setShowOptions(false);
           else if (showControls) setShowControls(false);
-          else setShowHelp(false);
         }
       : undefined,
   });
@@ -47,7 +45,6 @@ export default function HUD() {
       setIsPaused(!locked);
       if (locked) {
         setShowOptions(false);
-        setShowHelp(false);
         setShowControls(false); // Reset controls on lock
       }
     };
@@ -261,18 +258,6 @@ export default function HUD() {
                   <span className="btn-name">BACK</span>
                 </button>
               </>
-            ) : showHelp ? (
-              <>
-                <h1>HELP</h1>
-                <div className="menu-stack">
-                  <button className="char-btn main-btn" onClick={() => setShowControls(true)}>
-                    <span className="btn-name">CONTROLS</span>
-                  </button>
-                  <button className="char-btn main-btn" onClick={() => setShowHelp(false)}>
-                    <span className="btn-name">BACK</span>
-                  </button>
-                </div>
-              </>
             ) : (
               <>
                 <h1>PAUSED</h1>
@@ -285,12 +270,6 @@ export default function HUD() {
                     onClick={() => setShowOptions(true)}
                   >
                     <span className="btn-name">OPTIONS</span>
-                  </button>
-                  <button 
-                    className="char-btn main-btn" 
-                    onClick={() => setShowHelp(true)}
-                  >
-                    <span className="btn-name">HELP</span>
                   </button>
                   <button className="char-btn main-btn" onClick={handleRespawn}>
                     <span className="btn-name">RESTART</span>

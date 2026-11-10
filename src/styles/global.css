@@ -1242,3 +1242,67 @@ h1 {
     font-family: monospace;
     overflow-wrap: anywhere;
 }
+
+/* Submenu navigation */
+.submenu-nav {
+    display: flex;
+    gap: 0.5rem;
+    justify-content: center;
+    margin-bottom: 1.5rem;
+    border-bottom: 1px solid var(--glass-border);
+    padding-bottom: 1rem;
+}
+
+.submenu-btn {
+    background: transparent;
+    border: 1px solid var(--glass-border);
+    color: #fff;
+    padding: 0.5rem 1rem;
+    border-radius: 6px;
+    cursor: pointer;
+    font-family: inherit;
+    font-size: 0.8rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.1rem;
+    transition: all 0.2s ease;
+}
+
+.submenu-btn:hover {
+    border-color: var(--primary);
+    background: rgba(0, 242, 255, 0.08);
+}
+
+.submenu-btn.active {
+    background: var(--primary);
+    color: #000;
+    border-color: var(--primary);
+}
+
+/* Volume slider */
+.volume-slider {
+    width: 180px;
+    margin: 0.5rem 0;
+    accent-color: var(--primary);
+}
+
+/* Controls grid */
+.controls-grid {
+    display: flex;
+    flex-direction: column;
+    gap: 0.8rem;
+}
+
+.control-row {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    font-size: 0.9rem;
+    letter-spacing: 0.1rem;
+}
+
+.key {
+    color: var(--primary);
+    font-weight: 700;
+    margin-right: 0.5rem;
+}
