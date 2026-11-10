@@ -37,7 +37,7 @@ export default function AmbientSFX() {
             const dummy = new THREE.Object3D();
             dummy.position.copy(pos);
 
-            soundManager.playAmbientSFX(name, dummy, 0.4);
+            soundManager.playAmbientSFX(name, dummy, 1.0);
         };
 
         // Random interval between 8-20 seconds
