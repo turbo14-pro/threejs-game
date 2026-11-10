@@ -5,6 +5,7 @@ import {SKINS, WEAPONS, LEVELS} from "../data/registries";
 import {Logger} from "../utils/Logger";
 import {POWERUP_EFFECTS, POWERUP_DURATIONS, POWERUP_DESCRIPTIONS} from "../config/playerConfig";
 import {BOT_DIFFICULTY, buildBotRoster} from "../components/Player/botRoster.js";
+import {soundManager} from "../utils/SoundManager.js";
 
 // Re-export for backward compatibility with existing imports
 export {POWERUP_EFFECTS, POWERUP_DURATIONS, POWERUP_DESCRIPTIONS};
@@ -51,6 +52,7 @@ export const useGameStore = create(
                 // --- AUDIO STATE ---
                 audio: {
                     ambientVolume: 0.25, // 0-1 ambient bed volume (default 1/4)
+                    sfxVolume: 1.0, // 0-1 SFX volume (positional one-shots, incl. powerup pickup)
                     reverbWet: 1.0, // 0-1 reverb wet level
                     reverbZone: "outside", // 'outside' | 'inside' | 'edge'
                     occlusionGain: 1.0, // 0-1 occlusion multiplier for ambient bed
@@ -285,6 +287,14 @@ export const useGameStore = create(
                 setCurrentZone: (zone) => set((s) => ({player: {...s.player, currentZone: zone}})),
                 setInsideCerealBox: (inside) => set((s) => ({player: {...s.player, insideCerealBox: inside}})),
                 setAmbientVolume: (vol) => set((s) => ({audio: {...s.audio, ambientVolume: vol}})),
+                setSfxVolume: (vol) => {
+                    set((s) => ({audio: {...s.audio, sfxVolume: vol}}));
+                    // Push to SoundManager immediately so the powerup pickup
+                    // (and every other positional SFX) respects the slider live.
+                    try {
+                        soundManager?.setSfxVolume?.(vol);
+                    } catch {}
+                },
                 setReverbWet: (wet) => set((s) => ({audio: {...s.audio, reverbWet: wet}})),
                 setReverbZone: (zone) => set((s) => ({audio: {...s.audio, reverbZone: zone}})),
                 setOcclusionGain: (gain) => set((s) => ({audio: {...s.audio, occlusionGain: gain}})),

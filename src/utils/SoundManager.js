@@ -148,6 +148,7 @@ class SoundManager {
         this.instances = new Set(); // Active sounds
         this.masterGain = null; // Master SFX gain (not used for connect; volume multiplier instead)
         this.masterVolume = 1.0; // Global SFX multiplier (0-1)
+        this.sfxVolume = 0.25; // SFX volume (positional one-shots incl. powerup pickup)
         // --- Reverb (native ConvolverNode send/return) ---
         this.reverb = null; // ConvolverNode
         this.reverbGain = null; // GainNode (wet level)
@@ -272,18 +273,18 @@ class SoundManager {
     // them to eliminate the OGG/Vorbis encoder-delay stall at the loop point.
     // Both beds loop continuously; we alternate which one is audible via volume
     // crossfade so there is never an audible gap.
-    playAmbientBed(name, volume = 0.5) {
+    playAmbientBed(name, volume = 0.25) {
         if (!this.listener || !this.sounds.has(name)) return null;
         const buffer = this.sounds.get(name);
         if (!buffer) return null;
         if (!this.camera) return null;
 
-        const safeVolume = clampVolume(volume, 0.5) * clampVolume(this.masterVolume, 1.0);
+        // Ambient bed is always capped at 1/4 volume regardless of slider position
+        const safeVolume = clampVolume(Math.min(volume, 0.25), 0.5) * clampVolume(this.masterVolume, 1.0);
         if (!Number.isFinite(safeVolume)) return null;
 
         const duration = Number.isFinite(buffer.duration) && buffer.duration > 0 ? buffer.duration : 15;
-        const crossfadeTime = 2.0; // seconds to crossfade between beds (longer overlap for OGG gapless)
-        const crossfadeStartOffset = 2.0; // start crossfade 2s after duration, completes at duration + 4.0 (the gap)
+        const crossfadeTime = 4.0; // seconds to crossfade between beds (longer overlap for OGG gapless)
 
         // Stop any existing ambient beds
         if (this.ambientBed) this.releaseAmbientBed(this.ambientBed);
@@ -339,14 +340,15 @@ class SoundManager {
                     other.volume = safeVolume;
                     active = active === "A" ? "B" : "A";
                     debugLog(`[AmbientBed] Looped → zone=${this._reverbZone} bed=${active}`);
-                    // Schedule next crossfade after the other bed plays for (duration - crossfadeStartOffset)
-                    fadeTimer = setTimeout(startCrossfade, (duration - crossfadeStartOffset) * 1000);
+                    // Schedule next crossfade after the other bed plays for (duration - crossfadeTime)
+                    // This keeps both beds overlapping continuously, masking any OGG gap.
+                    fadeTimer = setTimeout(startCrossfade, (duration - crossfadeTime) * 1000);
                 }
             }, 16);
         };
 
         // Schedule first crossfade after bed A has played for (duration - crossfadeStartOffset)
-        fadeTimer = setTimeout(startCrossfade, (duration - crossfadeStartOffset) * 1000);
+        fadeTimer = setTimeout(startCrossfade, (duration - crossfadeTime) * 1000);
 
         this.ambientBed = bedA;
         this.ambientBedB = bedB;
@@ -656,7 +658,8 @@ class SoundManager {
             const buffer = this.sounds.get(name);
             if (!buffer) return null;
             if (!this.ensureRunning()) return null;
-            const safeVolume = clampVolume(volume, 0.5) * clampVolume(this.masterVolume, 1.0);
+            const safeVolume =
+                clampVolume(volume, 0.5) * clampVolume(this.masterVolume, 1.0) * clampVolume(this.sfxVolume, 1.0);
             if (!Number.isFinite(safeVolume)) return null;
             const sound = new THREE.Audio(this.listener);
             sound.__smName = name;
@@ -724,7 +727,8 @@ class SoundManager {
             if (!this.ensureRunning()) return null;
             if (!parent || typeof parent.add !== "function") return null;
             if (!matrixWorldPositionFinite(parent)) return null;
-            const safeVolume = clampVolume(volume, 1.0) * clampVolume(this.masterVolume, 1.0);
+            const safeVolume =
+                clampVolume(volume, 1.0) * clampVolume(this.masterVolume, 1.0) * clampVolume(this.sfxVolume, 1.0);
             const sound = new THREE.PositionalAudio(this.listener);
             sound.__smName = name;
             sound.__reverbSend = null; // initialized to null; set per-sound below if reverb is on
@@ -820,6 +824,15 @@ class SoundManager {
         const v = Number(value);
         if (!Number.isFinite(v)) return;
         this.masterVolume = Math.max(0, Math.min(1, v));
+    }
+
+    // SFX volume (positional one-shots: hits, jumps, powerup pickup, etc.).
+    // Separate from the ambient bed so the powerup pickup sound can be
+    // silenced without muting the background ambience.
+    setSfxVolume(value) {
+        const v = Number(value);
+        if (!Number.isFinite(v)) return;
+        this.sfxVolume = Math.max(0, Math.min(1, v));
     }
 
     // Set the playback rate (speed/pitch) on an existing sound instance.

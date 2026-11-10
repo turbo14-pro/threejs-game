@@ -20,29 +20,51 @@ uniform float uMediaOn;
 uniform sampler2D uText;
 uniform float uTextOn;
 uniform vec4 uBackground;
+uniform float uFrost;
 out vec4 fragColor;
 
-void main() {
-  vec2 w = gl_FragCoord.xy / uRatio;
+vec4 content(vec2 w, vec2 gx, vec2 gy) {
   vec2 uv = vec2(w.x, uView.y - w.y) / uView;
+  vec2 dx = vec2(gx.x, -gx.y) / uView;
+  vec2 dy = vec2(gy.x, -gy.y) / uView;
   vec4 color = uBackground;
   if (uMediaOn > 0.5) {
     vec2 m = (uv - uMediaRect.xy) / uMediaRect.zw;
-    if (m.x >= 0.0 && m.y >= 0.0 && m.x <= 1.0 && m.y <= 1.0) {
-      vec4 media = texture(uMedia, m);
-      color = media + color * (1.0 - media.a);
-    }
+    vec2 inside = step(vec2(0.0), m) * step(m, vec2(1.0));
+    vec4 media = textureGrad(uMedia, m, dx / uMediaRect.zw, dy / uMediaRect.zw) * inside.x * inside.y;
+    color = media + color * (1.0 - media.a);
   }
   if (uTextOn > 0.5) {
-    vec4 text = texture(uText, uv);
+    vec4 text = textureGrad(uText, uv, dx, dy);
     color = text + color * (1.0 - text.a);
   }
-  fragColor = color;
+  return color;
+}
+
+vec4 frosted(vec2 w, vec2 gx, vec2 gy) {
+  if (uFrost <= 0.0) return content(w, gx, gy);
+  float r = uFrost * 16.0;
+  vec2 bx = gx + vec2(r * 0.35, 0.0);
+  vec2 by = gy + vec2(0.0, r * 0.35);
+  vec4 sum = content(w, bx, by) * 0.2;
+  for (int i = 0; i < 8; i++) {
+    float a = float(i) * 0.785398 + 0.3;
+    sum += content(w + vec2(cos(a), sin(a)) * r * (0.55 + 0.45 * float(i & 1)), bx, by) * 0.1;
+  }
+  return sum;
+}
+
+void main() {
+  vec2 w = gl_FragCoord.xy / uRatio;
+  vec2 wx = dFdx(w);
+  vec2 wy = dFdy(w);
+  fragColor = content(w, wx, wy);
 }`;
 
-const SDF_CUBE = `{
-  vec3 q = abs(p) - vec3(0.6);
-  return length(max(q, 0.0)) + min(max(q.x, max(q.y, q.z)), 0.0) - 0.16;
+const SDF_PILL = `{
+  float outline = length(vec2(max(abs(p.x) - 0.58, 0.0), p.y)) - 0.42;
+  vec2 q = vec2(outline + 0.16, abs(p.z) - 0.16);
+  return length(max(q, 0.0)) + min(max(q.x, q.y), 0.0) - 0.16;
 }`;
 
 const FRAGMENT = `#version 300 es
@@ -78,8 +100,14 @@ uniform vec4 uShadowBox;
 uniform vec2 uShadowSize;
 out vec4 fragColor;
 
-float shapeA(vec3 p) ${SDF_CUBE}
-float shapeB(vec3 p) ${SDF_CUBE}
+float shapeA(vec3 p) {
+  vec3 q = abs(p) - 0.5;
+  return length(max(q, 0.0)) + min(max(q.x, q.y), 0.0) - 0.5;
+}
+float shapeB(vec3 p) {
+  vec3 q = abs(p) - 0.5;
+  return length(max(q, 0.0)) + min(max(q.x, q.y), 0.0) - 0.5;
+}
 
 float field(vec3 p) {
   float d = shapeA(p);

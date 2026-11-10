@@ -203,8 +203,13 @@ export function PowerUpCoin({spawnPosition = [0, 50, 0], category = "speed", rar
                 unregisterPowerUp(coinIdRef.current);
                 setPhase("collected");
                 onCollected?.();
+                // Play as a GLOBAL one-shot: the coin's rigid body is `type="fixed"` at
+                // spawnPosition (y=50) and the THREE object3D does not track the
+                // physics `setTranslation` tween, so a positional panner would sit
+                // ~48m from the listener and be attenuated to silence. A pickup
+                // chime has no meaningful spatial source anyway.
                 if (soundManager && soundManager.listener)
-                    soundManager.playPositional("powerup", rigidRef.current, 1, 10, 1.0, 50, false);
+                    soundManager.playGlobal("powerup", 1.0, false);
                 return;
             }
 
