@@ -16,12 +16,12 @@ export default function AmbientBed() {
         // Load amb-bed.ogg if not already cached
         if (!soundManager.sounds.has("amb-bed")) {
             soundManager.load("amb-bed", "audio/amb-bed.ogg").then(() => {
-                if (bedRef.current) {
-                    soundManager.playAmbientBed("amb-bed", ambientVolume);
-                }
+                const bed = soundManager.playAmbientBed("amb-bed", ambientVolume);
+                bedRef.current = bed;
             });
         } else {
-            soundManager.playAmbientBed("amb-bed", ambientVolume);
+            const bed = soundManager.playAmbientBed("amb-bed", ambientVolume);
+            bedRef.current = bed;
         }
 
         return () => {

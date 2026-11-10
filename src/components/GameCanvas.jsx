@@ -9,6 +9,9 @@ import BotPlayers from './Player/BotPlayers.jsx';
 import MenuCamera from './World/MenuCamera.jsx';
 import Effects from './World/Effects.jsx';
 import SoundListener from './World/SoundListener.jsx';
+import AmbientBed from './World/AmbientBed.jsx';
+import AmbientSFX from './World/AmbientSFX.jsx';
+import Occlusion from './World/Occlusion.jsx';
 
 export default function GameCanvas({ sendUpdate }) {
 
@@ -19,6 +22,9 @@ export default function GameCanvas({ sendUpdate }) {
     <>
       <EnvironmentSetup />
       <SoundListener />
+      <AmbientBed />
+      <AmbientSFX />
+      <Occlusion />
       <Physics gravity={[0, -90.81, 0]} timestep={0.0333} debug={physicsDebug}>
         <Arena />
         {/* Bots spawn on the arena from the very first frame — menu included — so the

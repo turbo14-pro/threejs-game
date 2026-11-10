@@ -114,7 +114,7 @@ float shadowAt(vec3 ro, vec3 rd) {
   return occlusion;
 }
 
-struct Trace {
+struct GlassTrace {
   bool hit;
   float t;
   vec3 normal;
@@ -125,8 +125,8 @@ struct Trace {
   int bounces;
 }
 
-Trace traceRay(vec3 ro, vec3 rd) {
-  Trace tr;
+GlassTrace glassTraceRay(vec3 ro, vec3 rd) {
+  GlassTrace tr;
   tr.hit = false;
   tr.t = 0.0;
   tr.normal = vec3(0.0);
@@ -211,7 +211,7 @@ void main() {
   vec3 rd = normalize(vec3((uv - 0.5) * uView.x / uFocal, -1.0));
   rd = uInverse * rd;
 
-  Trace tr = traceRay(ro, rd);
+  GlassTrace tr = glassTraceRay(ro, rd);
 
   vec4 color = uBackground;
   vec4 refractedColor = vec4(0.0);
@@ -253,6 +253,7 @@ const compile = (gl, type, source) => {
   gl.compileShader(shader);
   if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
     console.error('Shader compile error:', gl.getShaderInfoLog(shader));
+    console.error('Shader source (first 2000 chars):', source.slice(0, 2000));
     gl.deleteShader(shader);
     return null;
   }
