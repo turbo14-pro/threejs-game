@@ -338,6 +338,7 @@ class SoundManager {
                     current.volume = 0;
                     other.volume = safeVolume;
                     active = active === "A" ? "B" : "A";
+                    debugLog(`[AmbientBed] Looped → zone=${this._reverbZone} bed=${active}`);
                     // Schedule next crossfade after the other bed plays for (duration - crossfadeStartOffset)
                     fadeTimer = setTimeout(startCrossfade, (duration - crossfadeStartOffset) * 1000);
                 }

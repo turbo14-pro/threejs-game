@@ -109,7 +109,7 @@ export function useNetworking() {
                     const serverTick = data.t;
                     players.forEach((p) => {
                         if (p.pos) {
-                            console.log(`[NETWORKING HOOK RECEIVE] player=${p.id} posY=${p.pos[1]?.toFixed(2)}`);
+                            /*console.log(`[NETWORKING HOOK RECEIVE] player=${p.id} posY=${p.pos[1]?.toFixed(2)}`);*/
                         }
                     });
                     updateRemotePlayers(players);
