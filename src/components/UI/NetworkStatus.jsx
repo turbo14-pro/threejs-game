@@ -56,7 +56,7 @@ export default function NetworkStatus() {
             position: 'fixed',
             top: '20px',
             right: '20px',
-            zIndex: 9999,
+            zIndex: 'var(--z-toast)',
             display: 'flex',
             alignItems: 'center',
             gap: '12px',

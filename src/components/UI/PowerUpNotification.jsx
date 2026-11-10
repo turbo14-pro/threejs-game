@@ -48,7 +48,7 @@ export function PowerUpNotification() {
       width: 'max-content',
       maxWidth: 'calc(100vw - 32px)',
       boxSizing: 'border-box',
-      zIndex: 200,
+      zIndex: 'var(--z-toast)',
       display: 'flex',
       alignItems: 'center',
       gap: 12,

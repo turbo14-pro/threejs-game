@@ -127,7 +127,7 @@ export default function LatencyGraph() {
       alignItems: 'flex-start',
       gap: '0.4rem',
       pointerEvents: 'none',
-      zIndex: 100,
+      zIndex: 'var(--z-modal)',
       fontFamily: 'Inter, system-ui, sans-serif',
       textShadow: '0 2px 4px rgba(0,0,0,0.5)'
     }}>

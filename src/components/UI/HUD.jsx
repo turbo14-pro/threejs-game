@@ -118,7 +118,7 @@ export default function HUD() {
       background: 'rgba(125, 231, 255, 0.015)',
       boxShadow: '0 0 24px rgba(125, 231, 255, 0.12)',
       backdropFilter: 'blur(6px)',
-      zIndex: 22,
+      zIndex: 'var(--z-layered)',
       pointerEvents: 'none',
       animation: 'ripple-debug-pulse 1.4s ease-out infinite',
       animationDelay: `${index * 0.35}s`,
@@ -158,7 +158,7 @@ export default function HUD() {
 
       {!isPaused && rippleDebug?.enabled && (
         <>
-          <div style={{ position: 'absolute', left: 16, top: 16, zIndex: 20, background: 'rgba(0,0,0,0.55)', color: '#fff', padding: '8px 10px', borderRadius: 6, fontSize: 12, fontFamily: 'monospace', pointerEvents: 'none', maxWidth: 'min(92vw, 420px)' }}>
+          <div style={{ position: 'absolute', left: 16, top: 16, zIndex: 'var(--z-default)', background: 'rgba(0,0,0,0.55)', color: '#fff', padding: '8px 10px', borderRadius: 6, fontSize: 12, fontFamily: 'monospace', pointerEvents: 'none', maxWidth: 'min(92vw, 420px)' }}>
             <div>{rippleDebugLabel}</div>
             <div style={{ marginTop: 4, color: '#7de7ff' }}>Ripple debug overlay enabled</div>
           </div>
@@ -311,7 +311,7 @@ export default function HUD() {
           onTouchEnd={(e) => {
             if (e.target === e.currentTarget) handleResume();
           }}
-          style={{ position: 'absolute', inset: 0, zIndex: 10 }}
+          style={{ position: 'absolute', inset: 0, zIndex: 'var(--z-dropdown)' }}
         />
       )}
 

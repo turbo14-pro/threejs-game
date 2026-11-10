@@ -312,17 +312,20 @@ const PlayerModel = ({
 
         // Always update speed — tie walk/run animation speed to actual velocity
         // so the visual cycle matches the footstep audio playback rate.
+        // Walk is much slower than run, so the animation must reflect that:
+        // walk speedScale ranges from 0.5 (at 0.5 m/s) to 1.0 (at 4 m/s),
+        // run speedScale ranges from 1.0 (at 4 m/s) to 1.5 (at 35 m/s).
         let speedScale = 1.0;
         if (animState.includes("land")) {
             speedScale = 1.6;
         } else if (animState.includes("walk")) {
-            // Scale from 1.0 (at 0.5 m/s) to 1.3 (at walkSpeed = 4 m/s)
+            // Scale from 0.5 (at 0.5 m/s) to 1.0 (at walkSpeed = 4 m/s)
             const t = Math.max(0, Math.min(1, (hSpeed - 0.5) / (4 - 0.5)));
-            speedScale = 1.0 + t * 0.3;
+            speedScale = 0.5 + t * 0.5;
         } else if (animState.includes("run")) {
-            // Scale from 1.0 (at walkSpeed = 4 m/s) to 1.2 (at sprintSpeed = 35 m/s)
+            // Scale from 1.0 (at walkSpeed = 4 m/s) to 1.5 (at sprintSpeed = 35 m/s)
             const t = Math.max(0, Math.min(1, (hSpeed - 4) / (35 - 4)));
-            speedScale = 1.0 + t * 0.2;
+            speedScale = 1.0 + t * 0.5;
         }
 
         action.setEffectiveTimeScale(speedScale);
