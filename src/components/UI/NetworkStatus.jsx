@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
+import { SatelliteDish, CheckCircle2, AlertTriangle, Home } from 'lucide-react';
 import { useGameStore } from '../../store/useGameStore';
 
 /**
@@ -11,11 +12,18 @@ export default function NetworkStatus() {
   const [isVisible, setIsVisible] = useState(false);
 
   // Configuration for different statuses
+  const ICON_MAP = {
+    CONNECTING: SatelliteDish,
+    ONLINE: CheckCircle2,
+    ERROR: AlertTriangle,
+    OFFLINE: Home,
+  };
+
   const config = {
-    CONNECTING: { label: 'Searching for Server...', color: '#ffcc00', icon: '📡' },
-    ONLINE: { label: 'Multiplayer Online', color: '#00ff88', icon: '✅' },
-    ERROR: { label: 'Connection Failed', color: '#ff4444', icon: '⚠️' },
-    OFFLINE: { label: 'Offline Mode', color: '#ffffff', icon: '🏠' }
+    CONNECTING: { label: 'Searching for Server...', color: '#ffcc00', icon: ICON_MAP.CONNECTING, ariaLabel: 'Connecting to server' },
+    ONLINE: { label: 'Multiplayer Online', color: '#00ff88', icon: ICON_MAP.ONLINE, ariaLabel: 'Multiplayer online' },
+    ERROR: { label: 'Connection Failed', color: '#ff4444', icon: ICON_MAP.ERROR, ariaLabel: 'Connection failed' },
+    OFFLINE: { label: 'Offline Mode', color: '#ffffff', icon: ICON_MAP.OFFLINE, ariaLabel: 'Offline mode' },
   };
 
   const current = config[status] || config.OFFLINE;
@@ -65,7 +73,7 @@ export default function NetworkStatus() {
             pointerEvents: 'none',
           }}
         >
-          <span style={{ fontSize: '18px' }}>{current.icon}</span>
+          <current.icon size={18} strokeWidth={2} aria-label={current.ariaLabel} />
           <span>{current.label}</span>
           
           {/* Subtle glow effect */}
