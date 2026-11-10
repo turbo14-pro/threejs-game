@@ -53,9 +53,11 @@ export const useGameStore = create(
                 audio: {
                     ambientVolume: 0.25, // 0-1 ambient bed volume (default 1/4)
                     sfxVolume: 1.0, // 0-1 SFX volume (positional one-shots, incl. powerup pickup)
+                    musicVolume: 0.7, // 0-1 background music volume
                     reverbWet: 1.0, // 0-1 reverb wet level
                     reverbZone: "outside", // 'outside' | 'inside' | 'edge'
                     occlusionGain: 1.0, // 0-1 occlusion multiplier for ambient bed
+                    currentTrack: null, // { id, file, title, artist, bpm, duration } currently playing track
                 },
 
                 // --- PLAYER STATE ---
@@ -67,8 +69,6 @@ export const useGameStore = create(
                     isGrounded: true,
                     networkId: null,
                     playerAnimations: null, // Shared animation config
-                    currentZone: "outside", // 'outside' | 'inside' | 'edge'
-                    insideCerealBox: false, // true when player is inside a cereal box
                     // Stats for persistence
                     stats: {
                         kills: 0,
@@ -284,20 +284,31 @@ export const useGameStore = create(
                 setPlayerAnimations: (anim) => set((s) => ({player: {...s.player, playerAnimations: anim}})),
                 setUsername: (name) => set((s) => ({player: {...s.player, username: name}})),
                 setIsHiding: (hiding) => set((s) => ({player: {...s.player, isHiding: hiding}})),
-                setCurrentZone: (zone) => set((s) => ({player: {...s.player, currentZone: zone}})),
-                setInsideCerealBox: (inside) => set((s) => ({player: {...s.player, insideCerealBox: inside}})),
-                setAmbientVolume: (vol) => set((s) => ({audio: {...s.audio, ambientVolume: vol}})),
-                setSfxVolume: (vol) => {
-                    set((s) => ({audio: {...s.audio, sfxVolume: vol}}));
-                    // Push to SoundManager immediately so the powerup pickup
-                    // (and every other positional SFX) respects the slider live.
+
+                // --- AUDIO ACTIONS ---
+                setAmbientVolume: (vol) => {
+                    const clamped = Math.max(0, Math.min(1, Number(vol) || 0));
+                    set((s) => ({audio: {...s.audio, ambientVolume: clamped}}));
                     try {
-                        soundManager?.setSfxVolume?.(vol);
+                        soundManager?.setAmbientVolume?.(clamped);
                     } catch {}
                 },
-                setReverbWet: (wet) => set((s) => ({audio: {...s.audio, reverbWet: wet}})),
-                setReverbZone: (zone) => set((s) => ({audio: {...s.audio, reverbZone: zone}})),
-                setOcclusionGain: (gain) => set((s) => ({audio: {...s.audio, occlusionGain: gain}})),
+                setMusicVolume: (vol) => {
+                    const clamped = Math.max(0, Math.min(1, Number(vol) || 0));
+                    set((s) => ({audio: {...s.audio, musicVolume: clamped}}));
+                    // Push to SoundManager immediately so the music respects the slider live.
+                    try {
+                        soundManager?.setMusicVolume?.(clamped);
+                    } catch {}
+                },
+                setSfxVolume: (vol) => {
+                    const clamped = Math.max(0, Math.min(1, Number(vol) || 0));
+                    set((s) => ({audio: {...s.audio, sfxVolume: clamped}}));
+                    try {
+                        soundManager?.setSfxVolume?.(clamped);
+                    } catch {}
+                },
+                setCurrentTrack: (track) => set((s) => ({audio: {...s.audio, currentTrack: track}})),
 
                 damagePlayer: (amount) => {
                     const newHealth = Math.max(0, get().player.health - amount);

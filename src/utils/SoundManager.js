@@ -280,10 +280,6 @@ class SoundManager {
     }
 
     // Smooth volume ramp to avoid zipper noise
-    /**
-     * Set music volume with a smooth 50ms linear ramp (avoids zipper noise).
-     * @param {number} vol - Volume 0-1
-     */
     setMusicVolume(vol) {
         const v = Math.max(0, Math.min(1, Number(vol) || 0));
         this.musicVolume = v;
@@ -294,11 +290,7 @@ class SoundManager {
         }
     }
 
-    /**
-     * Play a music track via streaming `<audio>` + MediaElementAudioSource.
-     * Stops any existing music first.
-     * @param {{id, file, title, artist, bpm?, duration?}} track - Track object from manifest
-     */
+    // Play a music track (track object from manifest: { id, file, title, artist, ... })
     playMusic(track) {
         if (!this.listener || !this.musicGain) return;
         const ctx = this.listener.context;
@@ -338,12 +330,6 @@ class SoundManager {
     // crossfade ramp (zipper-noise-safe) rather than toggling <audio>.volume,
     // and swaps the current/next references AFTER the old element is released
     // so the swap never sees a nulled-out next element.
-    /**
-     * Crossfade from the current track to the next track over `duration` ms.
-     * Uses the shared musicGain GainNode for zipper-noise-safe volume ramping.
-     * @param {{id, file, title, artist, bpm?, duration?}} nextTrack - Track to crossfade to
-     * @param {number} [duration=3000] - Crossfade duration in ms
-     */
     crossfadeTo(nextTrack, duration = 3000) {
         if (!this.listener || !this.musicGain) return;
         const ctx = this.listener.context;
@@ -427,10 +413,6 @@ class SoundManager {
     }
 
     // Stop current music and clean up
-    /**
-     * Stop current music, pause/disconnect all <audio> elements and sources,
-     * and clear all music references.
-     */
     stopMusic() {
         if (this.musicCrossfadeTimer) {
             clearTimeout(this.musicCrossfadeTimer);
