@@ -101,7 +101,7 @@ describe("SoundManager — ambient bed", () => {
         const sound = await sm.playAmbientBed("amb-bed", 0.5);
         expect(sound).not.toBeNull();
         expect(sound.isPlaying).toBe(true);
-        expect(sound.loop).toBe(false); // manual loop via dual-bed crossfade
+        expect(sound.loop).toBe(true); // built-in loop, crossfaded between two beds
 
         // Release should stop and detach
         sm.releaseAmbientBed(sound);
