@@ -11,6 +11,8 @@ export default function Options({onBack}) {
     const setAmbientVolume = useGameStore((state) => state.setAmbientVolume);
     const sfxVolume = useGameStore((state) => state.audio.sfxVolume);
     const setSfxVolume = useGameStore((state) => state.setSfxVolume);
+    const musicVolume = useGameStore((state) => state.audio.musicVolume);
+    const setMusicVolume = useGameStore((state) => state.setMusicVolume);
 
     const [submenu, setSubmenu] = useState("graphics"); // 'graphics' | 'controls' | 'audio'
     const [advancedOpen, setAdvancedOpen] = useState(false);
@@ -315,6 +317,9 @@ export default function Options({onBack}) {
                     <label htmlFor="volume-music" className="option-name-label">
                         Music Volume
                     </label>
+                    <span className="option-desc">
+                        Background music — wired to store `audio.musicVolume`, persisted across reloads.
+                    </span>
                 </div>
                 <input
                     id="volume-music"
@@ -322,7 +327,8 @@ export default function Options({onBack}) {
                     min="0"
                     max="1"
                     step="0.1"
-                    defaultValue="0.7"
+                    value={musicVolume}
+                    onChange={(e) => setMusicVolume(parseFloat(e.target.value))}
                     className="volume-slider"
                 />
             </div>

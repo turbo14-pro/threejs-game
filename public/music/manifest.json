@@ -1,0 +1,52 @@
+{
+    "tracks": [
+        {
+            "id": "how-to-train-your-dragnet",
+            "file": "How To Train Your Dragnet - Ezra Lipp_128k.mp3",
+            "title": "How To Train Your Dragnet",
+            "artist": "Ezra Lipp"
+        },
+        {
+            "id": "intergalactic",
+            "file": "Intergalactic - Alex Jones _ Xander Jones_128k.mp3",
+            "title": "Intergalactic",
+            "artist": "Alex Jones _ Xander Jones"
+        },
+        {
+            "id": "majestic-12",
+            "file": "Majestic-12 - Alex Jones _ Xander Jones_128k.mp3",
+            "title": "Majestic-12",
+            "artist": "Alex Jones _ Xander Jones"
+        },
+        {
+            "id": "moons",
+            "file": "Moons - Patrick Patrikios_128k.mp3",
+            "title": "Moons",
+            "artist": "Patrick Patrikios"
+        },
+        {
+            "id": "nicolas-mf-cage",
+            "file": "Nicolas MF Cage - Ezra Lipp_128k.mp3",
+            "title": "Nicolas MF Cage",
+            "artist": "Ezra Lipp"
+        },
+        {
+            "id": "soft-knives",
+            "file": "Soft Knives - SefChol_128k.mp3",
+            "title": "Soft Knives",
+            "artist": "SefChol"
+        },
+        {
+            "id": "stake-out",
+            "file": "Stake Out - Alex Jones _ Xander Jones_128k.mp3",
+            "title": "Stake Out",
+            "artist": "Alex Jones _ Xander Jones"
+        },
+        {
+            "id": "this-is-not-a-dolphin",
+            "file": "This is Not a Dolphin - True Cuckoo_128k.mp3",
+            "title": "This is Not a Dolphin",
+            "artist": "True Cuckoo"
+        }
+    ]
+}

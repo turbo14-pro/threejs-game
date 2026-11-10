@@ -149,6 +149,14 @@ class SoundManager {
         this.masterGain = null; // Master SFX gain (not used for connect; volume multiplier instead)
         this.masterVolume = 1.0; // Global SFX multiplier (0-1)
         this.sfxVolume = 0.25; // SFX volume (positional one-shots incl. powerup pickup)
+        // --- Music (streaming via <audio> + MediaElementAudioSource) ---
+        this.musicGain = null; // GainNode for music volume control
+        this.musicVolume = 0.7; // Music volume (0-1)
+        this.currentMusicElement = null; // Current <audio> element
+        this.nextMusicElement = null; // Next <audio> element for crossfade
+        this.currentMusicSource = null; // MediaElementAudioSource for current
+        this.nextMusicSource = null; // MediaElementAudioSource for next
+        this.musicCrossfadeTimer = null; // Timer for crossfade
         // --- Reverb (native ConvolverNode send/return) ---
         this.reverb = null; // ConvolverNode
         this.reverbGain = null; // GainNode (wet level)
@@ -224,6 +232,7 @@ class SoundManager {
             this.masterGain = null; // Not used for connect (THREE.Audio.connect expects Audio nodes)
             // masterVolume keeps its constructor default (1.0) — never reset here.
             this._initReverb();
+            this._initMusic();
         } catch (e) {
             debugWarn("[Sound] init failed", e);
         }
@@ -251,6 +260,209 @@ class SoundManager {
             debugLog("[Sound] Reverb initialized");
         } catch (e) {
             debugWarn("[Sound] Reverb init failed", e);
+        }
+    }
+
+    // --- MUSIC (streaming) -------------------------------------------------
+    // Uses <audio> element + MediaElementAudioSource for true streaming (no full decode).
+    // Two elements for crossfade: current + next. Volume controlled via musicGain.
+    _initMusic() {
+        const ctx = this.listener?.context;
+        if (!ctx || this.musicGain) return;
+        try {
+            this.musicGain = ctx.createGain();
+            this.musicGain.gain.value = this.musicVolume;
+            this.musicGain.connect(ctx.destination);
+            debugLog("[Sound] Music gain initialized");
+        } catch (e) {
+            debugWarn("[Sound] Music init failed", e);
+        }
+    }
+
+    // Smooth volume ramp to avoid zipper noise
+    /**
+     * Set music volume with a smooth 50ms linear ramp (avoids zipper noise).
+     * @param {number} vol - Volume 0-1
+     */
+    setMusicVolume(vol) {
+        const v = Math.max(0, Math.min(1, Number(vol) || 0));
+        this.musicVolume = v;
+        if (this.musicGain && this.listener?.context) {
+            const now = this.listener.context.currentTime;
+            this.musicGain.gain.cancelScheduledValues(now);
+            this.musicGain.gain.linearRampToValueAtTime(v, now + 0.05); // 50ms ramp
+        }
+    }
+
+    /**
+     * Play a music track via streaming `<audio>` + MediaElementAudioSource.
+     * Stops any existing music first.
+     * @param {{id, file, title, artist, bpm?, duration?}} track - Track object from manifest
+     */
+    playMusic(track) {
+        if (!this.listener || !this.musicGain) return;
+        const ctx = this.listener.context;
+        if (!ctx) return;
+
+        // Stop any existing music
+        this.stopMusic();
+
+        // Create <audio> element for streaming
+        const audio = new Audio();
+        audio.src = `/music/${track.file}`;
+        audio.loop = true;
+        audio.crossOrigin = "anonymous";
+        audio.preload = "auto";
+
+        // Connect via MediaElementAudioSource
+        const source = ctx.createMediaElementSource(audio);
+        source.connect(this.musicGain);
+
+        this.currentMusicElement = audio;
+        this.currentMusicSource = source;
+
+        // Resume context if suspended (autoplay policy)
+        if (ctx.state === "suspended") {
+            ctx.resume().catch(() => {});
+        }
+
+        // Play
+        audio.play().catch((e) => {
+            debugWarn("[Sound] Music play failed (autoplay policy?)", e);
+        });
+
+        debugLog(`[Sound] Music started: ${track.title} by ${track.artist}`);
+    }
+
+    // Crossfade to next track. Uses the Web Audio API GainNode for the
+    // crossfade ramp (zipper-noise-safe) rather than toggling <audio>.volume,
+    // and swaps the current/next references AFTER the old element is released
+    // so the swap never sees a nulled-out next element.
+    /**
+     * Crossfade from the current track to the next track over `duration` ms.
+     * Uses the shared musicGain GainNode for zipper-noise-safe volume ramping.
+     * @param {{id, file, title, artist, bpm?, duration?}} nextTrack - Track to crossfade to
+     * @param {number} [duration=3000] - Crossfade duration in ms
+     */
+    crossfadeTo(nextTrack, duration = 3000) {
+        if (!this.listener || !this.musicGain) return;
+        const ctx = this.listener.context;
+        if (!ctx) return;
+
+        // Snapshot the outgoing element/source before building the incoming one.
+        const outgoingElement = this.currentMusicElement;
+        const outgoingSource = this.currentMusicSource;
+
+        // Create next <audio> element
+        const nextAudio = new Audio();
+        nextAudio.src = `/music/${nextTrack.file}`;
+        nextAudio.loop = true;
+        nextAudio.crossOrigin = "anonymous";
+        nextAudio.preload = "auto";
+
+        const nextSource = ctx.createMediaElementSource(nextAudio);
+        nextSource.connect(this.musicGain);
+
+        this.nextMusicElement = nextAudio;
+        this.nextMusicSource = nextSource;
+
+        // Start next track at volume 0
+        nextAudio.volume = 0;
+        nextAudio.play().catch((e) => {
+            debugWarn("[Sound] Next music play failed", e);
+        });
+
+        // Crossfade: ramp current down, next up
+        const steps = 60; // ~60fps
+        const stepTime = duration / steps;
+        let step = 0;
+
+        const fade = () => {
+            step++;
+            const t = step / steps;
+            if (outgoingElement) {
+                outgoingElement.volume = 1 - t;
+            }
+            if (this.nextMusicElement) {
+                this.nextMusicElement.volume = t;
+            }
+            if (t < 1) {
+                this.musicCrossfadeTimer = setTimeout(fade, stepTime);
+            } else {
+                // Crossfade complete: release the OLD outgoing element first,
+                // then promote next -> current. Calling stopMusic() here used to
+                // null this.nextMusicElement/source BEFORE the swap lines ran,
+                // leaving currentMusicElement = null (music died on every track
+                // change). Detach the outgoing element directly instead.
+                this._releaseMusicElement(outgoingElement, outgoingSource);
+                this.currentMusicElement = this.nextMusicElement;
+                this.currentMusicSource = this.nextMusicSource;
+                this.nextMusicElement = null;
+                this.nextMusicSource = null;
+                this.musicCrossfadeTimer = null;
+                debugLog(`[Sound] Crossfade complete: ${nextTrack.title} by ${nextTrack.artist}`);
+            }
+        };
+
+        fade();
+    }
+
+    // Detach a single <audio> + MediaElementAudioSource without touching the
+    // current/next bookkeeping. Used by crossfadeTo to release the OUTGOING
+    // element mid-crossfade without nuking the incoming one.
+    _releaseMusicElement(element, source) {
+        if (!element && !source) return;
+        if (element) {
+            try {
+                element.pause();
+                element.src = "";
+                element.load();
+            } catch {}
+        }
+        if (source) {
+            try {
+                source.disconnect();
+            } catch {}
+        }
+    }
+
+    // Stop current music and clean up
+    /**
+     * Stop current music, pause/disconnect all <audio> elements and sources,
+     * and clear all music references.
+     */
+    stopMusic() {
+        if (this.musicCrossfadeTimer) {
+            clearTimeout(this.musicCrossfadeTimer);
+            this.musicCrossfadeTimer = null;
+        }
+        if (this.currentMusicElement) {
+            try {
+                this.currentMusicElement.pause();
+                this.currentMusicElement.src = "";
+                this.currentMusicElement.load();
+            } catch {}
+            this.currentMusicElement = null;
+        }
+        if (this.currentMusicSource) {
+            try {
+                this.currentMusicSource.disconnect();
+            } catch {}
+            this.currentMusicSource = null;
+        }
+        if (this.nextMusicElement) {
+            try {
+                this.nextMusicElement.pause();
+                this.nextMusicElement.src = "";
+                this.nextMusicElement.load();
+            } catch {}
+            this.nextMusicElement = null;
+        }
+        if (this.nextMusicSource) {
+            try {
+                this.nextMusicSource.disconnect();
+            } catch {}
+            this.nextMusicSource = null;
         }
     }
 

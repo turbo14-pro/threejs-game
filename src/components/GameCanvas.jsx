@@ -12,6 +12,7 @@ import SoundListener from "./World/SoundListener.jsx";
 import AmbientBed from "./World/AmbientBed.jsx";
 import AmbientSFX from "./World/AmbientSFX.jsx";
 import Occlusion from "./World/Occlusion.jsx";
+import MusicPlayer from "./World/MusicPlayer.jsx";
 
 export default function GameCanvas({sendUpdate}) {
     const gameState = useGameStore((state) => state.game.state);
@@ -24,6 +25,7 @@ export default function GameCanvas({sendUpdate}) {
             <AmbientBed />
             <AmbientSFX />
             <Occlusion />
+            <MusicPlayer />
             <Physics gravity={[0, -90.81, 0]} timestep={0.0333} debug={physicsDebug}>
                 <Arena />
                 {/* Bots spawn on the arena from the very first frame — menu included — so the
