@@ -269,9 +269,9 @@ class SoundManager {
     // --- AMBIENT BED (seamless dual-bed crossfade) ---------------------------------
     // Looping ambient bed attached to the camera (follows the player).
     // Uses two PositionalAudio instances crossfading to eliminate the OGG/Vorbis
-    // encoder-delay stall at the loop point. When bed A nears its end, bed B is
-    // started at volume 0 and crossfaded in while A fades out, then the roles
-    // swap. Volume is controlled by the store's audio.ambientVolume.
+    // encoder-delay stall at the loop point. Built-in loop is disabled; we
+    // manually restart each bed when it ends, crossfading between them so there
+    // is never an audible gap. Volume is controlled by the store's audio.ambientVolume.
     playAmbientBed(name, volume = 0.5) {
         if (!this.listener || !this.sounds.has(name)) return null;
         const buffer = this.sounds.get(name);
@@ -282,13 +282,13 @@ class SoundManager {
         if (!Number.isFinite(safeVolume)) return null;
 
         const duration = Number.isFinite(buffer.duration) && buffer.duration > 0 ? buffer.duration : 15;
-        const crossfadeTime = 0.5; // seconds to crossfade between beds
+        const crossfadeTime = 0.8; // seconds to crossfade between beds
 
         // Stop any existing ambient beds
         if (this.ambientBed) this.releaseAmbientBed(this.ambientBed);
         if (this.ambientBedB) this.releaseAmbientBed(this.ambientBedB);
 
-        // Create both beds
+        // Create both beds (loop disabled — we handle restart manually)
         const bedA = this._createAmbientBedInstance(name, buffer, safeVolume, 1.0);
         const bedB = this._createAmbientBedInstance(name, buffer, safeVolume, 0.0);
 
@@ -300,74 +300,64 @@ class SoundManager {
             try { bedA.play(); } catch {}
         }
 
-        // Crossfade loop: when A nears end, fade B in and A out, then swap
+        // Seamless loop: when A ends, crossfade to B; when B ends, crossfade to A
         let active = "A";
-        const checkLoop = () => {
-            if (!bedA || !bedB) return;
-            const aPlaying = bedA.isPlaying;
-            const bPlaying = bedB.isPlaying;
-
-            if (!aPlaying && !bPlaying) {
-                // Both stopped (context suspended?) — try to restart A
-                if (this.ensureRunning()) {
-                    try { bedA.play(); } catch {}
-                    active = "A";
-                }
-                return;
-            }
-
+        const handleEnd = () => {
             const current = active === "A" ? bedA : bedB;
             const other = active === "A" ? bedB : bedA;
 
-            // If current is near the end, start crossfade
-            if (current.isPlaying && current._startTime !== undefined) {
-                const elapsed = (performance.now() - current._startTime) / 1000;
-                if (elapsed >= duration - crossfadeTime && !other._crossfading) {
-                    other._crossfading = true;
-                    other._startTime = performance.now();
-                    if (this.ensureRunning()) {
-                        try { other.play(); } catch {}
-                    }
-                    // Crossfade over crossfadeTime seconds
-                    const fadeSteps = Math.ceil(crossfadeTime * 60); // ~60fps
-                    let step = 0;
-                    const fadeInterval = setInterval(() => {
-                        step++;
-                        const t = step / fadeSteps;
-                        if (!current.isPlaying || !other.isPlaying) {
-                            clearInterval(fadeInterval);
-                            return;
-                        }
-                        current.volume = safeVolume * (1 - t);
-                        other.volume = safeVolume * t;
-                        if (t >= 1) {
-                            clearInterval(fadeInterval);
-                            current.stop();
-                            this._untrackInstance(current);
-                            scheduleDetach(current);
-                            if (active === "A") { this.ambientBed = other; this.ambientBedB = null; }
-                            else { this.ambientBedB = other; this.ambientBed = null; }
-                            active = active === "A" ? "B" : "A";
-                            other._crossfading = false;
-                            // Restart the now-silent bed for next cycle
-                            const silentBed = active === "A" ? bedA : bedB;
-                            silentBed.volume = 0;
-                            silentBed._startTime = performance.now();
-                            if (this.ensureRunning()) {
-                                try { silentBed.play(); } catch {}
-                            }
-                        }
-                    }, 16);
-                }
+            if (other._crossfading) return; // already crossfading
+
+            other._crossfading = true;
+            other._startTime = performance.now();
+            if (this.ensureRunning()) {
+                try { other.play(); } catch {}
             }
 
-            if (aPlaying || bPlaying) {
-                requestAnimationFrame(checkLoop);
-            }
+            // Crossfade over crossfadeTime seconds
+            const fadeSteps = Math.ceil(crossfadeTime * 60); // ~60fps
+            let step = 0;
+            const fadeInterval = setInterval(() => {
+                step++;
+                const t = step / fadeSteps;
+                if (!current.isPlaying || !other.isPlaying) {
+                    clearInterval(fadeInterval);
+                    return;
+                }
+                current.volume = safeVolume * (1 - t);
+                other.volume = safeVolume * t;
+                if (t >= 1) {
+                    clearInterval(fadeInterval);
+                    current.stop();
+                    this._untrackInstance(current);
+                    scheduleDetach(current);
+                    if (active === "A") { this.ambientBed = other; this.ambientBedB = null; }
+                    else { this.ambientBedB = other; this.ambientBed = null; }
+                    active = active === "A" ? "B" : "A";
+                    other._crossfading = false;
+                    // Restart the now-silent bed for next cycle
+                    const silentBed = active === "A" ? bedA : bedB;
+                    silentBed.volume = 0;
+                    silentBed._startTime = performance.now();
+                    if (this.ensureRunning()) {
+                        try { silentBed.play(); } catch {}
+                    }
+                }
+            }, 16);
         };
 
-        bedA._startTime = performance.now();
-        requestAnimationFrame(checkLoop);
+        bedA.onEnded = () => {
+            runBaseOnEnded(bedA);
+            try { bedA.__reverbSend?.disconnect(); } catch {}
+            bedA.__reverbSend = null;
+            handleEnd();
+        };
+        bedB.onEnded = () => {
+            runBaseOnEnded(bedB);
+            try { bedB.__reverbSend?.disconnect(); } catch {}
+            bedB.__reverbSend = null;
+            handleEnd();
+        };
 
         this.ambientBed = bedA;
         this.ambientBedB = bedB;
@@ -378,7 +368,7 @@ class SoundManager {
         const sound = new THREE.PositionalAudio(this.listener);
         sound.__smName = name;
         sound.setBuffer(buffer);
-        sound.setLoop(true);
+        sound.setLoop(false); // manual loop via crossfade
         sound.setVolume(initialVolume);
         sound.setRefDistance(100);
         sound.setRolloffFactor(1.0);
@@ -393,15 +383,6 @@ class SoundManager {
             sound.__reverbSend = send;
         }
 
-        sound.onEnded = () => {
-            runBaseOnEnded(sound);
-            try {
-                sound.__reverbSend?.disconnect();
-            } catch {}
-            sound.__reverbSend = null;
-            this._untrackInstance(sound);
-            scheduleDetach(sound);
-        };
         this._trackInstance(sound);
         return sound;
     }

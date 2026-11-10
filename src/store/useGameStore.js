@@ -54,7 +54,7 @@ export const useGameStore = create(
 
         // --- AUDIO STATE ---
         audio: {
-          ambientVolume: 0.5, // 0-1 ambient bed volume
+          ambientVolume: 0.25, // 0-1 ambient bed volume (default 1/4)
           reverbWet: 1.0,     // 0-1 reverb wet level
           reverbZone: 'outside', // 'outside' | 'inside' | 'edge'
           occlusionGain: 1.0, // 0-1 occlusion multiplier for ambient bed
