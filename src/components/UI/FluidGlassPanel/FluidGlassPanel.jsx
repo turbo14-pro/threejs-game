@@ -46,6 +46,7 @@ const SDF_CUBE = `{
 }`;
 
 const FRAGMENT = `#version 300 es
+// FLUID_GLASS_PANEL_V2
 precision highp float;
 uniform vec2 uView;
 uniform float uRatio;
@@ -191,7 +192,7 @@ GlassTrace glassTraceRay(vec3 ro, vec3 rd) {
     }
     inside = reflect(inside, -n2);
     q += inside * 0.004;
-    tr.bounces += 1.0;
+    tr.bounces += 1;
   }
   if (!escaped) exitDir = inside;
 

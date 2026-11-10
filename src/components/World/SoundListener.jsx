@@ -53,6 +53,7 @@ export default function SoundListener() {
         const resume = () => {
             try {
                 soundManager.ensureRunning();
+                soundManager.resumeAmbientBed();
             } catch {}
         };
         window.addEventListener("pointerdown", resume);

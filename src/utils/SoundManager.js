@@ -270,8 +270,6 @@ class SoundManager {
         if (!this.listener || !this.sounds.has(name)) return null;
         const buffer = this.sounds.get(name);
         if (!buffer) return null;
-        if (!this.ensureRunning()) return null;
-        if (!this.camera) return null;
 
         const safeVolume = clampVolume(volume, 0.5) * clampVolume(this.masterVolume, 1.0);
         if (!Number.isFinite(safeVolume)) return null;
@@ -314,15 +312,31 @@ class SoundManager {
         };
         this._trackInstance(sound);
         this.camera.add(sound);
-        try {
-            sound.play();
-        } catch {
-            this._untrackInstance(sound);
-            scheduleDetach(sound);
-            return null;
+
+        // Only play if the AudioContext is running; if suspended, the sound
+        // is still created and configured — it will play once the context
+        // resumes (see resumeAmbientBed / ensureRunning).
+        if (this.ensureRunning()) {
+            try {
+                sound.play();
+            } catch {
+                this._untrackInstance(sound);
+                scheduleDetach(sound);
+                return null;
+            }
         }
         this.ambientBed = sound;
         return sound;
+    }
+
+    // Resume a previously created ambient bed that couldn't play because the
+    // AudioContext was suspended. Called on user gesture / focus regain.
+    resumeAmbientBed() {
+        if (!this.ambientBed) return;
+        if (!this.ensureRunning()) return;
+        try {
+            if (!this.ambientBed.isPlaying) this.ambientBed.play();
+        } catch {}
     }
 
     releaseAmbientBed(sound) {
