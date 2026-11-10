@@ -283,7 +283,7 @@ class SoundManager {
 
         const duration = Number.isFinite(buffer.duration) && buffer.duration > 0 ? buffer.duration : 15;
         const crossfadeTime = 2.0; // seconds to crossfade between beds (longer overlap for OGG gapless)
-        const crossfadeStartOffset = -2.0; // start crossfade 2s after duration, so it completes at the gap
+        const crossfadeStartOffset = 2.0; // start crossfade 2s after duration, completes at duration + 4.0 (the gap)
 
         // Stop any existing ambient beds
         if (this.ambientBed) this.releaseAmbientBed(this.ambientBed);
