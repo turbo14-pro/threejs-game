@@ -7,6 +7,10 @@ const MAX_INSTANCES = 24;
 // without bound. Live (non-detached) nodes are never pruned.
 const MAX_DEBUG_NODES = 200;
 
+// Base multiplier for music volume so the slider max (1.0) doesn't blast
+// full gain — matches the amb-bed pattern (slider * base multiplier).
+const MUSIC_BASE_MULTIPLIER = 0.15;
+
 function finiteOr(value, fallback) {
     return Number.isFinite(value) ? value : fallback;
 }
@@ -280,8 +284,10 @@ class SoundManager {
     }
 
     // Smooth volume ramp to avoid zipper noise
+    // Applies MUSIC_BASE_MULTIPLIER (0.25) so slider max = 25% of full gain,
+    // matching the amb-bed pattern (slider * base multiplier).
     setMusicVolume(vol) {
-        const v = Math.max(0, Math.min(1, Number(vol) || 0));
+        const v = Math.max(0, Math.min(1, Number(vol) || 0)) * MUSIC_BASE_MULTIPLIER;
         this.musicVolume = v;
         if (this.musicGain && this.listener?.context) {
             const now = this.listener.context.currentTime;

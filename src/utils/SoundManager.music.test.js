@@ -115,15 +115,16 @@ describe("SoundManager — music streaming", () => {
 
         sm.setMusicVolume(0.3);
 
-        expect(sm.musicVolume).toBe(0.3);
+        // musicVolume stores post-multiplier value: 0.3 * 0.25 = 0.075
+        expect(sm.musicVolume).toBe(0.075);
         expect(sm.musicGain.gain.linearRampToValueAtTime).toHaveBeenCalled();
         // The ramp target time is now + 0.05 (50ms)
         const rampCall = sm.musicGain.gain.linearRampToValueAtTime.mock.calls.at(-1);
-        expect(rampCall[0]).toBe(0.3);
+        expect(rampCall[0]).toBe(0.075);
         expect(rampCall[1]).toBeGreaterThanOrEqual(ctx.currentTime + 0.049);
     });
 
-    it("setMusicVolume clamps to [0, 1]", async () => {
+    it("setMusicVolume clamps to [0, 1] then applies base multiplier", async () => {
         const {SoundManager} = await import("./SoundManager.js");
         const sm = new SoundManager();
         sm.init(new THREE.PerspectiveCamera());
@@ -132,7 +133,8 @@ describe("SoundManager — music streaming", () => {
         sm.setMusicVolume(-0.5);
         expect(sm.musicVolume).toBe(0);
         sm.setMusicVolume(2.0);
-        expect(sm.musicVolume).toBe(1);
+        // Clamped to 1, then * 0.25 = 0.25
+        expect(sm.musicVolume).toBe(0.25);
     });
 
     it("playMusic creates <audio> + MediaElementAudioSource and plays", async () => {
