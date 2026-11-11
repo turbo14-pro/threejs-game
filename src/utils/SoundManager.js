@@ -284,7 +284,7 @@ class SoundManager {
     }
 
     // Smooth volume ramp to avoid zipper noise
-    // Applies MUSIC_BASE_MULTIPLIER (0.25) so slider max = 25% of full gain,
+    // Applies MUSIC_BASE_MULTIPLIER (0.15) so slider max = 15% of full gain,
     // matching the amb-bed pattern (slider * base multiplier).
     setMusicVolume(vol) {
         const v = Math.max(0, Math.min(1, Number(vol) || 0)) * MUSIC_BASE_MULTIPLIER;

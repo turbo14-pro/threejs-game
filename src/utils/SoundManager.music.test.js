@@ -115,12 +115,12 @@ describe("SoundManager — music streaming", () => {
 
         sm.setMusicVolume(0.3);
 
-        // musicVolume stores post-multiplier value: 0.3 * 0.25 = 0.075
-        expect(sm.musicVolume).toBe(0.075);
+        // musicVolume stores post-multiplier value: 0.3 * 0.15 = 0.045
+        expect(sm.musicVolume).toBe(0.045);
         expect(sm.musicGain.gain.linearRampToValueAtTime).toHaveBeenCalled();
         // The ramp target time is now + 0.05 (50ms)
         const rampCall = sm.musicGain.gain.linearRampToValueAtTime.mock.calls.at(-1);
-        expect(rampCall[0]).toBe(0.075);
+        expect(rampCall[0]).toBe(0.045);
         expect(rampCall[1]).toBeGreaterThanOrEqual(ctx.currentTime + 0.049);
     });
 
@@ -133,8 +133,8 @@ describe("SoundManager — music streaming", () => {
         sm.setMusicVolume(-0.5);
         expect(sm.musicVolume).toBe(0);
         sm.setMusicVolume(2.0);
-        // Clamped to 1, then * 0.25 = 0.25
-        expect(sm.musicVolume).toBe(0.25);
+        // Clamped to 1, then * 0.15 = 0.15
+        expect(sm.musicVolume).toBe(0.15);
     });
 
     it("playMusic creates <audio> + MediaElementAudioSource and plays", async () => {

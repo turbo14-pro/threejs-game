@@ -28,10 +28,7 @@ export default function MainMenu() {
 
     return (
         <div className="menu-overlay">
-            <div
-                ref={menuRef}
-                className="menu-content"
-                style={{pointerEvents: "auto"}}>
+            <div ref={menuRef} className="menu-content" style={{pointerEvents: "auto"}}>
                 {page === "START" && (
                     <>
                         <h1>FOOD FRENZY</h1>

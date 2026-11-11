@@ -561,7 +561,22 @@ export const useGameStore = create(
                     },
                     settings: state.settings,
                     performancePreset: state.performancePreset,
+                    // Persist audio volume settings so they're remembered across reloads
+                    audio: {
+                        ambientVolume: state.audio.ambientVolume,
+                        sfxVolume: state.audio.sfxVolume,
+                        musicVolume: state.audio.musicVolume,
+                    },
                 }),
+                // Apply persisted audio volumes to SoundManager on rehydration
+                onRehydrate: () => (state) => {
+                    if (!state) return;
+                    try {
+                        soundManager?.setAmbientVolume?.(state.audio.ambientVolume);
+                        soundManager?.setSfxVolume?.(state.audio.sfxVolume);
+                        soundManager?.setMusicVolume?.(state.audio.musicVolume);
+                    } catch {}
+                },
                 // When we change the save format, bump `version` above and add
                 // a case here to convert old data into the new shape.
                 migrate: (savedState, version) => {

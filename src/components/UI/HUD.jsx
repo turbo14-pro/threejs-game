@@ -290,10 +290,7 @@ export default function HUD() {
             {/* Pause Menu Overlay */}
             {isPaused && (
                 <div className="menu-overlay">
-                    <div
-                        ref={menuRef}
-                        className="menu-content"
-                        style={{pointerEvents: "auto"}}>
+                    <div ref={menuRef} className="menu-content" style={{pointerEvents: "auto"}}>
                         {showOptions ? (
                             <Options onBack={() => setShowOptions(false)} />
                         ) : showControls ? (
