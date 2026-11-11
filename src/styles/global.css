@@ -826,6 +826,20 @@ h1 {
 .touch-target {
     min-width: 44px;
     min-height: 44px;
+    padding: 8px;
+    box-sizing: border-box;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+}
+
+/* Ensure pill toggles stay pill-shaped within touch target */
+.premium-toggle.touch-target {
+    min-width: auto;
+    min-height: auto;
+    padding: 0;
+    width: 48px;
+    height: 24px;
 }
 
 .premium-select {
@@ -1190,6 +1204,13 @@ h1 {
     50% {
         opacity: 1;
     }
+}
+
+/* Icon spacing in char-btn buttons */
+.char-btn svg {
+    margin-right: 0.5rem;
+    width: 18px;
+    height: 18px;
 }
 
 /* PowerUpHUD inline style replacements */

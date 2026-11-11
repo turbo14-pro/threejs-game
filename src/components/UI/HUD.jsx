@@ -7,6 +7,9 @@ import Options from "./Options.jsx";
 import LatencyGraph from "./LatencyGraph.jsx";
 import {PowerUpHUD} from "./PowerUpHUD.jsx";
 import {PowerUpNotification} from "./PowerUpNotification.jsx";
+import FluidGlassPanel from "./FluidGlassPanel/FluidGlassPanel";
+import GlassSurface from "./GlassSurface";
+import {Play, Settings, RotateCcw, LogOut} from "lucide-react";
 
 export default function HUD() {
     const matchPhase = useGameStore((state) => state.game.phase);
@@ -290,7 +293,19 @@ export default function HUD() {
             {/* Pause Menu Overlay */}
             {isPaused && (
                 <div className="menu-overlay">
-                    <div ref={menuRef} className="menu-content" style={{pointerEvents: "auto"}}>
+                    <FluidGlassPanel
+                        ref={menuRef}
+                        refraction={0.25}
+                        spin={0}
+                        frost={0.5}
+                        shadow={1}
+                        dispersion={1}
+                        interaction="follow"
+                        smoothness={0.5}
+                        wobble={0.5}
+                        idle={true}
+                        intro={true}
+                        style={{pointerEvents: "auto"}}>
                         {showOptions ? (
                             <Options onBack={() => setShowOptions(false)} />
                         ) : showControls ? (
@@ -341,24 +356,28 @@ export default function HUD() {
                                 <h1>PAUSED</h1>
                                 <div className="menu-stack">
                                     <button className="char-btn main-btn" onClick={handleResume} disabled={isResuming}>
+                                        <Play size={18} strokeWidth={2} />
                                         <span className="btn-name">{isResuming ? "RESUMING..." : "RESUME"}</span>
                                     </button>
                                     <button className="char-btn main-btn" onClick={() => setShowOptions(true)}>
+                                        <Settings size={18} strokeWidth={2} />
                                         <span className="btn-name">OPTIONS</span>
                                     </button>
                                     <button className="char-btn main-btn" onClick={handleRespawn}>
+                                        <RotateCcw size={18} strokeWidth={2} />
                                         <span className="btn-name">RESTART</span>
                                     </button>
                                     <button
                                         className="char-btn main-btn"
                                         style={{background: "linear-gradient(45deg, #ff0055, #ff0000)"}}
                                         onClick={handleQuit}>
+                                        <LogOut size={18} strokeWidth={2} />
                                         <span className="btn-name">MAIN MENU</span>
                                     </button>
                                 </div>
                             </>
                         )}
-                    </div>
+                    </FluidGlassPanel>
                 </div>
             )}
 

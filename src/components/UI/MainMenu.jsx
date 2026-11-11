@@ -2,6 +2,8 @@ import React, {useState} from "react";
 import {useGameStore} from "../../store/useGameStore";
 import {useMenuKeyboard} from "../../hooks/useMenuKeyboard.js";
 import Options from "./Options.jsx";
+import FluidGlassPanel from "./FluidGlassPanel/FluidGlassPanel";
+import {Play, Settings} from "lucide-react";
 
 export default function MainMenu() {
     const setGameState = useGameStore((state) => state.setGameState);
@@ -28,15 +30,28 @@ export default function MainMenu() {
 
     return (
         <div className="menu-overlay">
-            <div ref={menuRef} className="menu-content" style={{pointerEvents: "auto"}}>
+            <FluidGlassPanel
+                ref={menuRef}
+                refraction={0.25}
+                spin={0}
+                frost={0.5}
+                shadow={1}
+                dispersion={1}
+                interaction="follow"
+                smoothness={0.5}
+                wobble={0.5}
+                idle={true}
+                intro={true}>
                 {page === "START" && (
                     <>
                         <h1>FOOD FRENZY</h1>
                         <div className="menu-stack">
                             <button className="char-btn main-btn" onClick={handleStartGame} disabled={isLoading}>
+                                <Play size={20} strokeWidth={2} />
                                 <span className="btn-name">{isLoading ? "LOADING..." : "START GAME"}</span>
                             </button>
                             <button className="char-btn main-btn" onClick={() => setPage("OPTIONS")}>
+                                <Settings size={20} strokeWidth={2} />
                                 <span className="btn-name">OPTIONS</span>
                             </button>
                         </div>
@@ -44,7 +59,7 @@ export default function MainMenu() {
                 )}
 
                 {page === "OPTIONS" && <Options onBack={() => setPage("START")} />}
-            </div>
+            </FluidGlassPanel>
         </div>
     );
 }
