@@ -607,7 +607,7 @@ class SoundManager {
     // Caches each buffer in `this.sounds` for later positional playback.
     async preloadAmbientSFX() {
         if (!this.listener) return;
-        const base = "public/audio/";
+        const base = "audio/";
         for (let i = 1; i <= 10; i++) {
             const name = `amb-sfx${i.toString().padStart(2, "0")}`;
             if (this.sounds.has(name)) continue; // skip already-cached
