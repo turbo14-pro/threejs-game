@@ -340,9 +340,10 @@ const PlayerModel = ({
         // Uses animation time so footsteps are perfectly synced to the animation
         // cycle (not a drifting timer) and fire immediately when movement starts.
         const actions = actionsRef.current;
-        const targetKey = actions && Object.keys(actions).length > 0
-            ? Object.keys(actions).find((k) => k.startsWith(animState)) || Object.keys(actions)[0]
-            : null;
+        const targetKey =
+            actions && Object.keys(actions).length > 0
+                ? Object.keys(actions).find((k) => k.startsWith(animState)) || Object.keys(actions)[0]
+                : null;
         const action = actions?.[targetKey];
         if (action && onFootstep) {
             const clipName = action._clip?.name || "";

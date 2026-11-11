@@ -8,51 +8,51 @@
 
 // Difficulty presets — 0 (easy) → 1 (ruthless)
 export const BOT_DIFFICULTY = {
-  easy: 0.25,
-  normal: 0.45,
-  hard: 0.7,
-  insane: 0.95,
+    easy: 0.25,
+    normal: 0.45,
+    hard: 0.7,
+    insane: 0.95,
 };
 
 // Naming pool for the floating name tags
 export const BOT_NAME_POOL = [
-  'Mr. Feast',
-  'IShowSeed',
-  'Steak Paul',
-  'Lionel Cheesy',
-  'Cider-Man',
-  'Avacado Ronaldo',
-  "Fryin' Man",
-  'Soup-erman',
-  'Breadpool',
-  'Bob',
-  "S'more",
+    "Mr. Feast",
+    "IShowSeed",
+    "Steak Paul",
+    "Lionel Cheesy",
+    "Cider-Man",
+    "Avacado Ronaldo",
+    "Fryin' Man",
+    "Soup-erman",
+    "Breadpool",
+    "Bob",
+    "S'more",
 ];
 
 export const randomBotName = (rng = Math.random) => {
-  const pool = BOT_NAME_POOL;
-  return pool[Math.floor(rng() * pool.length) % pool.length];
+    const pool = BOT_NAME_POOL;
+    return pool[Math.floor(rng() * pool.length) % pool.length];
 };
 
 export const pickRandomBotNames = (count = 0, rng = Math.random) => {
-  const total = Math.max(0, Math.trunc(count));
-  const names = [];
-  const used = new Set();
-  for (let i = 0; i < total; i++) {
-    let name = randomBotName(rng);
-    for (let retry = 0; retry < 10 && used.has(name); retry++) {
-      name = randomBotName(rng);
+    const total = Math.max(0, Math.trunc(count));
+    const names = [];
+    const used = new Set();
+    for (let i = 0; i < total; i++) {
+        let name = randomBotName(rng);
+        for (let retry = 0; retry < 10 && used.has(name); retry++) {
+            name = randomBotName(rng);
+        }
+        used.add(name);
+        names.push(name);
     }
-    used.add(name);
-    names.push(name);
-  }
-  return names;
+    return names;
 };
 
 export const normalizeBotCount = (value) => {
-  const parsed = typeof value === 'number' ? value : parseInt(value, 10);
-  if (!Number.isFinite(parsed)) return 0;
-  return Math.max(0, Math.min(3, Math.trunc(parsed)));
+    const parsed = typeof value === "number" ? value : parseInt(value, 10);
+    if (!Number.isFinite(parsed)) return 0;
+    return Math.max(0, Math.min(3, Math.trunc(parsed)));
 };
 
 /**
@@ -66,23 +66,17 @@ export const normalizeBotCount = (value) => {
  *   - {number} baseScore      starting score for the bots
  * @returns {Array<{id, name, isBot, difficultyName, difficulty, score}>}
  */
-export function buildBotRoster({
-  count = 0,
-  difficulty = BOT_DIFFICULTY.normal,
-  baseScore = 0,
-} = {}) {
-  const total = normalizeBotCount(count);
-  const difficultyName =
-    Object.keys(BOT_DIFFICULTY).find((key) => BOT_DIFFICULTY[key] === difficulty) ||
-    'normal';
-  const names = pickRandomBotNames(total);
+export function buildBotRoster({count = 0, difficulty = BOT_DIFFICULTY.normal, baseScore = 0} = {}) {
+    const total = normalizeBotCount(count);
+    const difficultyName = Object.keys(BOT_DIFFICULTY).find((key) => BOT_DIFFICULTY[key] === difficulty) || "normal";
+    const names = pickRandomBotNames(total);
 
-  return Array.from({ length: total }, (_, index) => ({
-    id: `bot-${index}`,
-    name: names[index] ?? randomBotName(),
-    isBot: true,
-    difficultyName,
-    difficulty,
-    score: baseScore,
-  }));
+    return Array.from({length: total}, (_, index) => ({
+        id: `bot-${index}`,
+        name: names[index] ?? randomBotName(),
+        isBot: true,
+        difficultyName,
+        difficulty,
+        score: baseScore,
+    }));
 }

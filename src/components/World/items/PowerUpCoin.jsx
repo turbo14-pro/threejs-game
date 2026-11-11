@@ -208,8 +208,7 @@ export function PowerUpCoin({spawnPosition = [0, 50, 0], category = "speed", rar
                 // physics `setTranslation` tween, so a positional panner would sit
                 // ~48m from the listener and be attenuated to silence. A pickup
                 // chime has no meaningful spatial source anyway.
-                if (soundManager && soundManager.listener)
-                    soundManager.playGlobal("powerup", 1.0, false);
+                if (soundManager && soundManager.listener) soundManager.playGlobal("powerup", 1.0, false);
                 return;
             }
 
