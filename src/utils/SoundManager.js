@@ -9,7 +9,7 @@ const MAX_DEBUG_NODES = 200;
 
 // Base multiplier for music volume so the slider max (1.0) doesn't blast
 // full gain — matches the amb-bed pattern (slider * base multiplier).
-const MUSIC_BASE_MULTIPLIER = 0.15;
+const MUSIC_BASE_MULTIPLIER = 0.05;
 
 function finiteOr(value, fallback) {
     return Number.isFinite(value) ? value : fallback;
