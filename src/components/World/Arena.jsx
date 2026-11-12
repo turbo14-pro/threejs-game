@@ -538,11 +538,12 @@ export default function Arena() {
                         position={[0, 5, 0]}
                         rotation={[0, Math.PI, 0]}
                         fontSize={2.5}
-                        color="#ffcc00"
+                        color="#ffEF77"
+                        emissive="#ffcc00"
                         anchorX="center"
                         anchorY="middle"
-                        outlineWidth={0.2}
-                        outlineColor="#000000">
+                        outlineWidth={0.05}
+                        outlineColor="#ffEF77">
                         JOIN BATTLE
                     </TextDrei>
                     <mesh position={[0, 0.5, 0]}>

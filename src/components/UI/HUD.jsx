@@ -7,9 +7,10 @@ import Options from "./Options.jsx";
 import LatencyGraph from "./LatencyGraph.jsx";
 import {PowerUpHUD} from "./PowerUpHUD.jsx";
 import {PowerUpNotification} from "./PowerUpNotification.jsx";
-import FluidGlassPanel from "./FluidGlassPanel/FluidGlassPanel";
 import GlassSurface from "./GlassSurface";
 import {Play, Settings, RotateCcw, LogOut} from "lucide-react";
+import {requestGamePointerLock} from "../../utils/gameCanvas.js";
+import "./Menu.css";
 
 export default function HUD() {
     const matchPhase = useGameStore((state) => state.game.phase);
@@ -69,11 +70,8 @@ export default function HUD() {
             setIsPaused(false);
             setIsResuming(false);
         } else {
-            const canvas = document.querySelector("canvas");
-            if (canvas) {
-                canvas.requestPointerLock();
-                setIsResuming(false);
-            }
+            requestGamePointerLock();
+            setIsResuming(false);
         }
     };
 
@@ -93,10 +91,7 @@ export default function HUD() {
         // Exit menu immediately
         setIsPaused(false);
         // Lock pointer
-        try {
-            const canvas = document.querySelector("canvas");
-            if (canvas) canvas.requestPointerLock();
-        } catch (e) {}
+        requestGamePointerLock();
     };
 
     const rippleDebugLabel = useMemo(() => {
@@ -292,26 +287,19 @@ export default function HUD() {
 
             {/* Pause Menu Overlay */}
             {isPaused && (
-                <div className="menu-overlay">
-                    <FluidGlassPanel
-                        ref={menuRef}
-                        refraction={0.25}
-                        spin={0}
-                        frost={0.5}
-                        shadow={1}
-                        dispersion={1}
-                        interaction="follow"
-                        smoothness={0.5}
-                        wobble={0.5}
-                        idle={true}
-                        intro={true}
-                        style={{pointerEvents: "auto"}}>
+                <div className="menu">
+                    <GlassSurface
+                        borderRadius={38}
+                        distortionScale={-180}
+                        displace={0.5}
+                        backgroundOpacity={0.1}
+                        className="menu__surface">
                         {showOptions ? (
                             <Options onBack={() => setShowOptions(false)} />
                         ) : showControls ? (
                             <>
-                                <h1>CONTROLS</h1>
-                                <div className="controls-grid" style={{marginBottom: "2.5rem"}}>
+                                <h1 className="menu__title">CONTROLS</h1>
+                                <div className="controls-grid menu__controls">
                                     {!isTouchDevice ? (
                                         <>
                                             <div className="control-row">
@@ -347,48 +335,47 @@ export default function HUD() {
                                         </>
                                     )}
                                 </div>
-                                <button className="char-btn main-btn" onClick={() => setShowControls(false)}>
-                                    <span className="btn-name">BACK</span>
+                                <button className="menu__button" onClick={() => setShowControls(false)}>
+                                    <span className="menu__button-name">BACK</span>
                                 </button>
                             </>
                         ) : (
                             <>
-                                <h1>PAUSED</h1>
-                                <div className="menu-stack">
-                                    <button className="char-btn main-btn" onClick={handleResume} disabled={isResuming}>
+                                <h1 className="menu__title">PAUSED</h1>
+                                <div className="menu__stack">
+                                    <button className="menu__button" onClick={handleResume} disabled={isResuming}>
                                         <Play size={18} strokeWidth={2} />
-                                        <span className="btn-name">{isResuming ? "RESUMING..." : "RESUME"}</span>
+                                        <span className="menu__button-name">
+                                            {isResuming ? "RESUMING..." : "RESUME"}
+                                        </span>
                                     </button>
-                                    <button className="char-btn main-btn" onClick={() => setShowOptions(true)}>
+                                    <button className="menu__button" onClick={() => setShowOptions(true)}>
                                         <Settings size={18} strokeWidth={2} />
-                                        <span className="btn-name">OPTIONS</span>
+                                        <span className="menu__button-name">OPTIONS</span>
                                     </button>
-                                    <button className="char-btn main-btn" onClick={handleRespawn}>
+                                    <button className="menu__button" onClick={handleRespawn}>
                                         <RotateCcw size={18} strokeWidth={2} />
-                                        <span className="btn-name">RESTART</span>
+                                        <span className="menu__button-name">RESTART</span>
                                     </button>
-                                    <button
-                                        className="char-btn main-btn"
-                                        style={{background: "linear-gradient(45deg, #ff0055, #ff0000)"}}
-                                        onClick={handleQuit}>
+                                    <button className="menu__button menu__button--danger" onClick={handleQuit}>
                                         <LogOut size={18} strokeWidth={2} />
-                                        <span className="btn-name">MAIN MENU</span>
+                                        <span className="menu__button-name">MAIN MENU</span>
                                     </button>
                                 </div>
                             </>
                         )}
-                    </FluidGlassPanel>
+                    </GlassSurface>
                 </div>
             )}
 
             {/* Click-to-resume background */}
             {isPaused && (
                 <div
+                    className="menu__backdrop"
                     onClick={handleResume}
                     onTouchEnd={(e) => {
                         if (e.target === e.currentTarget) handleResume();
                     }}
-                    style={{position: "absolute", inset: 0, zIndex: "var(--z-dropdown)"}}
                 />
             )}
 

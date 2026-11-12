@@ -2,8 +2,10 @@ import React, {useState} from "react";
 import {useGameStore} from "../../store/useGameStore";
 import {useMenuKeyboard} from "../../hooks/useMenuKeyboard.js";
 import Options from "./Options.jsx";
-import FluidGlassPanel from "./FluidGlassPanel/FluidGlassPanel";
+import GlassSurface from "./GlassSurface";
 import {Play, Settings} from "lucide-react";
+import {requestGamePointerLock} from "../../utils/gameCanvas.js";
+import "./Menu.css";
 
 export default function MainMenu() {
     const setGameState = useGameStore((state) => state.setGameState);
@@ -22,44 +24,32 @@ export default function MainMenu() {
 
         // Capture the mouse to enter the game instantly
         setTimeout(() => {
-            const canvas = document.querySelector("canvas");
-            if (canvas) canvas.requestPointerLock();
+            requestGamePointerLock();
             setIsLoading(false);
         }, 100);
     };
 
     return (
-        <div className="menu-overlay">
-            <FluidGlassPanel
-                ref={menuRef}
-                refraction={0.25}
-                spin={0}
-                frost={0.5}
-                shadow={1}
-                dispersion={1}
-                interaction="follow"
-                smoothness={0.5}
-                wobble={0.5}
-                idle={true}
-                intro={true}>
+        <div className="menu">
+            <GlassSurface borderRadius={38} distortionScale={-180} displace={0.5} backgroundOpacity={0.1}>
                 {page === "START" && (
                     <>
-                        <h1>FOOD FRENZY</h1>
-                        <div className="menu-stack">
-                            <button className="char-btn main-btn" onClick={handleStartGame} disabled={isLoading}>
+                        <h1 className="menu__title">FOOD FRENZY</h1>
+                        <div className="menu__stack">
+                            <button className="menu__button" onClick={handleStartGame} disabled={isLoading}>
                                 <Play size={20} strokeWidth={2} />
-                                <span className="btn-name">{isLoading ? "LOADING..." : "START GAME"}</span>
+                                <span className="menu__button-name">{isLoading ? "LOADING..." : "START GAME"}</span>
                             </button>
-                            <button className="char-btn main-btn" onClick={() => setPage("OPTIONS")}>
+                            <button className="menu__button" onClick={() => setPage("OPTIONS")}>
                                 <Settings size={20} strokeWidth={2} />
-                                <span className="btn-name">OPTIONS</span>
+                                <span className="menu__button-name">OPTIONS</span>
                             </button>
                         </div>
                     </>
                 )}
 
                 {page === "OPTIONS" && <Options onBack={() => setPage("START")} />}
-            </FluidGlassPanel>
+            </GlassSurface>
         </div>
     );
 }

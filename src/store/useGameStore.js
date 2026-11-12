@@ -51,6 +51,7 @@ export const useGameStore = create(
 
                 // --- AUDIO STATE ---
                 audio: {
+                    masterVolume: 1.0, // 0-1 global master volume (applies to music, SFX, ambient)
                     ambientVolume: 0.25, // 0-1 ambient bed volume (default 1/4)
                     sfxVolume: 1.0, // 0-1 SFX volume (positional one-shots, incl. powerup pickup)
                     musicVolume: 0.7, // 0-1 background music volume
@@ -286,6 +287,13 @@ export const useGameStore = create(
                 setIsHiding: (hiding) => set((s) => ({player: {...s.player, isHiding: hiding}})),
 
                 // --- AUDIO ACTIONS ---
+                setMasterVolume: (vol) => {
+                    const clamped = Math.max(0, Math.min(1, Number(vol) || 0));
+                    set((s) => ({audio: {...s.audio, masterVolume: clamped}}));
+                    try {
+                        soundManager?.setMasterVolume?.(clamped);
+                    } catch {}
+                },
                 setAmbientVolume: (vol) => {
                     const clamped = Math.max(0, Math.min(1, Number(vol) || 0));
                     set((s) => ({audio: {...s.audio, ambientVolume: clamped}}));
@@ -563,6 +571,7 @@ export const useGameStore = create(
                     performancePreset: state.performancePreset,
                     // Persist audio volume settings so they're remembered across reloads
                     audio: {
+                        masterVolume: state.audio.masterVolume,
                         ambientVolume: state.audio.ambientVolume,
                         sfxVolume: state.audio.sfxVolume,
                         musicVolume: state.audio.musicVolume,
@@ -572,6 +581,7 @@ export const useGameStore = create(
                 onRehydrate: () => (state) => {
                     if (!state) return;
                     try {
+                        soundManager?.setMasterVolume?.(state.audio.masterVolume);
                         soundManager?.setAmbientVolume?.(state.audio.ambientVolume);
                         soundManager?.setSfxVolume?.(state.audio.sfxVolume);
                         soundManager?.setMusicVolume?.(state.audio.musicVolume);

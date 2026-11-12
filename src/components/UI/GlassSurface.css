@@ -1,0 +1,112 @@
+/* GlassSurface responsive CSS
+   Overrides the inline width/height that @imsvidskiy/glass-surface-react
+   always emits (defaults 200x80). `!important` is required to beat inline styles.
+   Targets `.glass-surface` (not just `--svg`) because the mode class is browser-dependent:
+   Chrome/Edge -> --svg, Firefox/Safari -> --fallback, WebGL backdrop -> --webgl. */
+
+.glass-surface {
+    width: 90% !important;
+    max-width: 600px;
+    height: auto !important;
+    max-height: 90vh !important;
+    min-height: 0;
+    margin: auto; /* centres vertically + horizontally inside .menu (which is overflow-y:auto) */
+    padding: 3rem;
+    box-sizing: border-box;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    backdrop-filter: var(--glass-filter) saturate(var(--glass-saturation)) blur(3px) !important;
+    /* Rotate the card itself. The inner-layer 3D approach is impossible here because
+       overflow:hidden + backdrop-filter force transform-style:flat, flattening children.
+       Perspective is supplied by the parent (.menu). */
+    transform: rotateX(var(--rotateX, 0deg)) rotateY(var(--rotateY, 0deg));
+    perspective: 50rem; /* gives the card's rotateX/rotateY 3D depth */
+    will-change: transform perspective; /* hint to browser that these will change, so it can optimise */
+}
+
+/* Ensure the content area fills the glass-surface and enables proper flex layout */
+.glass-surface > .glass-surface__content {
+    flex: 1;
+    min-height: 0;
+    width: 100%;
+}
+.glass-surface::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background: #00000000;
+    background-size: cover;
+    background-position: center;
+    opacity: 1;
+    box-shadow: 0px 6px 3px -3px inset #88ffff33, 0px -6px 3px -3px inset #88ffff66;
+    transform: translate3d(0, 0, -2rem);
+    border-radius: var(--glass-radius);
+}
+.glass-surface .glass-surface__line {
+    position: relative;
+    inset: 3.5rem;
+    border: var(--primary) 1px solid;
+    box-shadow: 0 0 0.5rem -0.1rem var(--primary), 0 0 0.5rem -0.1rem var(--primary) inset;
+
+    transform: rotateX(calc(var(--rotateX, 0deg) / 10)) rotateY(var(--rotateY, 0deg)) translate3d(0, 0, 6rem);
+    perspective: 0rem;
+
+    opacity: 0.5;
+    border-radius: 16px;
+    mix-blend-mode: overlay;
+    z-index: 4;
+}
+
+.glass-surface__content {
+    position: relative;
+    z-index: 4;
+    /* .glass-surface is transform-style:flat (overflow:hidden + backdrop-filter), so a bare
+       translateZ would be flattened. perspective() here gives the content its own depth. */
+    transform: rotateX(var(--rotateX)) rotateY(var(--rotateY)) translate3d(0, 0, 6rem);
+    perspective: 50rem;
+    width: 100%;
+    height: 100%;
+    min-height: 0; /* Allows flex children to shrink below content size */
+    overflow: hidden; /* Prevent double-scroll; inner .options-list handles scrolling */
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: flex-start; /* Start from top, not center */
+    text-align: center;
+    padding: 1rem;
+    box-sizing: border-box;
+    z-index: 8;
+}
+
+/* Small screens */
+@media (max-width: 600px) {
+    .glass-surface {
+        width: 94% !important;
+        padding: 1.25rem;
+        border-radius: 1.5rem !important; /* base library emits inline border-radius, so !important is required */
+    }
+
+    .glass-surface__content {
+        padding: 0.5rem;
+        width: 100%;
+    }
+
+    .glass-surface__content h1 {
+        font-size: 1.6rem;
+        letter-spacing: 0.25rem;
+        margin-bottom: 1.25rem;
+    }
+}
+
+@media (max-width: 380px) {
+    .glass-surface {
+        padding: 0.75rem;
+    }
+
+    .glass-surface__content h1 {
+        font-size: 1.25rem;
+        letter-spacing: 0.15rem;
+    }
+}

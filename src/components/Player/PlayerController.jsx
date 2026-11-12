@@ -613,14 +613,14 @@ export default function PlayerController({sendUpdate}) {
             if (current === "MENU") {
                 // Resume: close menu, restore sound, lock pointer
                 useGameStore.getState().setGameState("PLAYING");
-                soundManager.setMasterVolume(1.0);
+                useGameStore.getState().setMasterVolume(1.0);
                 try {
                     gl.domElement.requestPointerLock();
                 } catch (e) {}
             } else {
                 // Pause: open menu, mute sound, exit pointer lock
                 useGameStore.getState().setGameState("MENU");
-                soundManager.setMasterVolume(0.0);
+                useGameStore.getState().setMasterVolume(0.0);
                 if (document.pointerLockElement) document.exitPointerLock();
             }
         }

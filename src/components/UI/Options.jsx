@@ -1,12 +1,15 @@
 import React, {useState, useEffect} from "react";
 import {useGameStore} from "../../store/useGameStore";
 import {setDebugEnabled, isDebugEnabled} from "../../utils/debugLog";
+import "./Menu.css";
 
 export default function Options({onBack}) {
     const settings = useGameStore((state) => state.settings);
     const performancePreset = useGameStore((state) => state.performancePreset);
     const setSetting = useGameStore((state) => state.setSetting);
     const setPerformancePreset = useGameStore((state) => state.setPerformancePreset);
+    const masterVolume = useGameStore((state) => state.audio.masterVolume);
+    const setMasterVolume = useGameStore((state) => state.setMasterVolume);
     const ambientVolume = useGameStore((state) => state.audio.ambientVolume);
     const setAmbientVolume = useGameStore((state) => state.setAmbientVolume);
     const sfxVolume = useGameStore((state) => state.audio.sfxVolume);
@@ -308,7 +311,8 @@ export default function Options({onBack}) {
                     min="0"
                     max="1"
                     step="0.1"
-                    defaultValue="1"
+                    value={masterVolume}
+                    onChange={(e) => setMasterVolume(parseFloat(e.target.value))}
                     className="volume-slider"
                 />
             </div>
@@ -373,7 +377,7 @@ export default function Options({onBack}) {
 
     return (
         <div className="options-container">
-            <h1>OPTIONS</h1>
+            <h1 className="menu__title">OPTIONS</h1>
 
             {/* SUBMENU NAVIGATION */}
             <div className="submenu-nav">

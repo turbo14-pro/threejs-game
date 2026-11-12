@@ -70,6 +70,7 @@ export default function App() {
                 <NetworkStatus />
 
                 <Canvas
+                    id="game-canvas"
                     shadows
                     gl={{antialias: false, toneMapping: THREE.NoToneMapping}}
                     camera={{position: [0, 50, 100], fov: 75, near: 0.5, far: 2000}}

@@ -1,8 +1,15 @@
 import {defineConfig} from "vite";
 import react from "@vitejs/plugin-react";
 import {VitePWA} from "vite-plugin-pwa";
+import {resolve} from "path";
 
 export default defineConfig({
+    resolve: {
+        alias: {
+            '@imsvidskiy/glass-surface': resolve(__dirname, 'src/lib/glass-surface-core'),
+            '@imsvidskiy/glass-surface-react': resolve(__dirname, 'src/lib/glass-surface-react'),
+        }
+    },
     base: "./",
     plugins: [
         react(),

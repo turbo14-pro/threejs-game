@@ -152,6 +152,8 @@ class SoundManager {
         this.instances = new Set(); // Active sounds
         this.masterGain = null; // Master SFX gain (not used for connect; volume multiplier instead)
         this.masterVolume = 1.0; // Global SFX multiplier (0-1)
+        this._musicSliderVolume = 0.7; // Raw music slider value (pre-master)
+        this._ambientSliderVolume = 0.25; // Raw ambient slider value (pre-master)
         this.sfxVolume = 0.25; // SFX volume (positional one-shots incl. powerup pickup)
         // --- Music (streaming via <audio> + MediaElementAudioSource) ---
         this.musicGain = null; // GainNode for music volume control
@@ -171,6 +173,7 @@ class SoundManager {
         this.ambientBed = null; // Currently playing looping bed (primary)
         this.ambientBedB = null; // Secondary bed for seamless crossfade looping
         this.occlusionGain = 1; // Occlusion multiplier for ambient bed [0,1]
+        this._ambientTargetVolume = 0.25; // Live ambient bed volume target (slider * multiplier * master)
         this._reverbZone = "outside"; // Current reverb zone
         // AUDIO LIFECYCLE DEBUG: per-node bookkeeping for post-crash inspection.
         this._debugMeta = new Map();
@@ -287,7 +290,10 @@ class SoundManager {
     // Applies MUSIC_BASE_MULTIPLIER (0.15) so slider max = 15% of full gain,
     // matching the amb-bed pattern (slider * base multiplier).
     setMusicVolume(vol) {
-        const v = Math.max(0, Math.min(1, Number(vol) || 0)) * MUSIC_BASE_MULTIPLIER;
+        // Keep the raw slider value so setMasterVolume can re-apply after a
+        // master change without losing the user's music-level setting.
+        this._musicSliderVolume = Number(vol);
+        const v = Math.max(0, Math.min(1, Number(vol) || 0)) * MUSIC_BASE_MULTIPLIER * clampVolume(this.masterVolume, 1.0);
         this.musicVolume = v;
         if (this.musicGain && this.listener?.context) {
             const now = this.listener.context.currentTime;
@@ -461,7 +467,10 @@ class SoundManager {
     setReverbWet(value) {
         const v = Math.max(0, Math.min(1, Number(value) || 0));
         this.reverbWet = v;
-        if (this.reverbGain) this.reverbGain.gain.value = v;
+        // Compose masterVolume so the master slider silences the reverb tail too.
+        // Without this the wet path (reverb → reverbGain → destination) bypasses
+        // masterVolume entirely — turning the master down left the echo audible.
+        if (this.reverbGain) this.reverbGain.gain.value = v * clampVolume(this.masterVolume, 1.0);
     }
 
     // --- AMBIENT BED -------------------------------------------------------
@@ -480,9 +489,12 @@ class SoundManager {
         if (!this.camera) return null;
 
         // Ambient bed volume is controlled by the caller (slider * multiplier).
-        // No internal cap — the caller applies the multiplier.
+        // No internal cap — the caller applies the multiplier. The composed
+        // target is stored on `this._ambientTargetVolume` so setAmbientVolume()
+        // can re-apply it live without rebuilding the crossfade graph.
         const safeVolume = clampVolume(volume, 0.5) * clampVolume(this.masterVolume, 1.0);
         if (!Number.isFinite(safeVolume)) return null;
+        this._ambientTargetVolume = safeVolume;
 
         const duration = Number.isFinite(buffer.duration) && buffer.duration > 0 ? buffer.duration : 15;
         const crossfadeTime = 4.0; // seconds to crossfade between beds (longer overlap for OGG gapless)
@@ -532,13 +544,13 @@ class SoundManager {
                     fadeTimer = null;
                     return;
                 }
-                current.volume = safeVolume * (1 - t);
-                other.volume = safeVolume * t;
+                current.volume = this._ambientTargetVolume * (1 - t);
+                other.volume = this._ambientTargetVolume * t;
                 if (t >= 1) {
                     clearInterval(fadeTimer);
                     fadeTimer = null;
                     current.volume = 0;
-                    other.volume = safeVolume;
+                    other.volume = this._ambientTargetVolume;
                     active = active === "A" ? "B" : "A";
                     debugLog(`[AmbientBed] Looped → zone=${this._reverbZone} bed=${active}`);
                     // Schedule next crossfade after the other bed plays for (duration - crossfadeTime)
@@ -1025,6 +1037,17 @@ class SoundManager {
         const v = Number(value);
         if (!Number.isFinite(v)) return;
         this.masterVolume = Math.max(0, Math.min(1, v));
+        // Master slider is global: push to music, ambient and reverb so one
+        // slider silences the whole mix instead of only SFX.
+        if (typeof this.setMusicVolume === "function") {
+            this.setMusicVolume(this._musicSliderVolume);
+        }
+        if (typeof this.setAmbientVolume === "function") {
+            this.setAmbientVolume(this._ambientSliderVolume);
+        }
+        if (typeof this.setReverbWet === "function") {
+            this.setReverbWet(this.reverbWet);
+        }
     }
 
     // SFX volume (positional one-shots: hits, jumps, powerup pickup, etc.).
@@ -1034,6 +1057,22 @@ class SoundManager {
         const v = Number(value);
         if (!Number.isFinite(v)) return;
         this.sfxVolume = Math.max(0, Math.min(1, v));
+    }
+
+    // Ambient bed volume (background ambience). Composes the masterVolume
+    // multiplier so the master slider silences ambience too.
+    setAmbientVolume(volume) {
+        const v = clampVolume(volume, 0.5) * clampVolume(this.masterVolume, 1.0);
+        if (!Number.isFinite(v)) return;
+        this._ambientTargetVolume = v;
+        // Apply immediately to both beds so the change is audible without
+        // waiting for the next crossfade loop.
+        if (this.ambientBed && typeof this.ambientBed.setVolume === "function") {
+            try { this.ambientBed.setVolume(v); } catch {}
+        }
+        if (this.ambientBedB && typeof this.ambientBedB.setVolume === "function") {
+            try { this.ambientBedB.setVolume(v); } catch {}
+        }
     }
 
     // Set the playback rate (speed/pitch) on an existing sound instance.

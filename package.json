@@ -35,6 +35,7 @@
         "@geckos.io/client": "^3.1.0",
         "@geckos.io/server": "^3.1.0",
         "@geckos.io/snapshot-interpolation": "^1.1.1",
+        "@imsvidskiy/glass-surface-react": "^2.0.0",
         "@react-three/drei": "^10.7.7",
         "@react-three/fiber": "^9.5.0",
         "@react-three/postprocessing": "^3.0.4",
