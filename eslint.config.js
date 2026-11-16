@@ -22,7 +22,7 @@ export default [
     },
     rules: {
       // RULES.md Naming Conventions
-      "camelcase": ["warn", { properties: "always" }],
+      "camelcase": ["warn", { properties: "always", allow: ["walk_for","walk_bac","run_for","run_bac","doublejump_back","run_jump"] }],
       // Components should be PascalCase but this is hard to enforce perfectly without TypeScript.
       // We rely on standard React conventions and the camelcase rule for variables.
       

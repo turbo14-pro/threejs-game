@@ -12,7 +12,7 @@ export default function MainMenu() {
 
     const [page, setPage] = useState("START"); // 'START' | 'OPTIONS'
     const [isLoading, setIsLoading] = useState(false);
-    const menuRef = useMenuKeyboard({
+    useMenuKeyboard({
         enabled: true,
         screen: page,
         onBack: page === "OPTIONS" ? () => setPage("START") : undefined,

@@ -3,6 +3,7 @@ import {encode, decode} from "msgpackr";
 import {useGameStore} from "../store/useGameStore";
 import {debugLog, debugWarn, debugError} from "../utils/debugLog.js";
 import {createInputSequenceTracker} from "../utils/inputSequence.js";
+import {getServerConfig} from "../config/envConfig.js";
 
 /**
  * THE MULTIPLAYER HOOK
@@ -40,24 +41,20 @@ export function useNetworking() {
 
         // --- DEBUG TRACE: START ---
         const isDev = import.meta.env.DEV;
-        const rawEnvUrl = isDev ? import.meta.env.VITE_SERVER_URL_LOCAL : import.meta.env.VITE_SERVER_URL_PRODUCTION;
 
         debugLog("%c 📡 [Network Trace] Starting WS Connection Sequence...", "color: #00ff88; font-weight: bold;");
         debugLog("   > Mode:", isDev ? "DEVELOPMENT" : "PRODUCTION");
-        debugLog("   > Raw Env URL:", rawEnvUrl);
 
-        // Build WS URL: ws:// for dev, wss:// for prod
-        // Strip any http:// or https:// prefix from the env URL
-        if (!rawEnvUrl) {
-            debugError("VITE_SERVER_URL_PRODUCTION is not set — cannot connect to WebSocket server");
+        // Derive the WS URL via the central env config (single source of truth).
+        let serverConfig;
+        try {
+            serverConfig = getServerConfig({isDev});
+        } catch (err) {
+            debugError(err.message);
             setNetworkStatus("ERROR");
             return;
         }
-        const baseAddress = rawEnvUrl
-        .replace(/^https?:\/\//, "")
-        .replace(":9208", "")
-        .replace(/\/$/, "");
-        const wsUrl = isDev ? `ws://${baseAddress}:9208` : `wss://${baseAddress}`;
+        const {wsUrl} = serverConfig;
 
         debugLog("   > WS URL:", wsUrl);
 

@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import fs from 'fs';
 import path from 'path';
+import { deriveWsUrl } from '../config/envConfig.js';
 
 /**
  * Phase B: WS Binary Migration — Batch B5
@@ -22,9 +23,16 @@ describe('Client WS Binary Migration', () => {
     expect(source).toContain('msgpackr');
   });
 
-  it('useNetworking.js connects to WS URL (ws:// or wss://)', () => {
+  it('useNetworking.js delegates WS URL derivation to central envConfig', () => {
     const source = fs.readFileSync(networkingPath, 'utf-8');
-    expect(source).toMatch(/ws:\/\//);
+    // No inline URL munging — the hook must use the central config module
+    expect(source).not.toContain('baseAddress');
+    expect(source).not.toContain(':9208');
+    expect(source).toContain('getServerConfig');
+    // envConfig itself derives proper schemes: ws:// in dev (default port 9208), wss:// in prod
+    expect(deriveWsUrl('http://192.168.1.66:9208', true)).toBe('ws://192.168.1.66:9208');
+    expect(deriveWsUrl('http://192.168.1.66', true)).toBe('ws://192.168.1.66:9208');
+    expect(deriveWsUrl('https://turbogames.duckdns.org', false)).toBe('wss://turbogames.duckdns.org');
   });
 
   it('useNetworking.js sends input as binary msgpackr message', () => {

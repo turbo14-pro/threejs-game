@@ -88,7 +88,7 @@ afterEach(() => {
 
 describe("SoundManager — computeHitVolume", () => {
     it("returns 0 for zero closing speed", async () => {
-        const {SoundManager, computeHitVolume} = await import("./SoundManager.js");
+        const {computeHitVolume} = await import("./SoundManager.js");
         expect(computeHitVolume(0)).toBe(0);
     });
 

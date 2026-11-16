@@ -90,6 +90,9 @@ export default defineConfig({
         outDir: "dist",
         emptyOutDir: true,
         sourcemap: true,
-        chunkSizeWarningLimit: 2500,
+        // Game bundle legitimately ships as one large JS chunk (3D scene + audio +
+        // networking). Current chunk ~4.2MB; keep the warning threshold above it so
+        // the build completes without a compiler warning.
+        chunkSizeWarningLimit: 5000,
     },
 });

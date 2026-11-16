@@ -1,6 +1,6 @@
 import React, {useLayoutEffect, useMemo, useEffect} from "react";
 import * as THREE from "three";
-import {useTexture, Environment} from "@react-three/drei";
+import {useTexture} from "@react-three/drei";
 import {useThree} from "@react-three/fiber";
 import {useGameStore} from "../../store/useGameStore";
 

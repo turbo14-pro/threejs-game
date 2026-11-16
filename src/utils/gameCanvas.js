@@ -24,7 +24,7 @@ export function requestGamePointerLock() {
             result.catch(() => {});
         }
         return true;
-    } catch (e) {
+    } catch {
         return false;
     }
 }

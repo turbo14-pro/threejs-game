@@ -13,8 +13,6 @@ import {requestGamePointerLock} from "../../utils/gameCanvas.js";
 import "./Menu.css";
 
 export default function HUD() {
-    const matchPhase = useGameStore((state) => state.game.phase);
-    const countdown = useGameStore((state) => state.game.countdown);
     const setGameState = useGameStore((state) => state.setGameState);
     const setMobileInput = useGameStore((state) => state.setMobileInput);
     const mobileInput = useGameStore((state) => state.mobileInput);
@@ -28,7 +26,7 @@ export default function HUD() {
     const [isTouchDevice, setIsTouchDevice] = useState(false);
     const [isResuming, setIsResuming] = useState(false);
     const menuScreen = showOptions ? "OPTIONS" : showControls ? "CONTROLS" : "PAUSED";
-    const menuRef = useMenuKeyboard({
+    useMenuKeyboard({
         enabled: isPaused,
         screen: menuScreen,
         onBack:

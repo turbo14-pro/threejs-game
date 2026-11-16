@@ -1,8 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import React from 'react';
 import { readFileSync } from 'fs';
 import { join } from 'path';
-import NetworkStatus from './NetworkStatus.jsx';
 
 describe('NetworkStatus — SVG icons (no emoji)', () => {
   const sourcePath = join(__dirname, 'NetworkStatus.jsx');

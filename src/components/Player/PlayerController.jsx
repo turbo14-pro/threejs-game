@@ -1,7 +1,7 @@
 import React, {useRef, useState, useEffect, useCallback} from "react";
 import {useFrame, useThree} from "@react-three/fiber";
 import {useKeyboardControls} from "@react-three/drei";
-import {RigidBody, CylinderCollider, CapsuleCollider, CuboidCollider, useRapier} from "@react-three/rapier";
+import {RigidBody, CapsuleCollider, useRapier} from "@react-three/rapier";
 import * as THREE from "three";
 import PlayerModel, {ContactShadow} from "./PlayerModel.jsx";
 import {useGameStore} from "../../store/useGameStore";
@@ -39,7 +39,6 @@ const scratchMeshForward = new THREE.Vector3();
 const scratchCamForward = new THREE.Vector3();
 const scratchQuat = new THREE.Quaternion();
 const scratchCamOffset = new THREE.Vector3();
-const scratchRight = new THREE.Vector3();
 const scratchTarget = new THREE.Vector3();
 const scratchLookDir = new THREE.Vector3();
 const scratchLookTarget = new THREE.Vector3();
@@ -96,7 +95,6 @@ export default function PlayerController({sendUpdate}) {
     const gameState = useGameStore((state) => state.game.state);
     const mobileInput = useGameStore((state) => state.mobileInput);
     const {poll} = useGamepad();
-    const teleportCount = useGameStore((state) => state.teleportCount);
     const matchPhase = useGameStore((state) => state.game.phase);
     const countdown = useGameStore((state) => state.game.countdown);
     const playerHealth = useGameStore((state) => state.player.health);
@@ -131,7 +129,6 @@ export default function PlayerController({sendUpdate}) {
     const netAccumulator = useRef(0);
     const inputHistory = useRef([]); // [{ tick, pos, input, camRot }]
     const sentInputs = useRef(new Map()); // sequenceId -> { tick, pos, input, camRot }
-    const lastProcessedTick = useRef(0);
 
     // --- RECONCILIATION LISTENER ---
     useEffect(() => {
@@ -203,7 +200,7 @@ export default function PlayerController({sendUpdate}) {
 
                     unacknowledged.forEach((entry) => {
                         const {input, camRot} = entry;
-                        const {w, a, s, d, jump, walk, slide, dash} = input;
+                        const {w, a, s, d, walk} = input;
 
                         const moveX = (d ? 1 : 0) - (a ? 1 : 0);
                         const moveZ = (s ? 1 : 0) - (w ? 1 : 0);
@@ -268,7 +265,6 @@ export default function PlayerController({sendUpdate}) {
     const jumpTimer = useRef(0);
     const physicsJumpTriggered = useRef(false);
     const jumpLock = useRef({sprint: false, dir: "for"});
-    const lastFootstepTime = useRef(0);
     const prevJumpingInput = useRef(false);
     const externalForce = useRef(new THREE.Vector3());
     const worldVelocityRef = useRef(new THREE.Vector3());
@@ -327,7 +323,7 @@ export default function PlayerController({sendUpdate}) {
     // Uses refs synced from useFrame so the callback is stable and doesn't
     // recreate every frame.
     const playFootstep = useCallback(
-        (foot) => {
+        (_foot) => {
             if (!audioFlag("movementLoops")) return;
             if (!currentlyGroundedRef.current || currentPhaseRef.current !== "none") return;
             if (!playerGroupRef.current) return;
@@ -364,7 +360,6 @@ export default function PlayerController({sendUpdate}) {
     const smoothRotX = useRef(0);
     const smoothZoom = useRef(12);
 
-    const lastTouch = useRef({x: 0, y: 0});
     const lastPinchDist = useRef(0);
 
     // Touch zoom management
@@ -526,7 +521,7 @@ export default function PlayerController({sendUpdate}) {
                     // Lock pointer and set game state to playing
                     try {
                         gl.domElement.requestPointerLock();
-                    } catch (e) {
+                    } catch {
                         debugWarn("Pointer lock request failed (needs user gesture)");
                     }
                     useGameStore.getState().setGameState("PLAYING");
@@ -623,7 +618,7 @@ export default function PlayerController({sendUpdate}) {
                 useGameStore.getState().setMasterVolume(1.0);
                 try {
                     gl.domElement.requestPointerLock();
-                } catch (e) {}
+                } catch {}
             } else {
                 // Pause: open menu, mute sound, exit pointer lock
                 useGameStore.getState().setGameState("MENU");
@@ -788,7 +783,7 @@ export default function PlayerController({sendUpdate}) {
             }
             try {
                 gl.domElement.requestPointerLock();
-            } catch (e) {
+            } catch {
                 debugWarn("Pointer lock request failed");
             }
             debugLog("🔄 Respawn applied → Platform 1");
@@ -868,7 +863,6 @@ export default function PlayerController({sendUpdate}) {
             if (canUseDash(dashPowerUp)) {
                 isDashing.current = true;
                 setIsDashingVisual(true);
-                const dashConfig = getDashConfig(dashPowerUp?.rarity);
                 dashStartPos.current.copy(rigidBodyRef.current.translation());
                 // Store dash direction in camera forward (flat on XZ)
                 dashDir.current = new THREE.Vector3(0, 0, -1).applyAxisAngle(
@@ -984,7 +978,7 @@ export default function PlayerController({sendUpdate}) {
                 );
                 veryCloseToGround = impactHit !== null;
             }
-        } catch (e) {
+        } catch {
             // Fallback if castShape fails for some reason during hot-reload
             currentlyGrounded = false;
         }
@@ -1516,11 +1510,6 @@ export default function PlayerController({sendUpdate}) {
         // We smooth the anchor point to give a "cinematic" follow feel to the camera's orbit center.
         if (!camera.userData.smoothedTarget) camera.userData.smoothedTarget = new THREE.Vector3().copy(playerPos);
         const targetYOffset = 1;
-        const shoulderOffset = 0; // No translation offset — shoulder effect is now a Z-roll on the camera
-
-        // Calculate the right vector (kept for potential future use)
-        const right = scratchRight.set(1, 0, 0).applyAxisAngle(upAxis, smoothRotY.current);
-
         const currentTarget = scratchTarget.set(playerPos.x, playerPos.y + targetYOffset, playerPos.z);
 
         camera.userData.smoothedTarget.lerp(currentTarget, 1 - Math.exp(-15 * delta));
@@ -1670,34 +1659,6 @@ export default function PlayerController({sendUpdate}) {
      * NEWTONIAN KNOCKBACK
      * Applies a physical impulse to the character.
      */
-    const triggerKnockback = (direction, force = 12) => {
-        try {
-            if (!rigidBodyRef.current) return;
-            const dx = Number(direction?.x ?? 0);
-            const dz = Number(direction?.z ?? 0);
-            const f = Number(force);
-            if (!Number.isFinite(dx) || !Number.isFinite(dz) || !Number.isFinite(f)) return;
-            const safeF = Math.max(-5000, Math.min(5000, f));
-            // Apply World-Space Impulse — reduced force & pop since network also applies
-            rigidBodyRef.current.applyImpulse(
-                {
-                    x: dx * safeF,
-                    y: 3,
-                    z: dz * safeF,
-                },
-                true
-            );
-
-            // Visual/Audio Feedback — volume 1, no force multiplier
-            if (safeF > 0) {
-                try {
-                    soundManager.playPositional("hit", playerGroupRef.current, 1, 5, 1.0, 50, false);
-                } catch {}
-            }
-        } catch {
-            /* knockback must never crash the frame */
-        }
-    };
 
     const impactTracker = useRef(new Set());
 

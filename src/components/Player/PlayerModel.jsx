@@ -1,10 +1,9 @@
-import React, {useEffect, useMemo, useRef, useState, memo} from "react";
+import React, {useEffect, useMemo, useRef, memo} from "react";
 import {useShallow} from "zustand/react/shallow";
 import {useGLTF} from "@react-three/drei";
 import {useFrame, useThree} from "@react-three/fiber";
 import * as THREE from "three";
 import * as SkeletonUtils from "three/examples/jsm/utils/SkeletonUtils.js";
-import * as BufferGeometryUtils from "three/examples/jsm/utils/BufferGeometryUtils.js";
 import {useGameStore} from "../../store/useGameStore";
 
 /**
@@ -14,50 +13,21 @@ const applyCharacterMaterials = (material) => {
     material.dithering = true;
     material.flatShading = false;
 
-    const isDark = material.name.toLowerCase().includes("dark");
-
     material.onBeforeCompile = (shader) => {
         shader.uniforms.rimIntensity = {value: 130.0};
         shader.uniforms.rimColor = {value: new THREE.Color(1.0, 1.0, 1.0)};
-        shader.uniforms.bumpScale = {value: isDark ? 0.2 : 0.0}; // stronger bump for dark material
+        // Enable bump scaling for all materials to ensure rim effect works
+        shader.uniforms.bumpScale = {value: 0.2};
 
-        shader.fragmentShader = `
-      uniform float rimIntensity;
-      uniform vec3 rimColor;
-      uniform float bumpScale;
-      float getNoise(vec2 p) {
-        return fract(sin(dot(p, vec2(12.989, 78.233))) * 43758.545) - 0.5;
-      }
-              float getDither(vec2 uv) {
-                return getNoise(uv * 100.0) * 0.005;
-              }
-      ${shader.fragmentShader}
-    `
-        .replace(
-            "#include <normal_fragment_begin>",
-            `
-      #include <normal_fragment_begin>
-      if (bumpScale > 0.0) {
-        #ifdef USE_UV
-                float n = getNoise(vUv * 120.0) * bumpScale;
-                float dither = getDither(vUv);
-        #else
-                float n = getNoise(gl_FragCoord.xy * 0.2) * bumpScale;
-                float dither = getDither(gl_FragCoord.xy);
-        #endif
-        normal = normalize(normal + vec3(n, n, 0.0) * (0.5 + dither));
-      }
-      `
-        )
-        .replace(
+        // Append rim calculation to the end of the fragment shader
+        shader.fragmentShader = shader.fragmentShader.replace(
             "#include <emissive_fragment>",
-            `
-      #include <emissive_fragment>
+            `#include <emissive_fragment>
       vec3 rimNormal = normalize(normal);
       vec3 viewDir = normalize(-vViewPosition);
       float rim = pow(1.0 - clamp(dot(rimNormal, viewDir), 0.0, 1.0), 12.5) * rimIntensity;
       totalEmissiveRadiance += rimColor * rim;
-      `
+    `
         );
     };
     return material;
@@ -143,6 +113,9 @@ const PlayerModel = ({
             if (node.isMesh) {
                 node.castShadow = true;
                 node.receiveShadow = true;
+                if (!node.geometry?.attributes?.normal) {
+                    node.geometry.computeVertexNormals();
+                }
                 const applyMaterial = (material) => applyCharacterMaterials(material.clone());
                 node.material = Array.isArray(node.material)
                     ? node.material.map(applyMaterial)
@@ -336,16 +309,6 @@ const PlayerModel = ({
         action.setEffectiveTimeScale(speedScale);
     }, [animState, activeConfig, mixer, jumpTransitionId, jumpPhase]);
 
-    const blobShadowRef = useRef();
-    const raycasterRef = useRef(new THREE.Raycaster());
-    const frameCounterRef = useRef(0);
-    const lastHitPointRef = useRef(new THREE.Vector3(0, 0, 0));
-    const {scene} = useThree();
-
-    // Read shadow quality to decide: raycast (High/Ultra) vs simple blob (Low/Medium/None)
-    const shadowQuality = useGameStore((state) => state.settings.shadowQuality);
-    const useRaycastShadow = shadowQuality === "High" || shadowQuality === "Ultra";
-
     // Store character world position for external shadow component
     const characterWorldPosRef = useRef(new THREE.Vector3());
     const characterVisibleRef = useRef(true);
@@ -389,24 +352,6 @@ const PlayerModel = ({
         }
     });
 
-    const blobShadowTexture = useMemo(() => {
-        const size = 150;
-        const canvas = document.createElement("canvas");
-        canvas.width = canvas.height = size;
-        const ctx = canvas.getContext("2d");
-        const half = size / 2;
-        const gradient = ctx.createRadialGradient(half, half, 0, half, half, half);
-        // Much darker and more visible shadow
-        gradient.addColorStop(0.0, "rgba(0, 0, 0, 0.7)");
-        gradient.addColorStop(0.3, "rgba(0, 0, 0, 0.5)");
-        gradient.addColorStop(0.6, "rgba(0, 0, 0, 0.25)");
-        gradient.addColorStop(1, "rgba(0,0,0,0)");
-        ctx.fillStyle = gradient;
-        ctx.fillRect(0, 0, size, size);
-        const tex = new THREE.CanvasTexture(canvas);
-        return tex;
-    }, []);
-
     return (
         <group>
             <primitive object={clone} scale={[scale, scale, scale]} />
@@ -430,7 +375,6 @@ function ContactShadow({characterRef, isLocalPlayer = true}) {
     const raycasterRef = useRef(new THREE.Raycaster());
     const frameCounterRef = useRef(0);
     const lastHitPointRef = useRef(new THREE.Vector3(0, 0, 0));
-    const lastCharacterPosRef = useRef(new THREE.Vector3());
 
     // Create shadow texture
     const shadowTexture = useMemo(() => {

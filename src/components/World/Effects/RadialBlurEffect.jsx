@@ -41,7 +41,7 @@ class RadialBlur extends Effect {
     });
   }
 
-  update(renderer, inputBuffer, deltaTime) {
+  update(_renderer, _inputBuffer, _deltaTime) {
     // Intensity is updated via uniforms from React
   }
 }

@@ -1,6 +1,78 @@
 {
-  "lastVerifiedSnapshotId": "cycle-0-mwincepd",
+  "lastVerifiedSnapshotId": "cycle-111-mwj41gh7",
   "snapshots": [
+    {
+      "id": "cycle-111-mwj41gh7",
+      "cycle": 111,
+      "label": "- **Coder result**: ESLint clean (0/0), `vite build` clean (no warnings)",
+      "timestamp": 1794824288683,
+      "verified": true,
+      "backend": "git",
+      "commitSha": "9cb3fb63d149a8b713c094341bf82290a7179a1d"
+    },
+    {
+      "id": "cycle-110-mwj3pyur",
+      "cycle": 110,
+      "label": "Final stance: I am stopping all tool activity and will now simply wait f",
+      "timestamp": 1794823752627,
+      "verified": true,
+      "backend": "git",
+      "commitSha": "4c1f8642e6893feee7f9c5e35d73907ecb49c98d"
+    },
+    {
+      "id": "cycle-109-mwj3cush",
+      "cycle": 109,
+      "label": "- 🔧 Phase 2 fix execution (TS tooling setup + tsconfig + build pipeline",
+      "timestamp": 1794823140833,
+      "verified": true,
+      "backend": "git",
+      "commitSha": "9dc9d0b049207dc1fd2cdec5eac1647722e613a3"
+    },
+    {
+      "id": "cycle-108-mwj32ya2",
+      "cycle": 108,
+      "label": "**Announcing: Using `using-superpowers` + `systematic-debugging` to [dis",
+      "timestamp": 1794822678794,
+      "verified": true,
+      "backend": "git",
+      "commitSha": "3fa325dbfe8338a98557c76931674efef92b7ddf"
+    },
+    {
+      "id": "cycle-105-mwj2oh19",
+      "cycle": 105,
+      "label": "**Using `systematic-debugging` to [fix compiler/linter errors with root-",
+      "timestamp": 1794822003261,
+      "verified": false,
+      "backend": "git",
+      "commitSha": "f3ca1d5b3119ae0a59ec118bd5a04d3939b450ad"
+    },
+    {
+      "id": "cycle-104-mwj2b08f",
+      "cycle": 104,
+      "label": "- **Completed**: Root-caused the Peer Auditor critique — `deriveWsUrl` i",
+      "timestamp": 1794821374959,
+      "verified": true,
+      "backend": "git",
+      "commitSha": "4bfc6ab151f8398356c5ac2c570fde5157623ba5"
+    },
+    {
+      "id": "cycle-103-mwj1z6vq",
+      "cycle": 103,
+      "label": "- **URL config** is env-based but with fragile inline port munging (`:92",
+      "timestamp": 1794820823702,
+      "verified": false,
+      "backend": "git",
+      "commitSha": "d5499b9885a153d9ac8c0e1f3f680029491c662b"
+    },
+    {
+      "id": "cycle-102-mwj1lqiz",
+      "cycle": 102,
+      "label": "- `useNetworking.js` hardcodes WS URLs instead of using `.env` config - ",
+      "timestamp": 1794820195979,
+      "verified": true,
+      "backend": "git",
+      "commitSha": "3653e624658d6200bc97edcde82d2fc6dc4e3685"
+    },
     {
       "id": "cycle-0-mwincepd",
       "cycle": 0,

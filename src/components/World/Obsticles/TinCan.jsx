@@ -4,7 +4,6 @@ import {RigidBody, CylinderCollider} from "@react-three/rapier";
 import {useTexture} from "@react-three/drei";
 import {soundManager} from "../../../utils/SoundManager";
 import {useFrame} from "@react-three/fiber";
-import {debugLog} from "../../../utils/debugLog.js";
 
 useTexture.preload("materials/sonicboom-beans.webp");
 
@@ -160,7 +159,7 @@ export function TinCanPhysics({position, rotation, color, mass = 1, linearDampin
             try {
                 if (soundManager && soundManager.listener)
                     soundManager.playPositional("metal-ground", rigidRef.current, impactVol, 15, 1.0, false);
-            } catch (e) {}
+            } catch {}
         } else if (y > 10) {
             groundHitRef.current = false; // Reset when airborne
         }
@@ -200,7 +199,7 @@ export function TinCanPhysics({position, rotation, color, mass = 1, linearDampin
             try {
                 if (soundManager && soundManager.listener && hitVol > 0.1)
                     soundManager.playPositional("metal-ground", rigidRef.current, hitVol, 15, 1.0, false);
-            } catch (e) {}
+            } catch {}
 
             // Direction from player to can
             const dir = new THREE.Vector3(canPos.x - playerPos.x, 0, canPos.z - playerPos.z).normalize();
@@ -232,7 +231,7 @@ export function TinCanPhysics({position, rotation, color, mass = 1, linearDampin
             try {
                 if (soundManager && soundManager.listener)
                     soundManager.playPositional("metal-ground", rigidRef.current, impactVol, 15, 1.0, false);
-            } catch (e) {}
+            } catch {}
 
             rigidRef.current.applyImpulse(
                 {

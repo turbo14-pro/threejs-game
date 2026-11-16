@@ -1,7 +1,7 @@
 import * as THREE from "three";
 import {create} from "zustand";
 import {subscribeWithSelector, persist} from "zustand/middleware";
-import {SKINS, WEAPONS, LEVELS} from "../data/registries";
+import {LEVELS} from "../data/registries";
 import {Logger} from "../utils/Logger";
 import {POWERUP_EFFECTS, POWERUP_DURATIONS, POWERUP_DESCRIPTIONS} from "../config/playerConfig";
 import {BOT_DIFFICULTY, buildBotRoster} from "../components/Player/botRoster.js";
@@ -55,7 +55,7 @@ export const useGameStore = create(
                     ambientVolume: 0.25, // 0-1 ambient bed volume (default 1/4)
                     sfxVolume: 1.0, // 0-1 SFX volume (positional one-shots, incl. powerup pickup)
                     musicVolume: 0.7, // 0-1 background music volume
-                    reverbWet: 1.0, // 0-1 reverb wet level
+                    reverbWet: 0.25, // 0-1 reverb wet level
                     reverbZone: "outside", // 'outside' | 'inside' | 'edge'
                     occlusionGain: 1.0, // 0-1 occlusion multiplier for ambient bed
                     currentTrack: null, // { id, file, title, artist, bpm, duration } currently playing track
@@ -589,7 +589,7 @@ export const useGameStore = create(
                 },
                 // When we change the save format, bump `version` above and add
                 // a case here to convert old data into the new shape.
-                migrate: (savedState, version) => {
+                migrate: (savedState, _version) => {
                     // version 0 → 1: no changes needed, this is the first version
                     return savedState;
                 },

@@ -8,7 +8,6 @@ import {
     SMAA,
     ToneMapping,
     N8AO,
-    DepthOfField,
 } from "@react-three/postprocessing";
 import {HalfFloatType, Uniform, Vector2, Vector3} from "three";
 import {BlendFunction, Effect, ToneMappingMode} from "postprocessing";
@@ -16,9 +15,8 @@ import {useThree, useFrame} from "@react-three/fiber";
 import {useGameStore} from "../../store/useGameStore";
 import {debugLog} from "../../utils/debugLog.js";
 import {ShockwaveEffect} from "./Effects/ShockwaveEffect";
-import {PostEffectsActivator} from "./PostEffectsActivator";
 
-const tempVec = new Vector3();
+
 
 function RippleDebugProjector() {
     const {camera, gl} = useThree();
@@ -159,7 +157,7 @@ function RippleDisplacementEffect() {
 
 export default function Effects() {
     const settings = useGameStore((state) => state.settings);
-    const {camera, gl: renderer, scene} = useThree();
+    const {camera, gl: renderer} = useThree();
 
     // Ensure we control clearing manually so depth can be reset between passes
     useEffect(() => {

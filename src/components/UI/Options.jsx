@@ -20,7 +20,7 @@ export default function Options({onBack}) {
     const [submenu, setSubmenu] = useState("graphics"); // 'graphics' | 'controls' | 'audio'
     const [advancedOpen, setAdvancedOpen] = useState(false);
     const [debugEnabled, setDebugEnabledState] = useState(isDebugEnabled);
-    const [isSaving, setIsSaving] = useState(false);
+    const [isSaving] = useState(false); // reserved for future async save flows
 
     // Auto-expand advanced settings if Custom is selected
     useEffect(() => {

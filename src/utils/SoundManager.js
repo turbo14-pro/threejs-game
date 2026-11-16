@@ -10,7 +10,7 @@ const MAX_DEBUG_NODES = 200;
 
 // Base multiplier for music volume so the slider max (1.0) doesn't blast
 // full gain — matches the amb-bed pattern (slider * base multiplier).
-const MUSIC_BASE_MULTIPLIER = 0.05;
+const MUSIC_BASE_MULTIPLIER = 0.15;
 
 function finiteOr(value, fallback) {
     return Number.isFinite(value) ? value : fallback;
@@ -169,7 +169,7 @@ class SoundManager {
         this.reverbGain = null; // GainNode (wet level)
         this.reverbSend = null; // GainNode (send amount)
         this.reverbEnabled = true;
-        this.reverbWet = 1; // 25% wet by default
+        this.reverbWet = 0.25; // 25% wet by default
         // --- Ambient bed ---
         this.ambientBed = null; // Currently playing looping bed (primary)
         this.ambientBedB = null; // Secondary bed for seamless crossfade looping
@@ -634,7 +634,7 @@ class SoundManager {
                         resolve();
                     },
                     undefined,
-                    (err) => {
+                    () => {
                         debugWarn(`[Sound] Could not preload ${name} from ${url}`);
                         resolve();
                     }
@@ -857,7 +857,7 @@ class SoundManager {
                     resolve(buffer);
                 },
                 undefined,
-                (err) => {
+                () => {
                     // Silently handle encoding/loading errors to avoid console spam
                     debugWarn(`[Sound] Could not load ${name} from ${url}. (File might be missing or invalid)`);
                     resolve(null);

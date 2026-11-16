@@ -1,4 +1,3 @@
-import * as THREE from 'three';
 
 /**
  * Traverses a GLTF scene and extracts the first mesh geometry it finds.

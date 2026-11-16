@@ -1,7 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useFrame } from '@react-three/fiber';
 import { ShockWave } from '@react-three/postprocessing';
-import * as THREE from 'three';
 import { useGameStore } from '../../../store/useGameStore';
 import { PLAYER_BASELINE, getActionIntensity } from '../../../config/playerConfig';
 

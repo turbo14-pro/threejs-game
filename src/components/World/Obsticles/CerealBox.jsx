@@ -93,7 +93,7 @@ export function useCerealBoxAssets() {
 /**
  * Visual mesh component for a Cereal Box.
  */
-export function CerealBoxMesh({position, rotation, color, geometry, material, texture}) {
+export function CerealBoxMesh({position, rotation, color, geometry, texture}) {
     return (
         <mesh
             geometry={geometry}
@@ -185,7 +185,7 @@ export function CerealBoxPhysics({position, rotation, boxSize}) {
  * box and updates the store's player.insideCerealBox and player.currentZone.
  * Uses a sensor collider (no collision response) that overlaps the box interior.
  */
-export function CerealBoxInteriorSensor({position, rotation, boxSize, onEnter, onExit}) {
+export function CerealBoxInteriorSensor({position, boxSize, onEnter, onExit}) {
     const {x: w, y: h, z: d} = boxSize;
     const insideRef = useRef(false);
     const setInsideCerealBox = useGameStore((state) => state.setInsideCerealBox);

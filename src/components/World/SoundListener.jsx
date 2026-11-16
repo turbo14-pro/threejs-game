@@ -1,4 +1,4 @@
-import React, {useEffect, useRef} from "react";
+import {useEffect, useRef} from "react";
 import {useThree} from "@react-three/fiber";
 import {soundManager} from "../../utils/SoundManager";
 

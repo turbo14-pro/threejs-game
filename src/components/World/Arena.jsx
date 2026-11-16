@@ -3,8 +3,7 @@ import * as THREE from "three";
 import {RigidBody, CuboidCollider} from "@react-three/rapier";
 import {useFrame} from "@react-three/fiber";
 import {getLocalPlayerWorldPos} from "../World/items/PowerUpCoin.jsx";
-import {useGLTF, useTexture, Text as TextDrei, Instances, Instance} from "@react-three/drei";
-import * as BufferGeometryUtils from "three/examples/jsm/utils/BufferGeometryUtils";
+import {useGLTF, Text as TextDrei} from "@react-three/drei";
 
 import {useGameStore} from "../../store/useGameStore";
 import {debugLog} from "../../utils/debugLog.js";
@@ -12,7 +11,6 @@ import * as SkeletonUtils from "three/examples/jsm/utils/SkeletonUtils.js";
 import ArenaLightRays from "./LightRays";
 import {useCerealBoxAssets, CerealBoxMesh, CerealBoxPhysics} from "./Obsticles/CerealBox.jsx";
 import {TinCanPhysics} from "./Obsticles/TinCan.jsx";
-import {PowerUpCoin} from "./items/PowerUpCoin.jsx";
 import {PowerUpManager} from "./items/PowerUpManager.jsx";
 
 /**
@@ -68,11 +66,11 @@ function SkinPodium({character, position, padOffset}) {
             {/* Podium Plate */}
             <mesh position={[0, 0.5, 0]} receiveShadow>
                 <cylinderGeometry args={[2.5, 2.7, 1, 32]} />
-                <meshStandardMaterial color="#444444" metalness={0.8} roughness={0.2} />
+                <meshStandardMaterial color="#e0e0e0" metalness={0.9} roughness={0.05} envMapIntensity={2} />
             </mesh>
 
             {/* Model */}
-            <primitive object={clone} position={[0, 1, 0]} scale={[2, 2, 2]} />
+            <primitive object={clone} position={[0, 1, 0]} rotation={[0, Math.PI, 0]} scale={[2, 2, 2]} />
 
             {/* Blue Touch Pad - Sitting on carpet */}
             <RigidBody
@@ -98,41 +96,6 @@ function SkinPodium({character, position, padOffset}) {
 }
 
 /**
- * WeaponPodium Component
- * Allows players to choose their starting weapon.
- */
-function WeaponPodium({weapon, position, color = "#ff9300"}) {
-    const setPlayerWeapon = useGameStore((state) => state.setPlayerWeapon);
-    const currentWeapon = useGameStore((state) => state.player.selectedWeapon);
-
-    return (
-        <group position={position}>
-            <mesh position={[0, 0.5, 0]} receiveShadow>
-                <cylinderGeometry args={[1.5, 1.7, 0.8, 32]} />
-                <meshStandardMaterial color="#444444" metalness={0.5} roughness={0.5} />
-            </mesh>
-
-            <TextDrei position={[0, 3, 0]} rotation={[0, Math.PI, 0]} fontSize={1.2} color="white">
-                {weapon.toUpperCase()}
-            </TextDrei>
-
-            <RigidBody type="fixed" sensor onIntersectionEnter={() => setPlayerWeapon(weapon.toLowerCase())}>
-                <CuboidCollider args={[1.5, 0.5, 1.5]} />
-                <mesh position={[0, 0.1, 0]}>
-                    <boxGeometry args={[3, 0.1, 3]} />
-                    <meshStandardMaterial
-                        color={currentWeapon === weapon ? "#ffffff" : color}
-                        emissive={currentWeapon === weapon ? "#ffffff" : color}
-                        emissiveIntensity={currentWeapon === weapon ? 10 : 2}
-                        toneMapped={false}
-                    />
-                </mesh>
-            </RigidBody>
-        </group>
-    );
-}
-
-/**
  * Arena Component
  * Restores the original 3D level layout from the vanilla JS version
  * while applying the new procedural wood texture.
@@ -142,7 +105,6 @@ export default function Arena() {
     const setMatchPhase = useGameStore((state) => state.setMatchPhase);
     const countdown = useGameStore((state) => state.game.countdown);
     const setCountdown = useGameStore((state) => state.setCountdown);
-    const startMatchSequence = useGameStore((state) => state.startMatchSequence);
     const triggerWorldReset = useGameStore((state) => state.triggerWorldReset);
 
     // Match Countdown Timer
@@ -167,20 +129,6 @@ export default function Arena() {
 
         return () => clearInterval(interval);
     }, [matchPhase, countdown]);
-
-    const dropPoints = useMemo(
-        () => [
-            [50, 80, 50],
-            [-50, 80, 50],
-            [50, 80, -50],
-            [-50, 80, -50],
-            [100, 80, 0],
-            [-100, 80, 0],
-            [0, 80, 100],
-            [0, 80, -100],
-        ],
-        []
-    );
 
     // Load Cereal Box assets cleanly using the custom hook
     const {
@@ -392,7 +340,7 @@ export default function Arena() {
         const playerPos = getLocalPlayerWorldPos();
         if (!playerPos || !playerPos.x) return;
         const dx = playerPos.x - 0;
-        const dz = playerPos.z - 8;
+        const dz = playerPos.z - -53;
         const dist = Math.sqrt(dx * dx + dz * dz);
         if (dist < 4 && !buttonTriggered.current) {
             buttonTriggered.current = true;
@@ -434,6 +382,43 @@ export default function Arena() {
             </group>
 
             {/* 2. Platform 1 (Spawning Area) */}
+            <group position={[0, 101.5, 10]} rotation={[0, 0, 0]}>
+                <TextDrei
+                    position={[0, 0.2, -0.51]}
+                    rotation={[0, Math.PI * 1, 0]}
+                    fontSize={1.3}
+                    color="#FFFFFF"
+                    emissiveIntensity={0}
+                    anchorX="center"
+                    anchorY="middle"
+                    outlineWidth={0.0}
+                    outlineColor="#9900ff">
+                    Choose a skin
+                </TextDrei>
+                <RigidBody type="fixed" position={[0, 0, 0]} colliders="cuboid">
+                    <mesh receiveShadow>
+                        <extrudeGeometry
+                            args={[
+                                new THREE.Shape()
+                                .moveTo(-34.49, -1)
+                                .lineTo(34.49, -1)
+                                .lineTo(34.49, 0.5)
+                                .lineTo(-34.49, 0.5)
+                                .closePath(),
+                                {
+                                    depth: 4.49,
+                                    bevelEnabled: true,
+                                    bevelThickness: 0.5,
+                                    bevelSize: 0.5,
+                                    bevelSegments: 12,
+                                    bevelSize: 0.5,
+                                },
+                            ]}
+                        />
+                        <meshStandardMaterial color="#dce5eb" metalness={0.9} roughness={0.01} envMapIntensity={2} />
+                    </mesh>
+                </RigidBody>
+            </group>
             <RigidBody type="fixed" position={[0, 100, 0]} colliders="cuboid">
                 <mesh receiveShadow>
                     <boxGeometry args={[70, 2, 30]} />
@@ -467,9 +452,9 @@ export default function Arena() {
                 </mesh>
             </group>
 
-            {/* Platform 1 Carpet Runner */}
-            <mesh position={[0, 101.06, 0]} receiveShadow>
-                <boxGeometry args={[70, 0.12, 4]} />
+            {/* Carpet Runner */}
+            <mesh position={[0, 101.06, -20]} receiveShadow>
+                <boxGeometry args={[4, 0.12, 70]} />
                 <meshStandardMaterial color="#880000" roughness={0.8} />
             </mesh>
 
@@ -528,61 +513,36 @@ export default function Arena() {
             </group>
 
             {/* SKIN PODIUMS (These are the "Blue walk on buttons" that switch skin) */}
-            <SkinPodium character="Avo" position={[-31.5, 101, 0]} padOffset={[5, 0, 0]} />
-            <SkinPodium character="Egg" position={[31.5, 101, 0]} padOffset={[-5, 0, 0]} />
+            <SkinPodium character="Avo" position={[-10, 102, 12.5]} padOffset={[0, -1, -5]} />
+            <SkinPodium character="Egg" position={[10, 102, 12.5]} padOffset={[0, -1, -6]} />
 
             {/* START BUTTON (Central on Platform 1) — direct distance-based trigger */}
             {matchPhase !== "BATTLE" && (
                 <group position={[0, 101, 8]}>
                     <TextDrei
-                        position={[0, 5, -60]}
-                        rotation={[0, Math.PI, 0]}
+                        position={[0, 5, -70]}
+                        rotation={[0, Math.PI * 180, 0]}
                         fontSize={2.5}
-                        color="#ffEF77"
-                        emissive="#ffcc00"
+                        color="#9900ff"
+                        emissive="#c56eff"
+                        emissiveIntensity={4}
                         anchorX="center"
                         anchorY="middle"
                         outlineWidth={0.05}
-                        outlineColor="#ffEF77">
+                        outlineColor="#9900ff">
                         JOIN BATTLE
                     </TextDrei>
-                    <mesh position={[0, 0.5, 0]}>
-                        <boxGeometry args={[6, 0.2, 6]} />
+                    <mesh position={[0, 0, -63]}>
+                        <boxGeometry args={[6, 0.3, 6]} />
                         <meshStandardMaterial
-                            color="#ffcc00"
-                            emissive="#ffcc00"
-                            emissiveIntensity={2}
+                            color="#9900ff"
+                            emissive="#c56eff"
+                            emissiveIntensity={4}
                             toneMapped={false}
                             transparent
-                            opacity={0.6}
+                            opacity={1}
                         />
                     </mesh>
-                </group>
-            )}
-
-            {/* DROP PLATFORMS (These vanish when match starts) */}
-            {matchPhase === "DROP" &&
-                countdown > 0 &&
-                dropPoints.map((pos, i) => (
-                    <RigidBody key={`drop-${i}`} type="fixed" position={pos} colliders="cuboid">
-                        <mesh receiveShadow>
-                            <boxGeometry args={[4, 1, 4]} />
-                            <meshStandardMaterial color="#0088ff" emissive="#0088ff" emissiveIntensity={2} />
-                        </mesh>
-                    </RigidBody>
-                ))}
-
-            {/* Phase Indicator (In-World) */}
-            {(matchPhase === "PREMATCH" || (matchPhase === "DROP" && countdown > 0)) && (
-                <group position={[0, 120, 0]}>
-                    <TextDrei
-                        fontSize={8}
-                        color="#ffffff"
-                        position={[0, 0, 0]}
-                        outlineWidth={0.5}
-                        outlineColor="#000000">
-                        {matchPhase === "PREMATCH" ? `MATCH STARTING IN ${countdown}...` : `THE DROP: ${countdown}`}
-                    </TextDrei>
                 </group>
             )}
 
