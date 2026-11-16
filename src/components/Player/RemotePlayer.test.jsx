@@ -16,7 +16,7 @@ describe("RemotePlayer Y height — groundY correction", () => {
             vel: [0, 0, 0],
             rot: 0,
             groundY: 10,
-            skin: "avo",
+            skin: "egg",
             anim: {mv: false, dir: "for", jp: "none", sl: false},
         };
         // Component should render without crashing when groundY is provided
@@ -32,7 +32,7 @@ describe("RemotePlayer Y height — groundY correction", () => {
             vel: [0, 0, 0],
             rot: 0,
             groundY: 10,
-            skin: "avo",
+            skin: "egg",
             anim: {mv: false, dir: "for", jp: "none", sl: false},
         };
         expect(data.groundY).toBe(10);
@@ -46,7 +46,7 @@ describe("RemotePlayer Y height — groundY correction", () => {
             vel: [0, -5, 0],
             rot: 0,
             groundY: -1,
-            skin: "avo",
+            skin: "egg",
             anim: {mv: false, dir: "for", jp: "air", sl: false},
         };
         expect(data.groundY).toBe(-1);
@@ -59,7 +59,7 @@ describe("RemotePlayer Y height — groundY correction", () => {
             vel: [0, 0, 0],
             rot: 0,
             groundY: 0,
-            skin: "avo",
+            skin: "egg",
             anim: {mv: false, dir: "for", jp: "none", sl: false},
         };
         expect(data.groundY).toBe(0);

@@ -18,14 +18,18 @@ export const defaultOptions: Readonly<GlassSurfaceOptions> = {
   renderer: "auto",
   saturation: 1,
   shape: null,
+  targetFPS: 30,
   xChannel: "R",
   yChannel: "G",
 };
 
 export function resolveOptions(input: GlassSurfaceInput): GlassSurfaceOptions {
-  const defined = Object.entries(input).filter(function isDefined([, value]) {
+  const defined = Object.entries(input).filter(([, value]) => {
     return value !== undefined;
   });
 
-  return { ...defaultOptions, ...Object.fromEntries(defined) };
+  return {
+    ...defaultOptions,
+    ...Object.fromEntries(defined),
+  };
 }

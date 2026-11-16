@@ -21,6 +21,7 @@
  *
  * Flags persist in localStorage so a reload keeps the same experiment setup.
  */
+import { debugLog } from './debugLog.js';
 
 const STORAGE_KEY = 'food-frenzy-audio-debug-flags';
 

@@ -1,5 +1,6 @@
 import * as THREE from "three";
 import {debugLog, debugWarn} from "./debugLog";
+import {getTrackUrl} from "../data/tracks";
 
 const AUDIO_VARIATION = 0.2;
 const MAX_INSTANCES = 24;
@@ -293,7 +294,8 @@ class SoundManager {
         // Keep the raw slider value so setMasterVolume can re-apply after a
         // master change without losing the user's music-level setting.
         this._musicSliderVolume = Number(vol);
-        const v = Math.max(0, Math.min(1, Number(vol) || 0)) * MUSIC_BASE_MULTIPLIER * clampVolume(this.masterVolume, 1.0);
+        const v =
+            Math.max(0, Math.min(1, Number(vol) || 0)) * MUSIC_BASE_MULTIPLIER * clampVolume(this.masterVolume, 1.0);
         this.musicVolume = v;
         if (this.musicGain && this.listener?.context) {
             const now = this.listener.context.currentTime;
@@ -313,7 +315,7 @@ class SoundManager {
 
         // Create <audio> element for streaming
         const audio = new Audio();
-        audio.src = `/music/${track.file}`;
+        audio.src = getTrackUrl(track.file);
         audio.loop = true;
         audio.crossOrigin = "anonymous";
         audio.preload = "auto";
@@ -353,7 +355,7 @@ class SoundManager {
 
         // Create next <audio> element
         const nextAudio = new Audio();
-        nextAudio.src = `/music/${nextTrack.file}`;
+        nextAudio.src = getTrackUrl(nextTrack.file);
         nextAudio.loop = true;
         nextAudio.crossOrigin = "anonymous";
         nextAudio.preload = "auto";
@@ -1068,10 +1070,14 @@ class SoundManager {
         // Apply immediately to both beds so the change is audible without
         // waiting for the next crossfade loop.
         if (this.ambientBed && typeof this.ambientBed.setVolume === "function") {
-            try { this.ambientBed.setVolume(v); } catch {}
+            try {
+                this.ambientBed.setVolume(v);
+            } catch {}
         }
         if (this.ambientBedB && typeof this.ambientBedB.setVolume === "function") {
-            try { this.ambientBedB.setVolume(v); } catch {}
+            try {
+                this.ambientBedB.setVolume(v);
+            } catch {}
         }
     }
 

@@ -17,7 +17,9 @@ describe('Server index.js removal', () => {
     expect(serverScript).not.toContain('server/index.js');
   });
 
-  it('server/index.js file does not exist (already removed)', () => {
-    expect(fs.existsSync(indexPath)).toBe(false);
+  it('server/index.js file exists but is a thin wrapper (re-exports ws-server.js)', () => {
+    expect(fs.existsSync(indexPath)).toBe(true);
+    const content = fs.readFileSync(indexPath, 'utf-8');
+    expect(content).toContain("ws-server.js");
   });
 });

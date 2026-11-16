@@ -11,11 +11,12 @@
     max-height: 90vh !important;
     min-height: 0;
     margin: auto; /* centres vertically + horizontally inside .menu (which is overflow-y:auto) */
-    padding: 3rem;
+    padding: 1.5rem;
     box-sizing: border-box;
     display: flex;
     flex-direction: column;
     align-items: center;
+    border-radius: var(--glass-radius);
     justify-content: center;
     backdrop-filter: var(--glass-filter) saturate(var(--glass-saturation)) blur(3px) !important;
     /* Rotate the card itself. The inner-layer 3D approach is impossible here because
@@ -25,7 +26,14 @@
     perspective: 50rem; /* gives the card's rotateX/rotateY 3D depth */
     will-change: transform perspective; /* hint to browser that these will change, so it can optimise */
 }
-
+.glass-surface > canvas,
+.glass-surface > svg {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    z-index: 2;
+}
 /* Ensure the content area fills the glass-surface and enables proper flex layout */
 .glass-surface > .glass-surface__content {
     flex: 1;
@@ -44,28 +52,19 @@
     transform: translate3d(0, 0, -2rem);
     border-radius: var(--glass-radius);
 }
-.glass-surface .glass-surface__line {
-    position: relative;
-    inset: 3.5rem;
-    border: var(--primary) 1px solid;
-    box-shadow: 0 0 0.5rem -0.1rem var(--primary), 0 0 0.5rem -0.1rem var(--primary) inset;
-
-    transform: rotateX(calc(var(--rotateX, 0deg) / 10)) rotateY(var(--rotateY, 0deg)) translate3d(0, 0, 6rem);
-    perspective: 0rem;
-
-    opacity: 0.5;
-    border-radius: 16px;
-    mix-blend-mode: overlay;
-    z-index: 4;
-}
 
 .glass-surface__content {
     position: relative;
+
+    border: var(--primary) 1px solid;
+    border-radius: calc(var(--glass-radius) / 2);
+    box-shadow: 0 0 0.5rem -0.1rem var(--primary), 0 0 0.5rem -0.1rem var(--primary) inset;
     z-index: 4;
     /* .glass-surface is transform-style:flat (overflow:hidden + backdrop-filter), so a bare
        translateZ would be flattened. perspective() here gives the content its own depth. */
-    transform: rotateX(var(--rotateX)) rotateY(var(--rotateY)) translate3d(0, 0, 6rem);
-    perspective: 50rem;
+    transform: translate3d(0, 0, 12rem) scale(0.88)
+        rotate3d(calc(var(--rotateX, 0deg) / 1), calc(var(--rotateY, 0deg) / 1), 0, 0deg);
+    perspective: 50rem; /* gives the content's rotateX/rotateY 3D depth */
     width: 100%;
     height: 100%;
     min-height: 0; /* Allows flex children to shrink below content size */

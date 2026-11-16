@@ -4,13 +4,19 @@ import {VitePWA} from "vite-plugin-pwa";
 import {resolve} from "path";
 
 export default defineConfig({
-    resolve: {
-        alias: {
-            '@imsvidskiy/glass-surface': resolve(__dirname, 'src/lib/glass-surface-core'),
-            '@imsvidskiy/glass-surface-react': resolve(__dirname, 'src/lib/glass-surface-react'),
-        }
-    },
     base: "./",
+    resolve: {
+        // The aliased glass-surface sources live outside this project and would otherwise
+        // resolve `react` from their own node_modules (a second React copy). Two Reacts means
+        // the renderer sets hooks on one instance while the component reads from another,
+        // producing "Cannot read properties of null (reading 'useId')".
+        dedupe: ["react", "react-dom", "react/jsx-runtime", "react/jsx-dev-runtime"],
+        alias: {
+            // Local (junctioned) glass-surface packages — source entry points.
+            "@imsvidskiy/glass-surface-react": resolve(import.meta.dirname, "src/lib/glass-surface-react/index.ts"),
+            "@imsvidskiy/glass-surface": resolve(import.meta.dirname, "src/lib/glass-surface-core/index.ts"),
+        },
+    },
     plugins: [
         react(),
         VitePWA({
@@ -28,20 +34,22 @@ export default defineConfig({
                 start_url: "/",
                 scope: "/",
                 categories: ["games", "entertainment"],
+                // Manifest icon srcs resolve relative to the manifest URL, so keep them
+                // relative: absolute "/icons/..." 404s when the game is served from a subdirectory.
                 icons: [
                     {
-                        src: "/icons/icon-192.png",
+                        src: "./icons/icon-192.png",
                         sizes: "192x192",
                         type: "image/png",
                     },
                     {
-                        src: "/icons/icon-512.png",
+                        src: "./icons/icon-512.png",
                         sizes: "512x512",
                         type: "image/png",
                         purpose: "any",
                     },
                     {
-                        src: "/icons/icon-maskable-512.png",
+                        src: "./icons/icon-maskable-512.png",
                         sizes: "512x512",
                         type: "image/png",
                         purpose: "maskable",
@@ -75,6 +83,8 @@ export default defineConfig({
     server: {
         host: true,
         open: true,
+        // Allow serving the junctioned glass-surface sources that live outside the project root.
+        fs: {allow: [resolve(import.meta.dirname, "..")]},
     },
     build: {
         outDir: "dist",

@@ -25,7 +25,7 @@ const worker = new Worker(path.join(__dirname, "physics-worker.mjs"), {
 
 // --- WEBSOCKET SERVER ---
 const wss = new WebSocketServer({port: 9208});
-const clients = new Map(); // ws -> { id, playerId, lastSeen, sequenceTracker }
+const clients = new Map(); // ws -> { id, playerId, lastSeen, sequenceTracker, skin }
 let nextClientId = 0;
 
 // Entity culling: interest radius (units) — only send players within this distance
@@ -140,6 +140,7 @@ wss.on("connection", (ws) => {
         playerId,
         lastSeen: Date.now(),
         sequenceTracker: 0,
+        skin: "egg", // Default skin is "egg" (first in registry)
     });
 
     debugLog(`[WS SERVER] Client connected: ${playerId}`);
@@ -147,10 +148,11 @@ wss.on("connection", (ws) => {
     // Send welcome message with playerId so client can tag inputs
     ws.send(encode({type: "welcome", playerId}), {binary: true});
 
-    // Tell worker to create a physics body for this player
+    // Tell worker to create a physics body for this player with default skin
     worker.postMessage({
         type: "addPlayer",
         playerId,
+        skin: "egg",
     });
 
     ws.on("message", (data) => {
@@ -170,7 +172,12 @@ wss.on("connection", (ws) => {
                     }
                     client.sequenceTracker = sequenceId;
 
-                    // Forward input to worker
+                    // Update client's skin if provided
+                    if (msg.skin) {
+                        client.skin = msg.skin;
+                    }
+
+                    // Forward input to worker with client's current skin
                     worker.postMessage({
                         type: "input",
                         playerId,
@@ -179,13 +186,16 @@ wss.on("connection", (ws) => {
                         facingRot: msg.facingRot,
                         tick: msg.tick,
                         sequenceId,
-                        skin: msg.skin || "avo",
+                        skin: client.skin,
                     });
                     break;
                 }
 
                 case "pos": {
-                    // Legacy position handler (teleport)
+                    // Legacy position handler (teleport) - also used for initial skin on connect
+                    if (msg.skin) {
+                        client.skin = msg.skin;
+                    }
                     if (msg.pos && msg.force) {
                         worker.postMessage({
                             type: "teleport",
@@ -327,7 +337,7 @@ for (let i = 0; i < BOT_COUNT; i++) {
         id: botId,
         bodyId: botId,
         lastSeen: Date.now(),
-        skin: "avo",
+        skin: "egg", // Default bot skin to "egg" to match player default
         anim: {},
         camRot: 0,
         targetId: null,
@@ -386,7 +396,7 @@ setInterval(() => {
             input,
             camRot,
             tick: botTick,
-            skin: bot.skin || "avo",
+            skin: bot.skin || "egg",
         });
     }
 }, 100);

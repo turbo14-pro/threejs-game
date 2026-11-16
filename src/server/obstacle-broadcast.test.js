@@ -15,7 +15,7 @@ describe("Server obstacle broadcast", () => {
 
     it("physics worker handles setObstacles message", () => {
         const workerSource = fs.readFileSync(workerPath, "utf-8");
-        expect(workerSource).toContain("'setObstacles'");
+        expect(workerSource).toContain('"setObstacles"');
     });
 
     it("physics worker stores obstacle data", () => {

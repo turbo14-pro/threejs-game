@@ -1,33 +1,34 @@
-import React, { useMemo, useRef } from 'react';
-import * as THREE from 'three';
-import { useFrame } from '@react-three/fiber';
-import { useGameStore } from '../../store/useGameStore';
+import React, {useMemo, useRef} from "react";
+import * as THREE from "three";
+import {useFrame} from "@react-three/fiber";
+import {useGameStore} from "../../store/useGameStore";
 
 /**
  * LightRay Component
  * A low-poly cone that emulates a volumetric light beam.
  * Uses a custom optimized shader for noise, fresnel, and fall-off.
  */
-export function LightRay({ 
-  position = [0, 0, 0], 
-  rotation = [0, 0, 0], 
-  scale = [1, 1, 1], 
-  color = "#CACACA", 
-  opacity = 0.02
+export function LightRay({
+    position = [0, 0, 0],
+    rotation = [0, 0, 0],
+    scale = [1, 1, 1],
+    color = "#CACACA",
+    opacity = 0.02,
 }) {
-  const isVisible = useGameStore(state => state.settings.lightRays);
-  const materialRef = useRef();
+    const isVisible = useGameStore((state) => state.settings.lightRays);
+    const materialRef = useRef();
 
-  const shaderArgs = useMemo(() => ({
-    uniforms: {
-      uColor: { value: new THREE.Color(color) },
-      uOpacity: { value: opacity },
-      uTime: { value: 0 },
-      uNoiseScale: { value: 5.0 },
-      uTimeSpeed: { value: 0.2 },
-      uFresnelPower: { value: 3.0 },
-    },
-    vertexShader: `
+    const shaderArgs = useMemo(
+        () => ({
+            uniforms: {
+                uColor: {value: new THREE.Color(color)},
+                uOpacity: {value: opacity},
+                uTime: {value: 0},
+                uNoiseScale: {value: 5.0},
+                uTimeSpeed: {value: 0.2},
+                uFresnelPower: {value: 3.0},
+            },
+            vertexShader: `
       varying vec2 vUv;
       varying vec3 vWorldPosition;
       varying vec3 vNormal;
@@ -40,7 +41,7 @@ export function LightRay({
         gl_Position = projectionMatrix * viewMatrix * worldPosition;
       }
     `,
-    fragmentShader: `
+            fragmentShader: `
       uniform vec3 uColor;
       uniform float uOpacity;
       uniform float uTime;
@@ -104,40 +105,42 @@ export function LightRay({
         
         gl_FragColor = vec4(uColor, finalAlpha);
       }
-    `
-  }), [color, opacity]);
+    `,
+        }),
+        [color, opacity]
+    );
 
-  // Update time uniform for animation
-  useFrame((state) => {
-    if (materialRef.current) {
-      materialRef.current.uniforms.uTime.value = state.clock.elapsedTime;
-    }
-  });
+    // Update time uniform for animation
+    useFrame((state) => {
+        if (materialRef.current) {
+            materialRef.current.uniforms.uTime.value = state.clock.elapsedTime;
+        }
+    });
 
-  if (!isVisible) return null;
+    if (!isVisible) return null;
 
-  const noiseScale = 15.0; // Slightly more beams
-  const fresnelPower = 1.0; // Much softer edges
+    const noiseScale = 15.0; // Slightly more beams
+    const fresnelPower = 1.0; // Much softer edges
 
-  return (
-    <mesh position={position} rotation={rotation} scale={scale}>
-      <coneGeometry args={[1, 1, 8, 1, true]} />
-      <shaderMaterial 
-        ref={materialRef}
-        uniforms={{
-          ...shaderArgs.uniforms,
-          uNoiseScale: { value: noiseScale },
-          uFresnelPower: { value: fresnelPower }
-        }}
-        vertexShader={shaderArgs.vertexShader}
-        fragmentShader={shaderArgs.fragmentShader}
-        transparent={true} 
-        depthWrite={false}
-        blending={THREE.AdditiveBlending}
-        side={THREE.DoubleSide}
-      />
-    </mesh>
-  );
+    return (
+        <mesh position={position} rotation={rotation} scale={scale}>
+            <coneGeometry args={[1, 1, 8, 1, true]} />
+            <shaderMaterial
+                ref={materialRef}
+                uniforms={{
+                    ...shaderArgs.uniforms,
+                    uNoiseScale: {value: noiseScale},
+                    uFresnelPower: {value: fresnelPower},
+                }}
+                vertexShader={shaderArgs.vertexShader}
+                fragmentShader={shaderArgs.fragmentShader}
+                transparent={true}
+                depthWrite={false}
+                blending={THREE.AdditiveBlending}
+                side={THREE.DoubleSide}
+            />
+        </mesh>
+    );
 }
 
 /**
@@ -145,25 +148,25 @@ export function LightRay({
  * Specific layout for the current Arena level.
  */
 export default function ArenaLightRays() {
-  return (
-    <group name="arena-light-rays">
-      {/* End 1: Pointing towards center from Z+ (700) */}
-      <LightRay 
-        position={[0, 0, 500]} 
-        rotation={[.5, 0, 0]} // 135 degrees (Pointed down and toward center)
-        scale={[800, 800, 250]} 
-        color="#CACACA"
-        opacity={1}
-      />
+    return (
+        <group name="arena-light-rays">
+            {/* End 1: Pointing towards center from Z+ (700) */}
+            <LightRay
+                position={[0, 0, 500]}
+                rotation={[0.5, 0, 0]} // 135 degrees (Pointed down and toward center)
+                scale={[800, 800, 250]}
+                color="#ffd27d"
+                opacity={1}
+            />
 
-      {/* End 2: Pointing towards center from Z- (-700) */}
-      <LightRay 
-        position={[0, 0, -500]} 
-        rotation={[-0.5, 0, 0]} // 45 deg down
-        scale={[800, 800, 250]} 
-        color="#CACACA"
-        opacity={1}
-      />
-    </group>
-  );
+            {/* End 2: Pointing towards center from Z- (-700) */}
+            <LightRay
+                position={[0, 0, -500]}
+                rotation={[-0.5, 0, 0]} // 45 deg down
+                scale={[800, 800, 250]}
+                color="#ffd27d"
+                opacity={1}
+            />
+        </group>
+    );
 }

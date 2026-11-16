@@ -55,8 +55,8 @@ const obstacles = []; // { x, y, z, w, h, d }
 parentPort.on("message", (msg) => {
     switch (msg.type) {
         case "addPlayer": {
-            const {playerId} = msg;
-            debugLog(`[WORKER] addPlayer: ${playerId}`);
+            const {playerId, skin} = msg;
+            debugLog(`[WORKER] addPlayer: ${playerId}, skin: ${skin}`);
             const bodyDesc = RAPIER.RigidBodyDesc.dynamic()
             .setTranslation(0, 110, 0)
             .setLinearDamping(0.5)
@@ -78,7 +78,7 @@ parentPort.on("message", (msg) => {
                 dashPhase: "none",
                 dashPhaseTick: 0,
                 camRot: 0,
-                skin: "avo",
+                skin: skin || "egg", // Default to "egg" if not provided
                 anim: {},
                 jumpCount: 0, // Track jump count for double jump support
                 isBot: false, // Track if this is a bot
@@ -111,7 +111,7 @@ parentPort.on("message", (msg) => {
                 dashPhase: "none",
                 dashPhaseTick: 0,
                 camRot: 0,
-                skin: "avo",
+                skin: "egg", // Default bot skin to "egg" to match player default
                 anim: {},
                 jumpCount: 0,
                 isBot: true, // Mark as bot

@@ -535,7 +535,7 @@ export default function Arena() {
             {matchPhase !== "BATTLE" && (
                 <group position={[0, 101, 8]}>
                     <TextDrei
-                        position={[0, 5, 0]}
+                        position={[0, 5, -60]}
                         rotation={[0, Math.PI, 0]}
                         fontSize={2.5}
                         color="#ffEF77"

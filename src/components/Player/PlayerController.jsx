@@ -3,7 +3,7 @@ import {useFrame, useThree} from "@react-three/fiber";
 import {useKeyboardControls} from "@react-three/drei";
 import {RigidBody, CylinderCollider, CapsuleCollider, CuboidCollider, useRapier} from "@react-three/rapier";
 import * as THREE from "three";
-import PlayerModel from "./PlayerModel.jsx";
+import PlayerModel, {ContactShadow} from "./PlayerModel.jsx";
 import {useGameStore} from "../../store/useGameStore";
 import {
     PLAYER_BASELINE,
@@ -551,15 +551,22 @@ export default function PlayerController({sendUpdate}) {
     }, [gl]);
 
     // --- SKIN SYNC ---
-    // Sends our skin to the server whenever it changes.
-    // Because the server now "merges" data, this one-off packet
-    // will update our skin in the global list without overwriting our position.
+    // Sends our skin to the server on connect AND whenever it changes.
+    // This ensures the server knows our skin from the start.
     useEffect(() => {
         if (sendUpdate && selectedSkin) {
             debugLog("👗 Sending Skin Update to Server:", selectedSkin);
             sendUpdate({skin: selectedSkin});
         }
     }, [selectedSkin, sendUpdate]);
+
+    // Also send skin immediately on mount (in case it's the default and hasn't "changed")
+    useEffect(() => {
+        if (sendUpdate && selectedSkin) {
+            debugLog("👗 Sending Initial Skin to Server:", selectedSkin);
+            sendUpdate({skin: selectedSkin});
+        }
+    }, [sendUpdate]); // Only run once on mount
 
     // Knockback effect listener
     useEffect(() => {
@@ -1955,65 +1962,74 @@ export default function PlayerController({sendUpdate}) {
     };
 
     return (
-        <RigidBody
-            ref={rigidBodyRef}
-            position={[0, 110, 0]}
-            colliders={false}
-            lockRotations={true}
-            mass={1}
-            linearDamping={0.5}
-            ccd={true} // Enable Continuous Collision for sliding
-            collisionGroups={0x0002ffff}
-            friction={0}
-            frictionCombineRule={1}
-            restitution={0}
-            onCollisionEnter={handleCollision}
-            userData={{
-                type: "player",
-                id: "local",
-                isSliding,
-                slideMultiplier:
-                    powerUp?.category === "slide"
-                        ? getPowerUpEffect("slide", powerUp.rarity, "blastPowerMultiplier")
-                        : powerUp?.category === "speed"
-                        ? getPowerUpEffect("speed", powerUp.rarity, "knockbackReduction")
-                        : 1,
-            }}>
-            {/* UNIFIED COLLIDER (Hidden Debug) */}
-            <CapsuleCollider args={[1.5, 1]} position={[0, 0, 0]} friction={0} frictionCombineRule={1} restitution={0}>
-                {/* <mesh>
+        <>
+            <RigidBody
+                ref={rigidBodyRef}
+                position={[0, 110, 0]}
+                colliders={false}
+                lockRotations={true}
+                mass={1}
+                linearDamping={0.5}
+                ccd={true} // Enable Continuous Collision for sliding
+                collisionGroups={0x0002ffff}
+                friction={0}
+                frictionCombineRule={1}
+                restitution={0}
+                onCollisionEnter={handleCollision}
+                userData={{
+                    type: "player",
+                    id: "local",
+                    isSliding,
+                    slideMultiplier:
+                        powerUp?.category === "slide"
+                            ? getPowerUpEffect("slide", powerUp.rarity, "blastPowerMultiplier")
+                            : powerUp?.category === "speed"
+                            ? getPowerUpEffect("speed", powerUp.rarity, "knockbackReduction")
+                            : 1,
+                }}>
+                {/* UNIFIED COLLIDER (Hidden Debug) */}
+                <CapsuleCollider
+                    args={[1.5, 1]}
+                    position={[0, 0, 0]}
+                    friction={0}
+                    frictionCombineRule={1}
+                    restitution={0}>
+                    {/* <mesh>
           <capsuleGeometry args={[1.5, 1]} />
           <meshStandardMaterial color="purple" transparent opacity={0.3} depthTest={false} />
         </mesh> */}
-            </CapsuleCollider>
+                </CapsuleCollider>
 
-            <group ref={playerGroupRef} name="localPlayer" position={[0, isSliding ? -2.8 : -2.5, 0]}>
-                {isDashingVisual ? (
-                    <PlayerModel
-                        isMoving={true}
-                        moveDir="for"
-                        jumpPhase="none"
-                        isSprinting={true}
-                        isSliding={false}
-                        hSpeed={0}
-                        onFootstep={playFootstep}
-                        config={animConfig}
-                        jumpTransitionId={jumpTransitionId}
-                    />
-                ) : (
-                    <PlayerModel
-                        isMoving={jumpPhase === "none" ? isMoving : true}
-                        moveDir={jumpPhase === "none" ? moveDir : jumpLock.current.dir}
-                        jumpPhase={jumpPhase}
-                        isSprinting={jumpPhase === "none" ? !isWalking : jumpLock.current.sprint}
-                        isSliding={isSliding}
-                        hSpeed={hSpeedRef.current}
-                        onFootstep={playFootstep}
-                        config={animConfig}
-                        jumpTransitionId={jumpTransitionId}
-                    />
-                )}
-            </group>
-        </RigidBody>
+                <group ref={playerGroupRef} name="localPlayer" position={[0, isSliding ? -2.8 : -2.5, 0]}>
+                    {isDashingVisual ? (
+                        <PlayerModel
+                            isMoving={true}
+                            moveDir="for"
+                            jumpPhase="none"
+                            isSprinting={true}
+                            isSliding={false}
+                            hSpeed={0}
+                            onFootstep={playFootstep}
+                            config={animConfig}
+                            jumpTransitionId={jumpTransitionId}
+                        />
+                    ) : (
+                        <PlayerModel
+                            isMoving={jumpPhase === "none" ? isMoving : true}
+                            moveDir={jumpPhase === "none" ? moveDir : jumpLock.current.dir}
+                            jumpPhase={jumpPhase}
+                            isSprinting={jumpPhase === "none" ? !isWalking : jumpLock.current.sprint}
+                            isSliding={isSliding}
+                            hSpeed={hSpeedRef.current}
+                            onFootstep={playFootstep}
+                            config={animConfig}
+                            jumpTransitionId={jumpTransitionId}
+                        />
+                    )}
+                </group>
+            </RigidBody>
+            {/* Contact shadow — scene-level, follows character horizontally */}
+            <ContactShadow characterRef={playerGroupRef} isLocalPlayer={true} />
+        </>
     );
 }

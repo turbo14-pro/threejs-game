@@ -27,7 +27,7 @@ describe('server broadcast includes lastProcessedSeq', () => {
       pos: [0, 0, 0],
       vel: [0, 0, 0],
       rot: 0,
-      skin: 'avo',
+      skin: 'egg',
       anim: {},
       tick: 42,
       lastProcessedSeq: 7,
@@ -42,7 +42,7 @@ describe('server broadcast includes lastProcessedSeq', () => {
       pos: [0, 0, 0],
       vel: [0, 0, 0],
       rot: 0,
-      skin: 'avo',
+      skin: 'egg',
       anim: {},
       tick: 42,
     };

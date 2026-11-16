@@ -29,10 +29,10 @@ export type FilterInput = Pick<
 >;
 
 export const FILTER_REGION = {
-  height: "100%",
-  width: "100%",
-  x: "0%",
-  y: "0%",
+  height: "120%",
+  width: "120%",
+  x: "-10%",
+  y: "-10%",
 } as const;
 
 const CHANNEL_MATRICES = {

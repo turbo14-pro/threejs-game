@@ -1,7 +1,7 @@
 import React, {useEffect, useMemo, useRef, useState, memo} from "react";
 import {useShallow} from "zustand/react/shallow";
 import {useGLTF} from "@react-three/drei";
-import {useFrame} from "@react-three/fiber";
+import {useFrame, useThree} from "@react-three/fiber";
 import * as THREE from "three";
 import * as SkeletonUtils from "three/examples/jsm/utils/SkeletonUtils.js";
 import * as BufferGeometryUtils from "three/examples/jsm/utils/BufferGeometryUtils.js";
@@ -17,8 +17,8 @@ const applyCharacterMaterials = (material) => {
     const isDark = material.name.toLowerCase().includes("dark");
 
     material.onBeforeCompile = (shader) => {
-        shader.uniforms.rimIntensity = {value: 2.0};
-        shader.uniforms.rimColor = {value: new THREE.Color(0.8, 0.9, 1.0)};
+        shader.uniforms.rimIntensity = {value: 130.0};
+        shader.uniforms.rimColor = {value: new THREE.Color(1.0, 1.0, 1.0)};
         shader.uniforms.bumpScale = {value: isDark ? 0.2 : 0.0}; // stronger bump for dark material
 
         shader.fragmentShader = `
@@ -28,6 +28,9 @@ const applyCharacterMaterials = (material) => {
       float getNoise(vec2 p) {
         return fract(sin(dot(p, vec2(12.989, 78.233))) * 43758.545) - 0.5;
       }
+              float getDither(vec2 uv) {
+                return getNoise(uv * 100.0) * 0.005;
+              }
       ${shader.fragmentShader}
     `
         .replace(
@@ -36,11 +39,13 @@ const applyCharacterMaterials = (material) => {
       #include <normal_fragment_begin>
       if (bumpScale > 0.0) {
         #ifdef USE_UV
-          float n = getNoise(vUv * 60.0) * bumpScale;
+                float n = getNoise(vUv * 120.0) * bumpScale;
+                float dither = getDither(vUv);
         #else
-          float n = getNoise(gl_FragCoord.xy * 0.1) * bumpScale;
+                float n = getNoise(gl_FragCoord.xy * 0.2) * bumpScale;
+                float dither = getDither(gl_FragCoord.xy);
         #endif
-        normal = normalize(normal + vec3(n, n, 0.0));
+        normal = normalize(normal + vec3(n, n, 0.0) * (0.5 + dither));
       }
       `
         )
@@ -50,7 +55,7 @@ const applyCharacterMaterials = (material) => {
       #include <emissive_fragment>
       vec3 rimNormal = normalize(normal);
       vec3 viewDir = normalize(-vViewPosition);
-      float rim = pow(1.0 - clamp(dot(rimNormal, viewDir), 0.0, 1.0), 2.5) * rimIntensity;
+      float rim = pow(1.0 - clamp(dot(rimNormal, viewDir), 0.0, 1.0), 12.5) * rimIntensity;
       totalEmissiveRadiance += rimColor * rim;
       `
         );
@@ -77,9 +82,9 @@ const PlayerModel = ({
         }))
     );
 
-    // If no skin is provided by the server, we use 'avo' as the base look.
+    // If no skin is provided by the server, we use 'egg' as the base look (default skin).
     // We only use the local skin if this is our own character (skinOverride is undefined).
-    const selectedSkin = skinOverride || (skinOverride === undefined ? localSkin : "avo");
+    const selectedSkin = skinOverride || (skinOverride === undefined ? localSkin : "egg");
 
     const isAvo = selectedSkin === "avo";
 
@@ -332,6 +337,18 @@ const PlayerModel = ({
     }, [animState, activeConfig, mixer, jumpTransitionId, jumpPhase]);
 
     const blobShadowRef = useRef();
+    const raycasterRef = useRef(new THREE.Raycaster());
+    const frameCounterRef = useRef(0);
+    const lastHitPointRef = useRef(new THREE.Vector3(0, 0, 0));
+    const {scene} = useThree();
+
+    // Read shadow quality to decide: raycast (High/Ultra) vs simple blob (Low/Medium/None)
+    const shadowQuality = useGameStore((state) => state.settings.shadowQuality);
+    const useRaycastShadow = shadowQuality === "High" || shadowQuality === "Ultra";
+
+    // Store character world position for external shadow component
+    const characterWorldPosRef = useRef(new THREE.Vector3());
+    const characterVisibleRef = useRef(true);
 
     useFrame((state, delta) => {
         if (mixer) mixer.update(delta);
@@ -365,31 +382,24 @@ const PlayerModel = ({
             }
         }
 
-        // Keep the blob shadow glued to the ground under the character: the shadow
-        // mesh is a child of the model group, so subtract the world Y to cancel the
-        // body's height. Below the table (y < -1, e.g. falling off or hidden while
-        // downed) the shadow hides instead of floating at table height.
-        if (blobShadowRef.current && clone) {
-            const worldPos = new THREE.Vector3();
-            clone.getWorldPosition(worldPos);
-            if (worldPos.y < -1) {
-                blobShadowRef.current.visible = false;
-            } else {
-                blobShadowRef.current.visible = true;
-                blobShadowRef.current.position.y = -worldPos.y + 0.05;
-            }
+        // Update character world position for contact shadow component
+        if (clone) {
+            clone.getWorldPosition(characterWorldPosRef.current);
+            characterVisibleRef.current = characterWorldPosRef.current.y >= -1;
         }
     });
 
     const blobShadowTexture = useMemo(() => {
-        const size = 64;
+        const size = 150;
         const canvas = document.createElement("canvas");
         canvas.width = canvas.height = size;
         const ctx = canvas.getContext("2d");
         const half = size / 2;
         const gradient = ctx.createRadialGradient(half, half, 0, half, half, half);
-        gradient.addColorStop(0, "rgba(0,0,0,0.35)");
-        gradient.addColorStop(0.5, "rgba(0,0,0,0.15)");
+        // Much darker and more visible shadow
+        gradient.addColorStop(0.0, "rgba(0, 0, 0, 0.7)");
+        gradient.addColorStop(0.3, "rgba(0, 0, 0, 0.5)");
+        gradient.addColorStop(0.6, "rgba(0, 0, 0, 0.25)");
         gradient.addColorStop(1, "rgba(0,0,0,0)");
         ctx.fillStyle = gradient;
         ctx.fillRect(0, 0, size, size);
@@ -400,16 +410,106 @@ const PlayerModel = ({
     return (
         <group>
             <primitive object={clone} scale={[scale, scale, scale]} />
-            {/* Blob shadow — soft radial circle on the ground for visual grounding */}
-            <mesh ref={blobShadowRef} rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.05, 0]}>
-                <planeGeometry args={[2.5, 2.5]} />
-                <meshBasicMaterial map={blobShadowTexture} transparent depthWrite={false} />
-            </mesh>
         </group>
     );
 };
 
 export default memo(PlayerModel);
+
+/**
+ * ContactShadow — Scene-level contact shadow that follows a character.
+ * Uses raycast (High/Ultra) or simple ground projection (Low/Medium/None).
+ * Must be rendered as a sibling to the character, not a child.
+ */
+function ContactShadow({characterRef, isLocalPlayer = true}) {
+    const {scene} = useThree();
+    const shadowQuality = useGameStore((state) => state.settings.shadowQuality);
+    const useRaycastShadow = shadowQuality === "High" || shadowQuality === "Ultra";
+
+    const shadowRef = useRef();
+    const raycasterRef = useRef(new THREE.Raycaster());
+    const frameCounterRef = useRef(0);
+    const lastHitPointRef = useRef(new THREE.Vector3(0, 0, 0));
+    const lastCharacterPosRef = useRef(new THREE.Vector3());
+
+    // Create shadow texture
+    const shadowTexture = useMemo(() => {
+        const size = 150;
+        const canvas = document.createElement("canvas");
+        canvas.width = canvas.height = size;
+        const ctx = canvas.getContext("2d");
+        const half = size / 2;
+        const gradient = ctx.createRadialGradient(half, half, 0, half, half, half);
+        gradient.addColorStop(0.0, "rgba(0, 0, 0, 0.7)");
+        gradient.addColorStop(0.3, "rgba(0, 0, 0, 0.5)");
+        gradient.addColorStop(0.6, "rgba(0, 0, 0, 0.25)");
+        gradient.addColorStop(1, "rgba(0,0,0,0)");
+        ctx.fillStyle = gradient;
+        ctx.fillRect(0, 0, size, size);
+        const tex = new THREE.CanvasTexture(canvas);
+        tex.colorSpace = THREE.SRGBColorSpace;
+        return tex;
+    }, []);
+
+    useFrame(() => {
+        if (!shadowRef.current || !characterRef.current) return;
+
+        const character = characterRef.current;
+        const worldPos = new THREE.Vector3();
+        character.getWorldPosition(worldPos);
+
+        // Hide if character is below world (falling off map)
+        if (worldPos.y < -1) {
+            shadowRef.current.visible = false;
+            return;
+        }
+        shadowRef.current.visible = true;
+
+        // Update X/Z to follow character horizontally
+        shadowRef.current.position.x = worldPos.x;
+        shadowRef.current.position.z = worldPos.z;
+
+        if (useRaycastShadow) {
+            // Raycast from character's feet level to find surface they're standing on
+            // This works for: ground, top of obstacles, AND inside obstacles
+            frameCounterRef.current++;
+            if (frameCounterRef.current % 3 === 0) {
+                // Start slightly above feet to avoid self-intersection, but low enough to hit interior surfaces
+                const rayOrigin = new THREE.Vector3(worldPos.x, worldPos.y + 0.1, worldPos.z);
+                raycasterRef.current.set(rayOrigin, new THREE.Vector3(0, -1, 0));
+                raycasterRef.current.far = 60;
+                // Get all intersections, then filter out player objects
+                const allIntersects = raycasterRef.current.intersectObjects(scene.children, true);
+                const intersects = allIntersects.filter((hit) => {
+                    const obj = hit.object;
+                    if (obj.userData?.type === "player") return false;
+                    if (obj.parent?.userData?.type === "player") return false;
+                    return true;
+                });
+                if (intersects.length > 0) {
+                    lastHitPointRef.current.copy(intersects[0].point);
+                }
+            }
+            // Lerp Y to hit point
+            const targetY = lastHitPointRef.current.y + 0.05;
+            shadowRef.current.position.y += (targetY - shadowRef.current.position.y) * 0.3;
+        } else {
+            // Simple ground projection
+            shadowRef.current.position.y = 0.05;
+        }
+    });
+
+    if (!isLocalPlayer) return null; // Only show for local player for now
+
+    return (
+        <mesh ref={shadowRef} rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.05, 0]}>
+            <planeGeometry args={[3.5, 3.5]} />
+            <meshBasicMaterial map={shadowTexture} transparent depthWrite={false} opacity={1} />
+        </mesh>
+    );
+}
+
+export {ContactShadow};
 
 useGLTF.preload("skins/skin_avo.glb");
 useGLTF.preload("skins/skin_egg.glb");

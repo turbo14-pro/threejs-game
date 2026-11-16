@@ -11,20 +11,30 @@ import NetworkStatus from "./components/UI/NetworkStatus.jsx";
 import NowPlaying from "./components/UI/NowPlaying.jsx";
 
 function ShadowUpdater() {
-    const {gl} = useThree();
+    const {gl, scene} = useThree();
     const shadowQuality = useGameStore((state) => state.settings.shadowQuality);
     const shadowType = getShadowMapType(shadowQuality);
 
     useEffect(() => {
-        if (shadowType != null) {
+        if (shadowType != null && shadowQuality !== "None") {
             gl.shadowMap.enabled = true;
             gl.shadowMap.type = shadowType;
         } else {
             gl.shadowMap.enabled = false;
         }
-        // Force materials to recompile with new shadow settings
+        // Force shadow map recreation
         gl.shadowMap.needsUpdate = true;
-    }, [shadowType, gl]);
+
+        // Force all materials in scene to recompile with new shadow settings
+        scene.traverse((object) => {
+            if (object.isMesh && object.material) {
+                const materials = Array.isArray(object.material) ? object.material : [object.material];
+                materials.forEach((material) => {
+                    material.needsUpdate = true;
+                });
+            }
+        });
+    }, [shadowType, gl, scene, shadowQuality]);
 
     return null;
 }
@@ -72,13 +82,13 @@ export default function App() {
                 <Canvas
                     id="game-canvas"
                     shadows
-                    gl={{antialias: false, toneMapping: THREE.NoToneMapping}}
+                    gl={{antialias: true, toneMapping: THREE.NoToneMapping, toneMappingExposure: 0.9}}
                     camera={{position: [0, 50, 100], fov: 75, near: 0.5, far: 2000}}
                     style={{position: "absolute", top: 0, left: 0, zIndex: 0}}>
                     <Suspense fallback={null}>
                         <ShadowUpdater />
                         <color attach="background" args={["#958164"]} />
-                        <fogExp2 attach="fog" args={["#958164", 0.004]} />
+                        <fogExp2 attach="fog" args={["#6b8fc7", 0.0035]} />
                         <GameCanvas sendUpdate={sendUpdate} />
                     </Suspense>
                 </Canvas>

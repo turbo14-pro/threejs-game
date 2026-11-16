@@ -1,10 +1,9 @@
-import React, {useEffect, useRef} from "react";
-import "@imsvidskiy/glass-surface/glass-surface.css";
+import React, {useEffect, useRef, useMemo, useCallback} from "react";
 import "./GlassSurface.css";
 import {GlassSurface as BaseGlassSurface} from "@imsvidskiy/glass-surface-react";
 
 /**
- * GlassSurface component - wraps @imsvidskiy/glass-surface-react
+ * GlassSurface component - wraps the local @imsvidskiy/glass-surface-react
  *
  * Props:
  * - width: number (optional - omit to let CSS control width)
@@ -25,6 +24,9 @@ import {GlassSurface as BaseGlassSurface} from "@imsvidskiy/glass-surface-react"
  * - refraction?: boolean (optional)
  * - renderer?: 'auto' | 'webgl' | 'svg' (optional)
  * - children?: React.ReactNode (optional)
+ * - maxTiltAngle?: number (optional, default 20) - maximum tilt in degrees
+ * - lerpFactor?: number (optional, default 0.05) - smoothing factor for tilt animation
+ * - dynamicDisplaceSrc?: string (optional) - URL for dynamic displacement backdrop
  */
 export default function GlassSurface({
     width,
@@ -48,29 +50,37 @@ export default function GlassSurface({
     dynamicDisplaceSrc,
     style,
     className,
+    maxTiltAngle = 20,
+    lerpFactor = 0.05,
 }) {
-    const finalBackdrop = dynamicDisplaceSrc ? (
-        <img src={dynamicDisplaceSrc} width="100%" height="100%" style={{objectFit: "cover"}} />
-    ) : (
-        backdrop
-    );
+    // Memoize backdrop to prevent re-creation on every render
+    const finalBackdrop = useMemo(() => {
+        if (dynamicDisplaceSrc) {
+            return <img src={dynamicDisplaceSrc} width="100%" height="100%" style={{objectFit: "cover"}} />;
+        }
+        return backdrop;
+    }, [dynamicDisplaceSrc, backdrop]);
+
     // Default to fluid dimensions so CSS controls sizing; base component would otherwise emit 200x80 inline.
     const resolvedWidth = width ?? "100%";
     const resolvedHeight = height ?? "auto";
 
-    const angle = 20;
     const surfaceRef = useRef(null);
 
-    const lerp = (start, end, amount) => {
+    const lerp = useCallback((start, end, amount) => {
         return (1 - amount) * start + amount * end;
-    };
+    }, []);
 
-    const remap = (value, oldMax, newMax) => {
+    const remap = useCallback((value, oldMax, newMax) => {
         const newValue = ((value + oldMax) * (newMax * 2)) / (oldMax * 2) - newMax;
         return Math.min(Math.max(newValue, -newMax), newMax);
-    };
+    }, []);
 
     useEffect(() => {
+        // Respect prefers-reduced-motion
+        const prefersReduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+        if (prefersReduced) return;
+
         const card = surfaceRef.current?.querySelector(".glass-surface");
         if (!card) return;
 
@@ -82,8 +92,8 @@ export default function GlassSurface({
             const posY = event.clientY - centerY;
             // Normalize against the window (not the card) so the tilt tracks the mouse
             // anywhere inside .menu, which fills the whole window.
-            const x = remap(posX, window.innerWidth / 2, angle);
-            const y = remap(posY, window.innerHeight / 2, angle);
+            const x = remap(posX, window.innerWidth / 2, maxTiltAngle);
+            const y = remap(posY, window.innerHeight / 2, maxTiltAngle);
             card.dataset.rotateX = x;
             card.dataset.rotateY = -y;
         };
@@ -104,8 +114,8 @@ export default function GlassSurface({
             if (isNaN(currentY)) currentY = 0;
             const targetX = parseFloat(card.dataset.rotateX) || 0;
             const targetY = parseFloat(card.dataset.rotateY) || 0;
-            const x = lerp(currentX, targetX, 0.05);
-            const y = lerp(currentY, targetY, 0.05);
+            const x = lerp(currentX, targetX, lerpFactor);
+            const y = lerp(currentY, targetY, lerpFactor);
             card.style.setProperty("--rotateY", x + "deg");
             card.style.setProperty("--rotateX", y + "deg");
             rafId = requestAnimationFrame(update);
@@ -117,7 +127,7 @@ export default function GlassSurface({
             document.documentElement.removeEventListener("mouseleave", handleMouseLeave);
             cancelAnimationFrame(rafId);
         };
-    }, []);
+    }, [maxTiltAngle, lerpFactor, remap, lerp]);
 
     return (
         <div ref={surfaceRef} style={{display: "contents"}}>

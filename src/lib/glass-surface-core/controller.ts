@@ -6,8 +6,9 @@ import {
   createLineMask,
   createShapeMap,
   type ShapeMapInput,
-} from "./shape/shape-maps";
-import { supportsSvgBackdropFilter } from "./support";
+} from "./shape/shape-masks";
+
+import { supportsSvgBackdropFilter } from "./surface/support";
 import type {
   GlassMode,
   GlassSurfaceInput,
@@ -78,6 +79,7 @@ export function createGlassSurfaceController(
     displacementMap: "",
     mode: "fallback",
     shape: options.shape ? LOADING_SHAPE : NO_SHAPE,
+    size: FALLBACK_MAP_SIZE,
   };
 
   let element: HTMLElement | null = null;
@@ -110,7 +112,11 @@ export function createGlassSurfaceController(
   }
 
   function readSettings(): RendererSettings {
-    return { ...options, displacementMap: state.displacementMap };
+    return {
+      ...options,
+      displacementMap: state.displacementMap,
+      targetFPS: options.targetFPS ?? 60,
+    };
   }
 
   function resolveMode(): GlassMode {
@@ -263,12 +269,21 @@ export function createGlassSurfaceController(
     }
 
     try {
-      renderer = createWebglRenderer({
+      const webglRenderer = createWebglRenderer({
         canvas,
         element,
         onFailure: handleWebglFailure,
-        readSettings,
+        readMap: readMap,
+        readOptions,
       });
+
+      if (webglRenderer === null) {
+        // WebGL 2 unavailable - trigger fallback
+        handleWebglFailure();
+        return;
+      }
+
+      renderer = webglRenderer;
     } catch {
       handleWebglFailure();
     }

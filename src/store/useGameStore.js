@@ -64,7 +64,7 @@ export const useGameStore = create(
                 // --- PLAYER STATE ---
                 player: {
                     username: "Guest Player",
-                    selectedSkin: SKINS[0].id,
+                    selectedSkin: "egg", // Default to "egg" skin
                     health: 100,
                     isHiding: false,
                     isGrounded: true,
@@ -77,7 +77,7 @@ export const useGameStore = create(
                         wins: 0,
                         gamesPlayed: 0,
                     },
-                    unlockedSkins: [SKINS[0].id],
+                    unlockedSkins: ["egg", "avo"], // Both skins unlocked by default
                     achievements: [],
                 },
 

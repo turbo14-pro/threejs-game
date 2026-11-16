@@ -4,7 +4,13 @@
  * Adding a track = drop .ogg in public/music/ + add entry to manifest.json.
  */
 
-const MANIFEST_URL = "/music/manifest.json";
+/**
+ * Base URL of the deployed app ("/" for dev, "./" for the relative itch.io build).
+ * Absolute paths break when the game is hosted from a subdirectory.
+ */
+const BASE_URL = import.meta.env.BASE_URL || "/";
+
+const MANIFEST_URL = `${BASE_URL}music/manifest.json`;
 
 let _tracksCache = null;
 let _loadPromise = null;
@@ -80,12 +86,12 @@ export async function getTrackById(id) {
 }
 
 /**
- * Construct the full public URL for a track file.
+ * Construct the URL for a track file, relative to the app base.
  * @param {string} file - Filename from manifest (e.g., "track-01.ogg")
- * @returns {string} - Full URL (e.g., "/music/track-01.ogg")
+ * @returns {string} - URL (e.g., "/music/track-01.ogg" in dev, "./music/track-01.ogg" in the itch build)
  */
 export function getTrackUrl(file) {
-    return `/music/${file}`;
+    return `${BASE_URL}music/${file}`;
 }
 
 /**

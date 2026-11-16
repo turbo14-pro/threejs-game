@@ -158,7 +158,7 @@ export default function RemotePlayer({ data }) {
           isSprinting={data.anim?.spr}
           jumpPhase={data.anim?.jp}
           isSliding={data.anim?.sl}
-          skinOverride={data.skin || 'avo'} 
+          skinOverride={data.skin || 'egg'} 
         />
       </group>
     </RigidBody>

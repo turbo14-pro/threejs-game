@@ -1,8 +1,20 @@
 {
-    "name": "three.js",
-    "version": "0.0.0",
+    "name": "food-frenzy",
+    "version": "1.0.0",
     "private": true,
     "type": "module",
+    "description": "A 3D multiplayer food fight game built with React, Three.js, and Rapier physics",
+    "author": "Food Frenzy Team",
+    "license": "MIT",
+    "keywords": [
+        "game",
+        "multiplayer",
+        "3d",
+        "threejs",
+        "react",
+        "rapier",
+        "physics"
+    ],
     "scripts": {
         "dev": "vite",
         "build": "vite build",
@@ -11,7 +23,8 @@
         "test:e2e": "playwright test",
         "lint": "eslint src/ server/ --ext .js,.jsx,.mjs",
         "deploy": "npm run build && node deploy.cjs",
-        "server": "node server/ws-server.js"
+        "server": "node server/ws-server.js",
+        "build:itch": "npm run build && echo 'Build ready for itch.io upload in dist/'"
     },
     "devDependencies": {
         "@eslint/js": "^9.7.0",
@@ -35,7 +48,6 @@
         "@geckos.io/client": "^3.1.0",
         "@geckos.io/server": "^3.1.0",
         "@geckos.io/snapshot-interpolation": "^1.1.1",
-        "@imsvidskiy/glass-surface-react": "^2.0.0",
         "@react-three/drei": "^10.7.7",
         "@react-three/fiber": "^9.5.0",
         "@react-three/postprocessing": "^3.0.4",

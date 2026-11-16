@@ -1,0 +1,14 @@
+{
+  "lastVerifiedSnapshotId": "cycle-0-mwincepd",
+  "snapshots": [
+    {
+      "id": "cycle-0-mwincepd",
+      "cycle": 0,
+      "label": "Initial clean workspace baseline",
+      "timestamp": 1794796246129,
+      "verified": true,
+      "backend": "git",
+      "commitSha": "2b69468a382b4b0df6428b73d7f5acd9c9ade85d"
+    }
+  ]
+}

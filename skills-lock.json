@@ -1,57 +1,63 @@
 {
-  "version": 1,
+  "version": 2,
   "skills": {
+    "create-agentsmd": {
+      "source": "github/awesome-copilot",
+      "sourceType": "github",
+      "skillPath": "skills/create-agentsmd/SKILL.md",
+      "computedHash": "f10ebeba6ba37b0c8028e73cfb5f4708bc39fd247f3430f3cc4092cab66b2f28"
+    },
     "folder-organization": {
       "source": "delphine-l/claude_global",
       "sourceType": "github",
-      "computedHash": "53861ab5d1b207c5a3092d94d671374770f151be5a2fd86032749aefdcfc36d2"
+      "computedHash": ""
     },
     "game-engine": {
       "source": "github/awesome-copilot",
       "sourceType": "github",
       "skillPath": "skills/game-engine/SKILL.md",
-      "computedHash": "20057f62cf7a8b2d9f940b3de0b18e5426e8f4bb50e236d36b1033aa0d42c4d8"
+      "computedHash": ""
     },
     "game-performance-optimization": {
       "source": "shyamsridhar123/chadpowers-superbowl",
       "sourceType": "github",
-      "computedHash": "3b75b6409cda07c92bbd873b41a26a60c76430501f0ae93c9a2f09bdbdcf43f9"
+      "computedHash": ""
     },
     "mobile-touch-controls": {
       "source": "shyamsridhar123/chadpowers-superbowl",
       "sourceType": "github",
-      "computedHash": "8356d847e01352472e55945edd2b2b7fee25918d1bb9bfd54bd33b4c72504519"
+      "computedHash": ""
     },
     "multiplayer-game": {
       "source": "rivet-dev/skills",
       "sourceType": "github",
       "skillPath": "multiplayer-game/SKILL.md",
-      "computedHash": "cf0f19244f1314e7d32820bd60e89dee7eeba6581a006569b6073714cdc6e124"
+      "computedHash": ""
     },
     "rapier-physics-worker": {
       "source": "shyamsridhar123/chadpowers-superbowl",
       "sourceType": "github",
-      "computedHash": "9835e61319cad192b8966656d193559d232aedfce4557c58c60988a3b3fbf8b9"
+      "computedHash": ""
     },
     "react-three-fiber": {
       "source": "vercel-labs/json-render",
       "sourceType": "github",
-      "computedHash": "33cfac131cbe9c89b14c4b49ca01e0b0a4a3f9c23bb6c81ac0514143703283e8"
+      "computedHash": ""
     },
     "threejs-builder": {
       "source": "chongdashu/cc-skills-nanobananapro",
       "sourceType": "github",
-      "computedHash": "a9df0ad7680ff0a018f55daebabeb1cee9f0a5ea98306c9bc1fd65d0211c51c1"
+      "computedHash": ""
     },
     "threejs-pro": {
       "source": "404kidwiz/claude-supercode-skills",
       "sourceType": "github",
-      "computedHash": "d301a9fda758128cea3259a7578c0a0b5f0cf871d8f684476dd231f301ae4f7d"
+      "computedHash": ""
     },
     "threejs-webgpu-rendering": {
       "source": "shyamsridhar123/chadpowers-superbowl",
       "sourceType": "github",
-      "computedHash": "7c2bfccf8b0fd44fd938569a4f087522d63ef215d645a2e94552fbd15422f730"
+      "computedHash": ""
     }
   }
 }
