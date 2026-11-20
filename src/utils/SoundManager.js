@@ -236,7 +236,7 @@ class SoundManager {
                     this.listener.context.resume().catch(() => {});
                 }
             } catch {}
-            debugLog("[Sound] AudioListener initialized on camera");
+
             this.masterGain = null; // Not used for connect (THREE.Audio.connect expects Audio nodes)
             // masterVolume keeps its constructor default (1.0) — never reset here.
             this._initReverb();
@@ -265,7 +265,6 @@ class SoundManager {
 
             this.reverb.connect(this.reverbGain);
             this.reverbGain.connect(ctx.destination);
-            debugLog("[Sound] Reverb initialized");
         } catch (e) {
             debugWarn("[Sound] Reverb init failed", e);
         }
@@ -281,7 +280,6 @@ class SoundManager {
             this.musicGain = ctx.createGain();
             this.musicGain.gain.value = this.musicVolume;
             this.musicGain.connect(ctx.destination);
-            debugLog("[Sound] Music gain initialized");
         } catch (e) {
             debugWarn("[Sound] Music init failed", e);
         }
@@ -336,8 +334,6 @@ class SoundManager {
         audio.play().catch((e) => {
             debugWarn("[Sound] Music play failed (autoplay policy?)", e);
         });
-
-        debugLog(`[Sound] Music started: ${track.title} by ${track.artist}`);
     }
 
     // Crossfade to next track. Uses the Web Audio API GainNode for the
@@ -400,7 +396,6 @@ class SoundManager {
                 this.nextMusicElement = null;
                 this.nextMusicSource = null;
                 this.musicCrossfadeTimer = null;
-                debugLog(`[Sound] Crossfade complete: ${nextTrack.title} by ${nextTrack.artist}`);
             }
         };
 
@@ -554,7 +549,7 @@ class SoundManager {
                     current.volume = 0;
                     other.volume = this._ambientTargetVolume;
                     active = active === "A" ? "B" : "A";
-                    debugLog(`[AmbientBed] Looped → zone=${this._reverbZone} bed=${active}`);
+
                     // Schedule next crossfade after the other bed plays for (duration - crossfadeTime)
                     // This keeps both beds overlapping continuously, masking any OGG gap.
                     fadeTimer = setTimeout(startCrossfade, (duration - crossfadeTime) * 1000);
@@ -853,7 +848,7 @@ class SoundManager {
                 url,
                 (buffer) => {
                     this.sounds.set(name, buffer);
-                    debugLog(`[Sound] Loaded: ${name}`);
+                    debugLog("sound", `[Sound] Loaded: ${name}`);
                     resolve(buffer);
                 },
                 undefined,

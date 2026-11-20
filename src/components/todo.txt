@@ -1,0 +1,2 @@
+1. Replace GameCanvas with CanvasWithErrorBoundary in App.jsx
+2. Verify ErrorBoundary works by testing Canvas error handling

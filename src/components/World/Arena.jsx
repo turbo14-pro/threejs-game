@@ -344,7 +344,7 @@ export default function Arena() {
         const dist = Math.sqrt(dx * dx + dz * dz);
         if (dist < 4 && !buttonTriggered.current) {
             buttonTriggered.current = true;
-            debugLog("START BUTTON: DISTANCE TRIGGER — spawning (dist:", dist.toFixed(1), ")");
+            debugLog("arena", "START BUTTON: DISTANCE TRIGGER — spawning (dist:", dist.toFixed(1), ")");
             useGameStore.getState().spawnPlayerAtRandomLocation();
         } else if (dist >= 6) {
             buttonTriggered.current = false;
@@ -387,11 +387,12 @@ export default function Arena() {
                     position={[0, 0.2, -0.51]}
                     rotation={[0, Math.PI * 1, 0]}
                     fontSize={1.3}
-                    color="#FFFFFF"
+                    color="#afafaf"
                     emissiveIntensity={0}
                     anchorX="center"
                     anchorY="middle"
                     outlineWidth={0.0}
+                    opacity="0.5"
                     outlineColor="#9900ff">
                     Choose a skin
                 </TextDrei>

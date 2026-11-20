@@ -30,20 +30,20 @@ export const PLAYER_BASELINE = {
         stunDuration: 1.2, // seconds player is stunned after knockback
     },
     dash: {
-        cooldown: 1, // seconds between dashes
-        duration: 0.3, // seconds (no power-up)
+        cooldown: 0.5, // seconds between dashes
+        duration: 1, // seconds (no power-up)
         dashSpeed: 150, // units/sec during dash
-        maxDistance: 6, // max travel distance for a dash
-        speedMultiplier: 1, // multiplier applied to dash velocity
+        maxDistance: 4, // max travel distance for a dash
+        speedMultiplier: 2, // multiplier applied to dash velocity
     },
     radialBlur: {
-        defaultIntensity: 0.8, // fallback intensity
+        defaultIntensity: 9.8, // fallback intensity
         lerpSpeed: 0.15, // lerp factor per frame
     },
     shockwave: {
-        baseSize: 30, // max size multiplier
-        baseAmplitude: 5.5, // base wave amplitude
-        duration: 0.8, // seconds (doubled for slower decay)
+        baseSize: 15, // max size multiplier
+        baseAmplitude: 9.5, // base wave amplitude
+        duration: 0.5, // seconds (doubled for slower decay)
     },
 };
 
@@ -107,7 +107,7 @@ export const PLAYER_ACTIONS = {
     },
     dashBoost: {
         effect: "radialBlur",
-        intensity: {none: 0, bronze: 3, silver: 5, gold: 7, diamond: 9},
+        intensity: {none: 0, bronze: 0.5, silver: 1.0, gold: 1.5, diamond: 2.0},
     },
 };
 

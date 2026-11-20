@@ -42,8 +42,12 @@ export function useNetworking() {
         // --- DEBUG TRACE: START ---
         const isDev = import.meta.env.DEV;
 
-        debugLog("%c 📡 [Network Trace] Starting WS Connection Sequence...", "color: #00ff88; font-weight: bold;");
-        debugLog("   > Mode:", isDev ? "DEVELOPMENT" : "PRODUCTION");
+        debugLog(
+            "multiplayer",
+            "%c 📡 [Network Trace] Starting WS Connection Sequence...",
+            "color: #00ff88; font-weight: bold;"
+        );
+        debugLog("multiplayer", "   > Mode:", isDev ? "DEVELOPMENT" : "PRODUCTION");
 
         // Derive the WS URL via the central env config (single source of truth).
         let serverConfig;
@@ -56,7 +60,7 @@ export function useNetworking() {
         }
         const {wsUrl} = serverConfig;
 
-        debugLog("   > WS URL:", wsUrl);
+        debugLog("multiplayer", "   > WS URL:", wsUrl);
 
         // Tell the UI we are looking for the server
         setNetworkStatus("CONNECTING");
@@ -66,10 +70,14 @@ export function useNetworking() {
         ws.binaryType = "arraybuffer";
         wsRef.current = ws;
 
-        debugLog("   > WebSocket Created. Waiting for open...");
+        debugLog("multiplayer", "   > WebSocket Created. Waiting for open...");
 
         ws.onopen = () => {
-            debugLog("%c ✅ [Network Trace] WS Handshake Success!", "color: #00ff88; font-weight: bold;");
+            debugLog(
+                "multiplayer",
+                "%c ✅ [Network Trace] WS Handshake Success!",
+                "color: #00ff88; font-weight: bold;"
+            );
             setNetworkStatus("ONLINE");
 
             // Send initial player info (skin, position) as a pos message
@@ -96,7 +104,7 @@ export function useNetworking() {
                     // Server assigns our playerId — store it for tagging inputs
                     playerIdRef.current = data.playerId;
                     setNetworkId(data.playerId);
-                    debugLog("   > Assigned playerId:", data.playerId);
+                    debugLog("multiplayer", "   > Assigned playerId:", data.playerId);
                     break;
                 }
 
@@ -126,7 +134,7 @@ export function useNetworking() {
                 case "impact": {
                     const localId = useGameStore.getState().player.networkId;
                     if (data.victimId === localId) {
-                        debugLog("🛡️ Received IMPACT! Applying knockback.");
+                        debugLog("multiplayer", "🛡️ Received IMPACT! Applying knockback.");
                         triggerKnockback(
                             {x: data.dir[0], y: data.dir[1], z: data.dir[2]},
                             250 * (data.slideMultiplier || 1)
@@ -159,7 +167,7 @@ export function useNetworking() {
         };
 
         ws.onclose = () => {
-            debugLog("   > WS Connection closed.");
+            debugLog("multiplayer", "   > WS Connection closed.");
             wsRef.current = null;
             playerIdRef.current = null;
             setNetworkStatus("OFFLINE");

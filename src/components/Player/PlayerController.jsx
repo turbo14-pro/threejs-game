@@ -102,6 +102,7 @@ export default function PlayerController({sendUpdate}) {
     const selectedSkin = useGameStore((state) => state.player.selectedSkin);
     const triggerRipple = useGameStore((state) => state.triggerRipple);
     const addShockwave = useGameStore((state) => state.addShockwave);
+    const triggerSlideImpact = useGameStore((state) => state.triggerSlideImpact);
     const knockbackCount = useGameStore((state) => state.knockbackCount);
     const knockbackDir = useGameStore((state) => state.knockbackDir);
     const knockbackForce = useGameStore((state) => state.knockbackForce);
@@ -164,9 +165,8 @@ export default function PlayerController({sendUpdate}) {
                 // 0.15m was too tight for 33ms tick interval + variable client frame rate
                 if (diff > 0.3) {
                     debugLog(
-                        `[Reconciliation] Desync detected at tick ${serverState.tick}! Diff: ${diff.toFixed(
-                            2
-                        )}m. Snapping...`
+                        "multiplayer",
+                        `Desync detected at tick ${serverState.tick}! Diff: ${diff.toFixed(2)}m. Snapping...`
                     );
 
                     // Increment desync counter for LatencyGraph
@@ -233,7 +233,7 @@ export default function PlayerController({sendUpdate}) {
                     const velDiff = Math.sqrt(Math.pow(clientVel.x - sVel[0], 2) + Math.pow(clientVel.z - sVel[2], 2));
                     if (velDiff > 5) {
                         // Significant velocity mismatch
-                        debugLog(`[Reconciliation] Velocity drift: ${velDiff.toFixed(2)}. Correcting...`);
+                        debugLog("multiplayer", `Velocity drift: ${velDiff.toFixed(2)}. Correcting...`);
                         rigidBodyRef.current.setLinvel({x: sVel[0], y: sVel[1], z: sVel[2]}, true);
                     }
                 }
@@ -432,7 +432,6 @@ export default function PlayerController({sendUpdate}) {
             (state) => state.teleportCount,
             (count) => {
                 if (count > 0) {
-                    debugLog("🚀 Teleport fired, count:", count);
                     if (soundManager && soundManager.listener)
                         soundManager.playPositional("teleport", playerGroupRef.current, 1, 10, 1.0, 50, false);
 
@@ -537,7 +536,6 @@ export default function PlayerController({sendUpdate}) {
             (state) => state.respawnCount,
             (count) => {
                 if (count > 0 && rigidBodyRef.current) {
-                    debugLog("🔄 Respawning Player to Platform 1", count);
                     pendingRespawn.current = true;
                 }
             }
@@ -550,7 +548,6 @@ export default function PlayerController({sendUpdate}) {
     // This ensures the server knows our skin from the start.
     useEffect(() => {
         if (sendUpdate && selectedSkin) {
-            debugLog("👗 Sending Skin Update to Server:", selectedSkin);
             sendUpdate({skin: selectedSkin});
         }
     }, [selectedSkin, sendUpdate]);
@@ -558,7 +555,6 @@ export default function PlayerController({sendUpdate}) {
     // Also send skin immediately on mount (in case it's the default and hasn't "changed")
     useEffect(() => {
         if (sendUpdate && selectedSkin) {
-            debugLog("👗 Sending Initial Skin to Server:", selectedSkin);
             sendUpdate({skin: selectedSkin});
         }
     }, [sendUpdate]); // Only run once on mount
@@ -592,7 +588,8 @@ export default function PlayerController({sendUpdate}) {
         }
     }, [knockbackCount]);
 
-    console.time("useFrame");
+    //logs useFrame time to console
+    //console.time("useFrame");
     useFrame((state, delta) => {
         if (gameState !== "PLAYING" || !rigidBodyRef.current || !playerGroupRef.current) {
             // Publish the player's world position even when the match isn't live. Power-up
@@ -644,7 +641,8 @@ export default function PlayerController({sendUpdate}) {
                 gp.buttons.some((b) => b.pressed);
             if (active)
                 debugLog(
-                    "[Gamepad] axes:",
+                    "gamepad",
+                    "axes:",
                     {
                         lx: gp.axes.lx.toFixed(2),
                         ly: gp.axes.ly.toFixed(2),
@@ -741,7 +739,7 @@ export default function PlayerController({sendUpdate}) {
                         try {
                             useGameStore.getState().setPendingTeleportTarget(null);
                         } catch {}
-                        debugLog(`✅ Teleport confirmed at (${t.x.toFixed(1)}, ${t.y}, ${t.z.toFixed(1)})`);
+                        debugLog("teleport", `✅ Teleport confirmed at (${t.x.toFixed(1)}, ${t.y}, ${t.z.toFixed(1)})`);
                     } else {
                         // Re-apply: wake, translate, zero velocity — loop keeps firing
                         try {
@@ -750,11 +748,7 @@ export default function PlayerController({sendUpdate}) {
                             rigidBodyRef.current.setLinvel({x: 0, y: 0, z: 0}, true);
                             rigidBodyRef.current.setAngvel({x: 0, y: 0, z: 0}, true);
                         } catch {}
-                        debugLog(
-                            `🔁 Teleport re-applied (dist ${dist.toFixed(1)}m): (${t.x.toFixed(1)}, ${
-                                t.y
-                            }, ${t.z.toFixed(1)})`
-                        );
+
                         if (sendUpdate) sendUpdate({pos: [t.x, t.y, t.z], force: true});
                     }
                 }
@@ -786,7 +780,6 @@ export default function PlayerController({sendUpdate}) {
             } catch {
                 debugWarn("Pointer lock request failed");
             }
-            debugLog("🔄 Respawn applied → Platform 1");
             if (sendUpdate) sendUpdate({pos: [0, 103, 0], force: true});
             return;
         }
@@ -882,6 +875,14 @@ export default function PlayerController({sendUpdate}) {
                 rigidBodyRef.current.setLinvel({x: 0, y: rigidBodyRef.current.linvel().y, z: 0}, true);
                 // Enable radial blur
                 useGameStore.getState().setDashBlur(true);
+                // Trigger rippleDisplace on dash (not shockwave)
+                triggerRipple();
+                debugLog(
+                    "powerup",
+                    "DASH ACTIVATED — powerUp:",
+                    dashPowerUp?.category || "none",
+                    dashPowerUp?.rarity || "none"
+                );
                 // --- Dash sound (same strategy as slide sound) ---
                 // Release any existing dash sound so a fresh one plays on every dash start.
                 if (dashSoundRef.current) {
@@ -916,6 +917,7 @@ export default function PlayerController({sendUpdate}) {
                 dashCooldown.current = getDashConfig(useGameStore.getState().powerUp?.rarity).cooldown;
                 rigidBodyRef.current.setLinvel({x: 0, y: vel.y, z: 0}, true);
                 useGameStore.getState().setDashBlur(false);
+                debugLog("dash", "DASH ENDED");
                 // Start rapid fade-out of the dash sound when dash ends.
                 if (dashSoundRef.current) {
                     dashFadeRef.current = true;
@@ -1017,7 +1019,7 @@ export default function PlayerController({sendUpdate}) {
             const slideDuration = Math.max(0.1, Math.min(0.6, slideHSpeed / 10));
             slideTimer.current = slideDuration;
             intendedSlideDuration.current = slideDuration;
-            debugLog("[SlideSound] Slide duration=", slideDuration.toFixed(2), "hSpeed=", slideHSpeed.toFixed(2));
+
             // Add a burst of speed
             direction.multiplyScalar(1.5);
             // Ensure we don't carry upward momentum when starting a slide
@@ -1035,33 +1037,16 @@ export default function PlayerController({sendUpdate}) {
             //
             // Enable slide sound — plays at player position with volume based on horizontal speed
             const slideFlag = audioFlag("slideSound");
-            debugLog(
-                "[SlideSound] flag=",
-                slideFlag,
-                "existing=",
-                !!slideSoundRef.current,
-                "slidingInput=",
-                slidingInput,
-                "isSliding=",
-                isSliding,
-                "currentlyGrounded=",
-                currentlyGrounded,
-                "moving=",
-                moving,
-                "walkingInput=",
-                walkingInput
-            );
+
             if (!slideFlag) {
-                debugLog("[SlideSound] Blocked by slideSound flag = false");
             } else {
                 // Release any existing slide sound so a fresh one plays on every slide start.
                 // Without this, the old fading-out sound blocks creation of a new one.
                 if (slideSoundRef.current) {
-                    debugLog("[SlideSound] Releasing existing slide sound before creating new one");
                     stopLoopSound(slideSoundRef);
                     slideSoundRef.current = null;
                 }
-                debugLog("[SlideSound] Creating slide sound node");
+
                 slideSoundRef.current = soundManager.playPositional(
                     "slide",
                     playerGroupRef.current,
@@ -1070,14 +1055,6 @@ export default function PlayerController({sendUpdate}) {
                     1.0,
                     50,
                     false
-                );
-                debugLog(
-                    "[SlideSound] Created=",
-                    !!slideSoundRef.current,
-                    "isPlaying=",
-                    slideSoundRef.current?.isPlaying,
-                    "volume=",
-                    slideSoundRef.current?.volume
                 );
             }
         }
@@ -1090,11 +1067,10 @@ export default function PlayerController({sendUpdate}) {
                 // Cooldown scales with how brief the slide was — short slides (blocked)
                 // get a shorter cooldown, full slides get a longer one.
                 slideCooldown.current = Math.max(0.3, intendedSlideDuration.current * 2);
-                debugLog("[SlideSound] Slide ended, cooldown=", slideCooldown.current.toFixed(2));
+
                 // Start rapid fade-out of the slide sound when sliding stops.
                 if (audioFlag("slideSound") && slideSoundRef.current) {
                     slideFadeRef.current = true;
-                    debugLog("[SlideSound] Slide ended, starting rapid fade-out");
                 }
             }
         }
@@ -1104,7 +1080,6 @@ export default function PlayerController({sendUpdate}) {
         // after setIsSliding(false) has been called.
         if (slideFadeRef.current && slideSoundRef.current) {
             if (!audioFlag("slideSound")) {
-                debugLog("[SlideSound] Has sound node but flag is false, releasing");
                 stopLoopSound(slideSoundRef);
                 slideSoundRef.current = null;
                 slideFadeRef.current = false;
@@ -1115,24 +1090,21 @@ export default function PlayerController({sendUpdate}) {
                     const cur = Number.isFinite(slideSoundRef.current.volume) ? slideSoundRef.current.volume : 1.0;
                     const next = Math.max(0, cur - 6 * delta);
                     slideSoundRef.current.volume = next;
-                    debugLog("[SlideSound] Rapid fade volume=", next.toFixed(3), "delta=", delta.toFixed(4));
+
                     if (next <= 0.01) {
                         // P0-#2: defer the detach — an inline parent.remove() here splices
                         // the children array while three is traversing it.
                         stopLoopSound(slideSoundRef);
                         slideSoundRef.current = null;
                         slideFadeRef.current = false;
-                        debugLog("[SlideSound] Rapid fade complete, sound released");
                     }
                 } catch {
                     stopLoopSound(slideSoundRef);
                     slideSoundRef.current = null;
                     slideFadeRef.current = false;
-                    debugLog("[SlideSound] Rapid fade stopped due to error");
                 }
             }
         } else if (slideSoundRef.current && !audioFlag("slideSound")) {
-            debugLog("[SlideSound] Has sound node but flag is false, releasing");
             stopLoopSound(slideSoundRef);
             slideSoundRef.current = null;
         }
@@ -1653,7 +1625,8 @@ export default function PlayerController({sendUpdate}) {
             });
         }
     });
-    console.timeEnd("useFrame");
+    //logs useFrame time to console
+    //console.timeEnd("useFrame");
 
     /**
      * NEWTONIAN KNOCKBACK
@@ -1705,18 +1678,16 @@ export default function PlayerController({sendUpdate}) {
 
             // Only react to sliding attacks (not when we are the victim)
             if (isSlidingRef.current) {
-                debugLog("🛠️ LOCAL COLLISION: sliding:", isSlidingRef.current, "target:", other.userData?.id);
-                debugLog("💥 Slide IMPACT! Launching Victim...");
+                debugLog("impact", "🛠️ LOCAL COLLISION: sliding:", isSlidingRef.current, "target:", other.userData?.id);
+                debugLog("impact", "💥 Slide IMPACT! Launching Victim...");
 
                 // --- SLIDE TERMINATION ON IMPACT ---
                 // When a sliding player collides with an obstacle that impacts their
                 // velocity, end the slide immediately (animation + sound).
                 // A simple clip off the side won't trigger this — only real impacts.
                 if (isSliding && slideSoundRef.current) {
-                    debugLog("[SlideSound] Collision impact ending slide immediately");
                     setIsSliding(false);
                     slideFadeRef.current = true;
-                    debugLog("[SlideSound] Slide ended by collision, starting rapid fade-out");
                 }
 
                 // 1. PHYSICAL KICK (Newtonian Interaction)
@@ -1747,7 +1718,7 @@ export default function PlayerController({sendUpdate}) {
                 const UPWARD_POP = hasSpeedPowerUp
                     ? PLAYER_BASELINE.knockback.speedUpwardPop
                     : PLAYER_BASELINE.knockback.baseUpwardPop;
-                debugLog("🚀 BLASTING Victim with Force:", BLAST_POWER, "Up:", UPWARD_POP);
+                debugLog("collision", "🚀 BLASTING Victim with Force:", BLAST_POWER, "Up:", UPWARD_POP);
 
                 // Visual effects at the contact point (shared by both bot and human victims)
                 const contactPoint = e.contactPoint;
@@ -1789,6 +1760,7 @@ export default function PlayerController({sendUpdate}) {
                     );
                     if (impact.aggressor === "a") {
                         debugLog(
+                            "impact",
                             "🤖 Slide IMPACT! Player drove into bot:",
                             other.userData?.name,
                             `(closing ${impact.closingSpeed.toFixed(1)} m/s)`
@@ -1797,6 +1769,7 @@ export default function PlayerController({sendUpdate}) {
                         damageBot(other.userData.id, BOT_COMBAT.hitDamage, "local");
                         addShockwave(shockwavePos, shockwaveIntensity);
                         triggerRipple();
+                        triggerSlideImpact();
                         // Hit sound — volume scales with closing speed
                         const hitVol = computeHitVolume(impact.closingSpeed);
                         try {
@@ -1805,6 +1778,7 @@ export default function PlayerController({sendUpdate}) {
                     } else {
                         // The bot is driving into us — defer. Its slide system applies our knockback.
                         debugLog(
+                            "impact",
                             "🛡️ Bot drove into player:",
                             other.userData?.name,
                             `(closing ${impact.closingSpeed.toFixed(1)} m/s) — deferring to the bot's impact`
@@ -1827,9 +1801,9 @@ export default function PlayerController({sendUpdate}) {
                         }
                     } catch {}
 
-                    // Trigger visual effects instantly for attacker
-                    debugLog("💥 Calling triggerRipple() from collision handler");
-                    triggerRipple();
+                    // All impacts use shockwave
+                    addShockwave(shockwavePos, shockwaveIntensity);
+                    debugLog("impact", "💥 Impact — shockwave triggered");
 
                     // Hit sound — volume scales with closing speed (attacker's horizontal speed)
                     const hitVol = computeHitVolume(Math.hypot(worldVelocityRef.current.x, worldVelocityRef.current.z));
@@ -1852,7 +1826,7 @@ export default function PlayerController({sendUpdate}) {
             // end isSliding
             // 2. I am the VICTIM (A sliding player hit me!)
             else if (other.userData?.isSliding) {
-                debugLog("🛡️ Newtonian Victim-side Knockback!");
+                debugLog("impact", "🛡️ Newtonian Victim-side Knockback!");
 
                 // Reuse the snapshots — do NOT call other.translation()/linvel() again
                 // (re-entering WASM mid-callback trips the aliasing guard).
@@ -1893,6 +1867,7 @@ export default function PlayerController({sendUpdate}) {
                     } catch {}
                 }
                 debugLog(
+                    "impact",
                     "🥫 Victim hit! attackerSpeed:",
                     attackerSpeed,
                     "multiplier:",

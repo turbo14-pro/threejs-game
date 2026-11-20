@@ -18,6 +18,7 @@ export default function HUD() {
     const mobileInput = useGameStore((state) => state.mobileInput);
     const powerUp = useGameStore((state) => state.powerUp);
     const rippleDebug = useGameStore((state) => state.debugRipple);
+    const settings = useGameStore((state) => state.settings);
 
     const [isPaused, setIsPaused] = useState(false);
     const [showOptions, setShowOptions] = useState(false);
@@ -172,7 +173,7 @@ export default function HUD() {
             )}
 
             {/* Latency/FPS Display */}
-            {!isPaused && <LatencyGraph />}
+            {!isPaused && settings.displayFps && <LatencyGraph />}
 
             {!isPaused && rippleDebug?.enabled && (
                 <>

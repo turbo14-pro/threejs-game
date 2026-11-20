@@ -18,13 +18,13 @@ export default function EnvironmentSetup() {
             case "None":
                 return {enabled: false, size: 0, cameraSize: 0, bias: 0, normalBias: 0};
             case "Low":
-                return {enabled: true, size: 512, cameraSize: 300, bias: -0.002, normalBias: 0.03};
+                return {enabled: true, size: 512, cameraSize: 300, bias: -0.002, normalBias: 0.03, radius: 1};
             case "Medium":
-                return {enabled: true, size: 1024, cameraSize: 500, bias: -0.001, normalBias: 0.02};
+                return {enabled: true, size: 1024, cameraSize: 500, bias: -0.0005, normalBias: 0.015, radius: 1};
             case "High":
-                return {enabled: true, size: 2048, cameraSize: 600, bias: -0.0005, normalBias: 0.015};
+                return {enabled: true, size: 2048, cameraSize: 600, bias: -0.001, normalBias: 0.015, radius: 1.5};
             case "Ultra":
-                return {enabled: true, size: 4096, cameraSize: 700, bias: -0.00025, normalBias: 0.005};
+                return {enabled: true, size: 4096, cameraSize: 1024, bias: -0.001, normalBias: 0.0015, radius: 1.5};
             default:
                 return {enabled: true, size: 1024, cameraSize: 500, bias: -0.001, normalBias: 0.02};
         }
@@ -35,6 +35,7 @@ export default function EnvironmentSetup() {
     const shadowBias = shadowConfig.bias;
     const shadowNormalBias = shadowConfig.normalBias;
     const shadowsEnabled = shadowConfig.enabled;
+    const shadowRadius = shadowConfig.radius;
 
     // Configure texture for equirectangular mapping
     useEffect(() => {
@@ -54,11 +55,11 @@ export default function EnvironmentSetup() {
         if (!settings.skybox) {
             scene.background = cabinetColor;
             // Re-apply fog since setting scene.background can reset it
-            scene.fog = new THREE.FogExp2("#dfc3a2", 0.0045);
+            scene.fog = new THREE.FogExp2("#ac9173", 0.0045);
         } else {
             // Don't set background to null - let the skybox mesh show through
             scene.background = null;
-            scene.fog = new THREE.FogExp2("#dfc3a2", 0.0045);
+            scene.fog = new THREE.FogExp2("#514b44", 0.0045);
         }
     }, [settings.skybox, scene, cabinetColor]);
 
@@ -71,7 +72,7 @@ export default function EnvironmentSetup() {
      Key forces remount when quality tier changes (recreates shadow map properly). */}
             <directionalLight
                 key={settings.shadowQuality}
-                position={[200, 400, 500]}
+                position={[0, 400, 400]}
                 intensity={3.0}
                 color="#fff5e0"
                 castShadow={shadowsEnabled}
@@ -85,6 +86,7 @@ export default function EnvironmentSetup() {
                 shadow-camera-far={1200}
                 shadow-bias={shadowBias}
                 shadow-normalBias={shadowNormalBias}
+                shadow-radius={shadowRadius}
             />
             <directionalLight
                 position={[-150, 200, -300]}

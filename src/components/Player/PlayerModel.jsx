@@ -16,19 +16,29 @@ const applyCharacterMaterials = (material) => {
     material.onBeforeCompile = (shader) => {
         shader.uniforms.rimIntensity = {value: 130.0};
         shader.uniforms.rimColor = {value: new THREE.Color(1.0, 1.0, 1.0)};
-        // Enable bump scaling for all materials to ensure rim effect works
-        shader.uniforms.bumpScale = {value: 0.2};
 
-        // Append rim calculation to the end of the fragment shader
+        // NOTE: In three r183 the chunk is named <emissivemap_fragment> (no "e"
+        // after "emissiv"). The old <emissive_fragment> target never matched, so
+        // String.replace silently returned the shader unchanged and the rim code
+        // was never compiled — which is why intensity had no visible effect.
+        //
+        // Inject AFTER the `vec3 totalEmissiveRadiance = emissive;` declaration
+        // (which appears after this chunk in meshphysical.glsl.js) so the variable
+        // exists, and after <normal_fragment_begin> so `normal` is defined.
         shader.fragmentShader = shader.fragmentShader.replace(
             "#include <emissive_fragment>",
-            `#include <emissive_fragment>
-      vec3 rimNormal = normalize(normal);
-      vec3 viewDir = normalize(-vViewPosition);
-      float rim = pow(1.0 - clamp(dot(rimNormal, viewDir), 0.0, 1.0), 12.5) * rimIntensity;
-      totalEmissiveRadiance += rimColor * rim;
+            `#include <emissivmap_fragment>
+      {
+        vec3 rimNormal = normalize(normal);
+        vec3 viewDir = normalize(-vViewPosition);
+        float rim = pow(1.0 - dot(rimNormal, viewDir), 0.0, 1.0) * rimIntensity;
+        totalEmissiveRadiance += rimColor * rim;
+      }
     `
         );
+
+        // Ensure three compiles a fresh program for this patched material.
+        material.customProgramCacheKey = () => "character-rim-v1";
     };
     return material;
 };

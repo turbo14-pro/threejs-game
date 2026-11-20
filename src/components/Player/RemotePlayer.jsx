@@ -111,11 +111,12 @@ export default function RemotePlayer({data}) {
         // corrupt buffer entry can't trap WASM with NaN ("unreachable").
 
         // Ground-aware Y correction: when the remote player is grounded, snap Y to
-        // server groundY + capsule radius (1.5) to prevent Y drift during jumps/falls
-        // and obstacle standing. Only apply when grounded (anim.jp === 'none').
+        // server groundY + capsule half-height (0.75) so the capsule bottom sits
+        // exactly on the ground surface, platform, or obstacle top.
+        // Using 1.5 would place the capsule 0.75m above where it should be.
         const latest = buffer.current[buffer.current.length - 1];
-        if (latest && latest.groundY >= 0 && data.anim?.jp === "none") {
-            targetPos.y = latest.groundY + 1.5; // capsule center sits 1.5m above ground
+        if (latest && latest.groundY >= 0) {
+            targetPos.y = latest.groundY + 0.75; // capsule bottom sits on ground surface
         }
 
         try {
@@ -145,8 +146,7 @@ export default function RemotePlayer({data}) {
         <RigidBody
             ref={groupRef}
             type="kinematicPosition"
-            colliders={false}
-            collisionGroups={0x0002ffff}
+            colider={true}
             userData={{
                 type: "remote-player",
                 id: data.id,
@@ -154,7 +154,7 @@ export default function RemotePlayer({data}) {
             }}>
             <CapsuleCollider args={[1.5, 1]} />
 
-            <group position={[0, -2.5, 0]}>
+            <group>
                 <PlayerModel
                     isMoving={data.anim?.mv}
                     moveDir={data.anim?.dir}

@@ -155,6 +155,21 @@ export default function Options({onBack}) {
                         </button>
                     </div>
 
+                    {/* TILT SHIFT */}
+                    <div className="option-item" onClick={() => toggleSetting("tiltShift")}>
+                        <div className="option-info">
+                            <span className="option-name">Tilt Shift</span>
+                        </div>
+                        <button
+                            role="switch"
+                            aria-checked={settings.tiltShift}
+                            aria-label="Tilt Shift"
+                            className={`premium-toggle touch-target ${settings.tiltShift ? "active" : ""}`}
+                            onClick={() => toggleSetting("tiltShift")}>
+                            <div className="toggle-knob" />
+                        </button>
+                    </div>
+
                     {/* SSAO */}
                     <div className="option-item" onClick={() => toggleSetting("ssao")}>
                         <div className="option-info">
@@ -226,6 +241,37 @@ export default function Options({onBack}) {
                             aria-label="Film Grain"
                             className={`premium-toggle touch-target ${settings.grain ? "active" : ""}`}
                             onClick={() => toggleSetting("grain")}>
+                            <div className="toggle-knob" />
+                        </button>
+                    </div>
+
+                    {/* GLITCH */}
+                    <div className="option-item" onClick={() => toggleSetting("glitch")}>
+                        <div className="option-info">
+                            <span className="option-name">Glitch</span>
+                        </div>
+                        <button
+                            role="switch"
+                            aria-checked={settings.glitch}
+                            aria-label="Glitch"
+                            className={`premium-toggle touch-target ${settings.glitch ? "active" : ""}`}
+                            onClick={() => toggleSetting("glitch")}>
+                            <div className="toggle-knob" />
+                        </button>
+                    </div>
+
+                    {/* DISPLAY FPS */}
+                    <div className="option-item" onClick={() => toggleSetting("displayFps")}>
+                        <div className="option-info">
+                            <span className="option-name">Display FPS</span>
+                            <span className="option-desc">Show FPS, latency, players, desync</span>
+                        </div>
+                        <button
+                            role="switch"
+                            aria-checked={settings.displayFps}
+                            aria-label="Display FPS"
+                            className={`premium-toggle touch-target ${settings.displayFps ? "active" : ""}`}
+                            onClick={() => toggleSetting("displayFps")}>
                             <div className="toggle-knob" />
                         </button>
                     </div>

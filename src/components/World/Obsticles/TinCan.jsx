@@ -140,14 +140,14 @@ export function TinCanPhysics({position, rotation, color, mass = 1, linearDampin
         const y = rigidRef.current.translation().y;
         const vel = rigidRef.current.linvel();
         // Don't make sounds if the can is 15m below the arena
-        if (y < -15) {
+        if (y < -1) {
             groundHitRef.current = false;
             return;
         }
         // Near floor (y ~ 5 = half height) and downward velocity just dropped
-        if (vel.y < -1 && !groundHitRef.current) {
+        if (vel.y < -0.1 && !groundHitRef.current) {
             const now = Date.now();
-            if (now - lastSoundTime.current < 300) {
+            if (now - lastSoundTime.current < 100) {
                 // 300ms margin against rapid micro-bounces
                 groundHitRef.current = true;
                 return;

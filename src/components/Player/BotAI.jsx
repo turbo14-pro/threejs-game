@@ -46,7 +46,7 @@ export const BOT_TUNING = {
     aimError: 0.7, // max radians of steering error at accuracy 0 (≈40°) — bots swerve & whiff
     aimWobbleSpeed: 2.4, // how fast the aim error oscillates (rad/s) so it reads as imprecision
     slideRollInterval: 1.5, // seconds per slide-chance roll (stable within one approach)
-    slideCooldown: 2.5, // seconds a bot rests between committed lunges (slides less often)
+    slideCooldown: 1.0, // seconds a bot rests between committed lunges (slides less often)
 };
 
 // Seconds between a bot's scoring tags (see shouldRegisterTag)
@@ -265,13 +265,13 @@ export function createBotPersonality(seed = "bot") {
 
     return Object.freeze({
         seed: String(seed),
-        aggression: round3(0.25 + a * 0.7), // appetite for attacking
+        aggression: round3(0.25 + a * 0.9), // appetite for attacking
         accuracy: round3(0.4 + a * 0.5), // 0.4–0.9 aim precision (higher = homes in tighter)
-        patience: round3(0.55 + b * 0.95), // reaction-time multiplier (higher = slower to react)
-        caution: round3(0.2 + c * 0.7), // flees earlier when hurt
+        patience: round3(0.55 + b * 0.99), // reaction-time multiplier (higher = slower to react)
+        caution: round3(0.2 + c * 0.8), // flees earlier when hurt
         reach: round3(0.8 + a * 1.4), // slide-attack range multiplier
         speedBias: round3(0.85 + b * 0.35), // cruise-speed multiplier
-        slideChance: round3(0.35 + b * 0.45), // 0.35–0.80 likelihood of committing to a lunge
+        slideChance: round3(0.35 + b * 0.7), // 0.35–0.80 likelihood of committing to a lunge
         jumpiness: round3(0.6 + c * 1.1), // eagerness to jump for higher ground
         wanderAngle: round3(c * Math.PI * 2), // idle patrol heading
     });

@@ -21,9 +21,9 @@
  *
  * Flags persist in localStorage so a reload keeps the same experiment setup.
  */
-import { debugLog } from './debugLog.js';
+import {debugLog} from "./debugLog.js";
 
-const STORAGE_KEY = 'food-frenzy-audio-debug-flags';
+const STORAGE_KEY = "food-frenzy-audio-debug-flags";
 
 /**
  * Every flag defaults to TRUE (code enabled). Turning a flag OFF disables the
@@ -31,84 +31,84 @@ const STORAGE_KEY = 'food-frenzy-audio-debug-flags';
  * source of the crash.
  */
 export const AUDIO_DEBUG_DEFAULTS = {
-  // Slide-sound additions (playPositional('slide') + fade-out).
-  // Enabled by default. Set to false to disable during bisecting.
-  slideSound: true,
-  // Movement loops (walk / running) — the other movement-tied audio path.
-  // Enabled by default. Set to false to disable during bisecting.
-  movementLoops: true,
-  // Positional one-shots (jump / land / hit / teleport / launch).
-  oneShots: true,
-  // The global (non-positional) fallback used when playPositional() fails.
-  globalFallback: true,
+    // Slide-sound additions (playPositional('slide') + fade-out).
+    // Enabled by default. Set to false to disable during bisecting.
+    slideSound: true,
+    // Movement loops (walk / running) — the other movement-tied audio path.
+    // Enabled by default. Set to false to disable during bisecting.
+    movementLoops: true,
+    // Positional one-shots (jump / land / hit / teleport / launch).
+    oneShots: true,
+    // The global (non-positional) fallback used when playPositional() fails.
+    globalFallback: true,
 };
 
-const FLAGS = { ...AUDIO_DEBUG_DEFAULTS };
+const FLAGS = {...AUDIO_DEBUG_DEFAULTS};
 
 function readStored() {
-  try {
-    if (typeof localStorage === 'undefined') return;
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (!raw) return;
-    const parsed = JSON.parse(raw);
-    if (!parsed || typeof parsed !== 'object') return;
-    for (const key of Object.keys(AUDIO_DEBUG_DEFAULTS)) {
-      if (typeof parsed[key] === 'boolean') FLAGS[key] = parsed[key];
+    try {
+        if (typeof localStorage === "undefined") return;
+        const raw = localStorage.getItem(STORAGE_KEY);
+        if (!raw) return;
+        const parsed = JSON.parse(raw);
+        if (!parsed || typeof parsed !== "object") return;
+        for (const key of Object.keys(AUDIO_DEBUG_DEFAULTS)) {
+            if (typeof parsed[key] === "boolean") FLAGS[key] = parsed[key];
+        }
+    } catch {
+        /* never let debug state break the game */
     }
-  } catch { /* never let debug state break the game */ }
 }
 
 function persist() {
-  try {
-    if (typeof localStorage === 'undefined') return;
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(FLAGS));
-  } catch { /* ignore */ }
+    try {
+        if (typeof localStorage === "undefined") return;
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(FLAGS));
+    } catch {
+        /* ignore */
+    }
 }
 
 readStored();
 
-debugLog("[AudioDebug] Initial flags:", { ...FLAGS });
-
 /** Read a flag (unknown keys fall back to `true` so code stays enabled). */
 export function audioFlag(name) {
-  if (!(name in FLAGS)) return true;
-  return FLAGS[name];
+    if (!(name in FLAGS)) return true;
+    return FLAGS[name];
 }
 
 /** Set a flag and persist it. Returns the new value. */
 export function setAudioFlag(name, value) {
-  debugLog("[AudioDebug] setAudioFlag:", name, "=", Boolean(value), "previous=", FLAGS[name]);
-  if (!(name in FLAGS)) {
-    console.warn(`[audioDebug] unknown flag "${name}"`);
-    return true;
-  }
-  FLAGS[name] = Boolean(value);
-  persist();
-  console.log(`[audioDebug] ${name} = ${FLAGS[name]}`);
-  return FLAGS[name];
+    if (!(name in FLAGS)) {
+        console.warn(`[audioDebug] unknown flag "${name}"`);
+        return true;
+    }
+    FLAGS[name] = Boolean(value);
+    persist();
+    console.log(`[audioDebug] ${name} = ${FLAGS[name]}`);
+    return FLAGS[name];
 }
 
 /** All flags with their current values. */
 export function listAudioFlags() {
-  return { ...FLAGS };
+    return {...FLAGS};
 }
 
 /** Reset every flag back to its default (all enabled). */
 export function resetAudioFlags() {
-  debugLog("[AudioDebug] resetAudioFlags:", { ...FLAGS }, "-> defaults:", { ...AUDIO_DEBUG_DEFAULTS });
-  Object.assign(FLAGS, AUDIO_DEBUG_DEFAULTS);
-  persist();
-  console.log('[audioDebug] flags reset', { ...FLAGS });
-  return { ...FLAGS };
+    Object.assign(FLAGS, AUDIO_DEBUG_DEFAULTS);
+    persist();
+    console.log("[audioDebug] flags reset", {...FLAGS});
+    return {...FLAGS};
 }
 
 // Expose on window for console-driven bisecting without a rebuild.
-if (typeof window !== 'undefined') {
-  window.audioDebug = {
-    set: setAudioFlag,
-    get: audioFlag,
-    list: listAudioFlags,
-    reset: resetAudioFlags,
-    defaults: { ...AUDIO_DEBUG_DEFAULTS },
-  };
+if (typeof window !== "undefined") {
+    window.audioDebug = {
+        set: setAudioFlag,
+        get: audioFlag,
+        list: listAudioFlags,
+        reset: resetAudioFlags,
+        defaults: {...AUDIO_DEBUG_DEFAULTS},
+    };
 }

@@ -6,6 +6,10 @@ import {Logger} from "../utils/Logger";
 import {POWERUP_EFFECTS, POWERUP_DURATIONS, POWERUP_DESCRIPTIONS} from "../config/playerConfig";
 import {BOT_DIFFICULTY, buildBotRoster} from "../components/Player/botRoster.js";
 import {soundManager} from "../utils/SoundManager.js";
+import {
+    setDebugCategory as setDebugCategoryFn,
+    isDebugCategoryEnabled as isDebugCategoryEnabledFn,
+} from "../utils/debugLog.js";
 
 // Re-export for backward compatibility with existing imports
 export {POWERUP_EFFECTS, POWERUP_DURATIONS, POWERUP_DESCRIPTIONS};
@@ -14,12 +18,12 @@ export {POWERUP_EFFECTS, POWERUP_DURATIONS, POWERUP_DESCRIPTIONS};
 const SHADOW_TYPE_MAP = {
     None: null, // shadows disabled
     Low: THREE.BasicShadowMap, // cheapest, hard edges
-    Medium: THREE.PCFShadowMap, // moderate, slightly soft
-    High: THREE.PCFSoftShadowMap, // smooth soft edges
-    Ultra: THREE.PCFSoftShadowMap, // smooth soft edges (higher res)
+    Medium: THREE.PCMShadowMap, // moderate, slightly soft
+    High: THREE.PCMShadowMap, // smooth soft edges
+    Ultra: THREE.PCMShadowMap, // smooth soft edges (higher res)
 };
 
-export const getShadowMapType = (shadowQuality) => SHADOW_TYPE_MAP[shadowQuality] ?? THREE.PCFSoftShadowMap;
+export const getShadowMapType = (shadowQuality) => SHADOW_TYPE_MAP[shadowQuality] ?? THREE.PCMShadowMap;
 
 // Bots present on the arena before any lobby selection (see "spawn from the start").
 // Every match runs exactly 3 bots on normal skill — the lobby has no selectors.
@@ -108,6 +112,8 @@ export const useGameStore = create(
                     bloom: true,
                     vignette: true,
                     grain: false,
+                    tiltShift: false,
+                    glitch: false,
                     antialiasing: "FXAA", // None, FXAA, SMAA, TAA
                     ssao: false,
                     lightRays: true,
@@ -115,7 +121,22 @@ export const useGameStore = create(
                     depthOfField: false,
                     pixelRatio: window.devicePixelRatio || 1,
                     physicsDebug: false,
+                    displayFps: false,
                 },
+
+                // --- DEBUG CATEGORIES ---
+                // Categories that have debug logging enabled (synced with localStorage via debugLog.js)
+                debugCategories: new Set(),
+                setDebugCategory: (category, enabled) => {
+                    setDebugCategoryFn(category, enabled);
+                    set((s) => {
+                        const next = new Set(s.debugCategories);
+                        if (enabled) next.add(category);
+                        else next.delete(category);
+                        return {debugCategories: next};
+                    });
+                },
+                isDebugCategoryEnabled: (category) => isDebugCategoryEnabledFn(category),
 
                 // --- EFFECTS ---
                 dashBlur: false, // radial blur during dash
@@ -123,6 +144,7 @@ export const useGameStore = create(
                 playerIsDashing: false, // set by PlayerController each frame
                 shockwaves: [null, null, null], // Fixed pool of 3 shockwaves
                 rippleTimer: 0, // Seconds remaining for impact ripple animation (>0 = active)
+                slideImpactTimer: 0, // Seconds remaining for slide impact glitch (>0 = active)
                 debugRipple: {
                     enabled: false,
                     worldPosition: {x: 0, y: 0, z: 0},
@@ -420,6 +442,8 @@ export const useGameStore = create(
                                 bloom: false,
                                 vignette: false,
                                 grain: false,
+                                tiltShift: false,
+                                glitch: false,
                                 antialiasing: "None",
                                 ssao: false,
                                 lightRays: false,
@@ -433,6 +457,8 @@ export const useGameStore = create(
                                 bloom: false,
                                 vignette: false,
                                 grain: false,
+                                tiltShift: false,
+                                glitch: false,
                                 antialiasing: "FXAA",
                                 ssao: false,
                                 lightRays: true,
@@ -446,6 +472,8 @@ export const useGameStore = create(
                                 bloom: true,
                                 vignette: true,
                                 grain: false,
+                                tiltShift: true,
+                                glitch: false,
                                 antialiasing: "FXAA",
                                 ssao: false,
                                 lightRays: true,
@@ -459,6 +487,8 @@ export const useGameStore = create(
                                 bloom: true,
                                 vignette: true,
                                 grain: true,
+                                tiltShift: true,
+                                glitch: false,
                                 antialiasing: "SMAA",
                                 ssao: false,
                                 lightRays: true,
@@ -472,6 +502,8 @@ export const useGameStore = create(
                                 bloom: true,
                                 vignette: true,
                                 grain: true,
+                                tiltShift: true,
+                                glitch: false,
                                 antialiasing: "TAA",
                                 ssao: true,
                                 lightRays: true,
@@ -501,6 +533,10 @@ export const useGameStore = create(
                     set({rippleTimer: duration});
                 },
                 setRippleTimer: (val) => set({rippleTimer: Math.max(0, val)}),
+                setSlideImpactTimer: (val) => set({slideImpactTimer: Math.max(0, val)}),
+                triggerSlideImpact: (duration = 0.4) => {
+                    set({slideImpactTimer: duration});
+                },
                 addShockwave: (position, intensity = 1.0) => {
                     const id = Math.random().toString(36).substr(2, 9);
                     set((s) => {
@@ -569,6 +605,8 @@ export const useGameStore = create(
                     },
                     settings: state.settings,
                     performancePreset: state.performancePreset,
+                    // Persist debug categories so they're remembered across reloads
+                    debugCategories: [...state.debugCategories],
                     // Persist audio volume settings so they're remembered across reloads
                     audio: {
                         masterVolume: state.audio.masterVolume,

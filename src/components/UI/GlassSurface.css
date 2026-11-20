@@ -18,7 +18,7 @@
     align-items: center;
     border-radius: var(--glass-radius);
     justify-content: center;
-    backdrop-filter: var(--glass-filter) saturate(clamp(var(--glass-saturation), 0, 1)) blur(3px); 
+    backdrop-filter: var(--glass-filter) saturate(clamp(var(--glass-saturation), 0, 1)) blur(3px);
     /* Rotate the card itself. The inner-layer 3D approach is impossible here because
        overflow:hidden + backdrop-filter force transform-style:flat, flattening children.
        Perspective is supplied by the parent (.menu). */

@@ -396,7 +396,7 @@ export default function BotPlayer({bot}) {
             s.downUntil = 0;
             s.knockVec.set(0, 0, 0);
             s.vy = Math.min(s.vy, 0);
-            debugLog("💀 Bot fell off the arena — respawning:", bot.name);
+            debugLog("bot", "💀 Bot fell off the arena — respawning:", bot.name);
         }
 
         // --- KNOCKBACK DECAY: the launch velocity is NOT applied to s.pos directly —
@@ -554,10 +554,13 @@ export default function BotPlayer({bot}) {
                         soundManager.playPositional("hit", bodyRef.current, hitVol, 5, 1.0, 50, false);
                     }
                 } catch {}
+                // Shockwave at the hit location
+                store.addShockwave([s.pos.x, s.pos.y, s.pos.z], 1.0);
                 // --- BOT ATTACK REPORT: who tackled whom, for how much, at what range ---
                 const victim = target.kind === "player" ? "PLAYER" : `bot:${target.id}`;
                 const boosted = combatBoost.knockbackForce > BOT_COMBAT.knockbackForce;
                 debugLog(
+                    "bot",
                     `🗡️  [BOT ATTACK] ${bot.name} slide-tackled ${victim} ` +
                         `for ${BOT_COMBAT.hitDamage} dmg @ ${distance.toFixed(1)}m ` +
                         `(closing ${impact.closingSpeed.toFixed(1)} m/s, knockback ${Math.round(force)}${
@@ -568,6 +571,7 @@ export default function BotPlayer({bot}) {
                 // We're the victim of this collision — the aggressor's own system applies
                 // our knockback, so we deliberately do nothing here (avoids double-hit).
                 debugLog(
+                    "bot",
                     `🛡️  [BOT] ${bot.name} was driven into by ${
                         target.kind === "player" ? "PLAYER" : `bot:${target.id}`
                     } ` + `@ ${distance.toFixed(1)}m — deferring knockback to the aggressor`
