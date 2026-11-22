@@ -599,6 +599,7 @@ export default function PlayerController({sendUpdate}) {
                 const t = rigidBodyRef.current.translation();
                 if (Number.isFinite(t.x) && Number.isFinite(t.y) && Number.isFinite(t.z)) {
                     setLocalPlayerWorldPos(t);
+                    useGameStore.getState().setPlayerPosition(t);
                 }
             }
             return;
@@ -674,6 +675,7 @@ export default function PlayerController({sendUpdate}) {
                 rigidBodyRef.current.setAngvel({x: 0, y: 0, z: 0}, true);
                 worldVelocityRef.current.set(0, 0, 0);
                 setLocalPlayerWorldPos({x: 0, y: 103, z: 0});
+                useGameStore.getState().setPlayerPosition({x: 0, y: 103, z: 0});
             } catch {}
             return;
         }
@@ -684,6 +686,8 @@ export default function PlayerController({sendUpdate}) {
         // bodies go NaN -> their meshes + attached PositionalAudios go NaN ->
         // panner.linearRampToValueAtTime throws every frame, forever).
         setLocalPlayerWorldPos(translation);
+        // Share the same snapshot with the store so the sun rig can follow the player
+        useGameStore.getState().setPlayerPosition(translation);
         // Publish horizontal velocity so CPU bots can run a Newtonian impact resolution
         // (who's driving into whom) instead of blindly knocking back whatever they touch.
         if (Number.isFinite(worldVelocityRef.current?.x) && Number.isFinite(worldVelocityRef.current?.z)) {
@@ -1038,8 +1042,7 @@ export default function PlayerController({sendUpdate}) {
             // Enable slide sound — plays at player position with volume based on horizontal speed
             const slideFlag = audioFlag("slideSound");
 
-            if (!slideFlag) {
-            } else {
+            if (slideFlag) {
                 // Release any existing slide sound so a fresh one plays on every slide start.
                 // Without this, the old fading-out sound blocks creation of a new one.
                 if (slideSoundRef.current) {
@@ -1066,7 +1069,7 @@ export default function PlayerController({sendUpdate}) {
                 // Set slide cooldown to prevent spamming when blocked by an obstacle.
                 // Cooldown scales with how brief the slide was — short slides (blocked)
                 // get a shorter cooldown, full slides get a longer one.
-                slideCooldown.current = Math.max(0.3, intendedSlideDuration.current * 2);
+                slideCooldown.current = Math.max(0.3, intendedSlideDuration.current / 2);
 
                 // Start rapid fade-out of the slide sound when sliding stops.
                 if (audioFlag("slideSound") && slideSoundRef.current) {
@@ -1665,15 +1668,31 @@ export default function PlayerController({sendUpdate}) {
                 return;
             }
 
-            // Avoid duplicate ripple triggers for the same object within a short window
-            const uniqueId = other.userData?.id ?? `tinCan_${e.contactPoint?.x}`;
-            if (impactTracker.current.has(uniqueId)) return;
-            impactTracker.current.add(uniqueId);
-            // Clean up the id after a brief window so future collisions can be detected again
-            setTimeout(() => impactTracker.current.delete(uniqueId), 2000);
+            // Avoid duplicate ripple triggers for the same object within a short window.
+            // TinCan collisions are excluded — TinCanPhysics has its own cooldown,
+            // and the 2s window here would block rapid re-impacts during sliding.
+            if (!isTinCan) {
+                const uniqueId = other.userData?.id ?? `tinCan_${e.contactPoint?.x}`;
+                if (impactTracker.current.has(uniqueId)) return;
+                impactTracker.current.add(uniqueId);
+                // Clean up the id after a brief window so future collisions can be detected again
+                setTimeout(() => impactTracker.current.delete(uniqueId), 2000);
+            }
 
-            if (isTinCan) {
-                soundManager.playPositional("metal-hit", playerGroupRef.current, 1, 10, 1.0, 50, false);
+            if (isTinCan && isSlidingRef.current) {
+                // Volume scales with player speed and powerup impact multiplier
+                const playerSpeed = Math.hypot(worldVelocityRef.current.x, worldVelocityRef.current.z);
+                const slidePowerUp = useGameStore.getState().powerUp;
+                const hasSlidePowerUp = slidePowerUp?.category === "slide";
+                const blastPowerMultiplier = hasSlidePowerUp
+                    ? getPowerUpEffect("slide", slidePowerUp.rarity, "blastPowerMultiplier")
+                    : 1;
+                const hitVol = Math.min(Math.max(playerSpeed / 80, 0.1) * blastPowerMultiplier, 2);
+                soundManager.playPositional("metal-hit", playerGroupRef.current, hitVol, 10, 1.0, 50, false);
+                debugLog(
+                    "sound",
+                    `metal-hit slide speed(${playerSpeed})/80 * blastPowerMultiplier(${blastPowerMultiplier}) = hitVol(${hitVol}) `
+                );
             }
 
             // Only react to sliding attacks (not when we are the victim)

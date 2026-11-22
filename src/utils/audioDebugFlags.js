@@ -85,7 +85,7 @@ export function setAudioFlag(name, value) {
     }
     FLAGS[name] = Boolean(value);
     persist();
-    console.log(`[audioDebug] ${name} = ${FLAGS[name]}`);
+    debugLog("sounds", `[audioDebug] ${name} = ${FLAGS[name]}`);
     return FLAGS[name];
 }
 

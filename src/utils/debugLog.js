@@ -46,6 +46,20 @@ export function isDebugTypeEnabled(type) {
  * Categories are stored in the same Set as types for backward compatibility.
  */
 export function setDebugCategory(category, enabled) {
+    // Special 'all' category: toggle every category at once
+    if (category === "all") {
+        if (enabled) {
+            debugEnabled = true;
+        } else {
+            debugEnabled = false;
+            debugTypes.clear();
+        }
+        if (typeof localStorage !== "undefined") {
+            localStorage.setItem(DEBUG_STORAGE_KEY, String(debugEnabled));
+            localStorage.setItem(DEBUG_TYPES_STORAGE_KEY, JSON.stringify([...debugTypes]));
+        }
+        return;
+    }
     if (enabled) {
         debugTypes.add(category);
     } else {

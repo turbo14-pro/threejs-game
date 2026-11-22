@@ -196,6 +196,62 @@ export const botSpawnPosition = (index = 0) => {
 // every time — exclusion zones keep it clear of the raised platforms/bridge, matching
 // PowerUpManager's spawn rules.
 export const TABLE_RESPAWN_BOUNDS = {minX: -280, maxX: 280, minZ: -280, maxZ: 280};
+// How far from the table edge bots start steering away (metres). Bots keep a margin
+// so they never walk off the edge while chasing a target.
+export const TABLE_EDGE_MARGIN = 20;
+// Strength of the edge-avoidance push (added to the steering vector). Higher = bots
+// hug the centre more aggressively when near an edge.
+export const TABLE_EDGE_AVOIDANCE = 0.6;
+
+/**
+ * Returns a steering vector that pushes a bot away from the nearest table edge.
+ * The vector is zero when the bot is well inside the table, and grows stronger the
+ * closer it gets to any edge. Callers should blend this with target-seeking steering.
+ *
+ * @param {object} pos { x, z } bot position
+ * @returns {{x: number, z: number}} unit-ish vector pointing away from the nearest edge
+ */
+export function tableEdgeAvoidance(pos) {
+    const {minX, maxX, minZ, maxZ} = TABLE_RESPAWN_BOUNDS;
+    const margin = TABLE_EDGE_MARGIN;
+    let ax = 0;
+    let az = 0;
+    let strongest = 0;
+
+    // Left edge
+    const dLeft = pos.x - minX;
+    if (dLeft < margin) {
+        const strength = 1 - dLeft / margin;
+        ax += strength;
+        strongest = Math.max(strongest, strength);
+    }
+    // Right edge
+    const dRight = maxX - pos.x;
+    if (dRight < margin) {
+        const strength = 1 - dRight / margin;
+        ax -= strength;
+        strongest = Math.max(strongest, strength);
+    }
+    // Front edge (negative Z)
+    const dFront = pos.z - minZ;
+    if (dFront < margin) {
+        const strength = 1 - dFront / margin;
+        az += strength;
+        strongest = Math.max(strongest, strength);
+    }
+    // Back edge (positive Z)
+    const dBack = maxZ - pos.z;
+    if (dBack < margin) {
+        const strength = 1 - dBack / margin;
+        az -= strength;
+        strongest = Math.max(strongest, strength);
+    }
+
+    if (strongest <= 0) return {x: 0, z: 0, strength: 0};
+
+    const len = Math.hypot(ax, az);
+    return {x: ax / len, z: az / len, strength: strongest};
+}
 export const TABLE_RESPAWN_EXCLUSIONS = [
     {minX: -35, maxX: 35, minZ: -15, maxZ: 15}, // Platform 1
     {minX: -35, maxX: 35, minZ: -60, maxZ: -30}, // Platform 2
@@ -477,14 +533,22 @@ export function computeBotInput(snapshot = {}) {
     const steer = steerTowards(botPos, targetPos, bot.rotationY || 0);
     const distance = steer.distance;
 
+    // --- TABLE EDGE AVOIDANCE: steer away from the table edge so bots don't walk
+    // off while chasing a target. Blended with target-seeking so bots still commit
+    // to attacks but bail before falling.
+    const edge = tableEdgeAvoidance(botPos);
+    const edgeWeight = edge.strength * TABLE_EDGE_AVOIDANCE;
+
     // --- FLEE MODE: a hurt bot breaks off and runs to regenerate (project decision)
     const fleeing = healthRatio < fleeBelow;
     const travelX = fleeing ? -steer.x : steer.x;
     const travelZ = fleeing ? -steer.z : steer.z;
 
     // --- MOVEMENT ---
-    input.x = travelX * profile.speed;
-    input.y = travelZ * profile.speed;
+    // Blend edge avoidance into the travel vector: when near an edge, push away from
+    // it regardless of where the target is. This keeps bots on the table.
+    input.x = (travelX + edge.x * edgeWeight) * profile.speed;
+    input.y = (travelZ + edge.z * edgeWeight) * profile.speed;
     // RUN most of the time: only ease to a walk in the tight finish so bots don't
     // overshoot the target. Everything beyond close quarters is a run.
     input.sprint = distance > BOT_TUNING.turnHardDistance * 1.2;
@@ -508,8 +572,9 @@ export function computeBotInput(snapshot = {}) {
     input.jump = profile.jump && !fleeing && targetPos.y - botPos.y > jumpClearance;
 
     // --- AIM: face the way we are travelling, matching PlayerController's
-    // `targetRotationY = Math.atan2(direction.x, direction.z)`.
-    const targetRotationY = Math.atan2(travelX, travelZ);
+    // `targetRotationY = Math.atan2(direction.x, direction.z)`. Use the blended
+    // travel vector (including edge avoidance) so bots turn away from edges.
+    const targetRotationY = Math.atan2(input.x / profile.speed, input.y / profile.speed);
 
     return {
         input: reacting ? {...input, x: 0, y: 0, dash: false, slide: false} : input,

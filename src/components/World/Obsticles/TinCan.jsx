@@ -130,9 +130,17 @@ export function TinCanPhysics({position, rotation, color, mass = 1, linearDampin
     const halfHeight = 5; // height 12 / 2
     const radius = 4;
     const rigidRef = useRef();
+    const visualRef = useRef(); // Three.js visual group — sound parent (rigidRef is a Rapier body, no .add())
 
+    // Unified micro-bounce state shared across ALL sound paths (ground, slide, obstacle).
+    // When any impact occurs, the window extends. While the window is open, all sounds
+    // play at 1/10 volume. This handles rolling, ricocheting, and pushing — continuous
+    // impacts keep the window open so they stay quiet. Once the can settles and no
+    // impacts occur for the full window, the next impact returns to full volume.
+    const MICRO_BOUNCE_WINDOW = 900; // ms — how long the quiet period lasts after an impact
+    const MICRO_BOUNCE_VOLUME_SCALE = 0.001; // 1/1000 volume
+    const microBounceUntil = useRef(0); // timestamp until which all sounds are quiet
     const groundHitRef = useRef(false);
-    const lastSoundTime = useRef(0); // cooldown to prevent rapid re-fire on micro-bounces
 
     // Ground impact sound: detect when can lands on arena floor
     useFrame(() => {
@@ -144,24 +152,35 @@ export function TinCanPhysics({position, rotation, color, mass = 1, linearDampin
             groundHitRef.current = false;
             return;
         }
-        // Near floor (y ~ 5 = half height) and downward velocity just dropped
-        if (vel.y < -0.1 && !groundHitRef.current) {
+        // Near floor (y ~ 5 = half height, can resting on arena) and downward velocity just dropped
+        // Only trigger when actually close to the floor — not during the fall from spawn height.
+        // When the can is rolling (significant horizontal speed), require a much harder
+        // downward impact to trigger the sound — gentle rolling bumps should not spam audio.
+        const hSpeed = Math.hypot(vel.x, vel.z);
+        const isRolling = hSpeed > 0.1; // m/s — can is rolling along the ground
+        const downThreshold = isRolling ? -2.0 : -0.1; // rolling needs a hard slam
+        if (vel.y < downThreshold && !groundHitRef.current && y < 7) {
             const now = Date.now();
-            if (now - lastSoundTime.current < 100) {
-                // 300ms margin against rapid micro-bounces
-                groundHitRef.current = true;
-                return;
+            const isMicroBounce = now < microBounceUntil.current;
+            if (!isMicroBounce) {
+                microBounceUntil.current = now + MICRO_BOUNCE_WINDOW; // extend the quiet window
             }
-            lastSoundTime.current = now;
             groundHitRef.current = true;
-            const impactVol = Math.min(Math.round(Math.abs(vel.y), 2) / 30, 1);
+            // Math.round takes only one arg — the ", 2" was silently ignored,
+            // collapsing small velocities to 0 volume. Use abs(vel.y) directly.
+            const impactVol = Math.min(Math.max(Math.abs(vel.y) / 30, 0.15), 1);
+            // Micro-bounce: impacts within the quiet window play at 1/10 volume
+            const finalVol = isMicroBounce ? impactVol * MICRO_BOUNCE_VOLUME_SCALE : impactVol;
             //debugLog("🥫 TinCan bounce! velY:", Math.abs(vel.y), "vol:", impactVol);
             try {
                 if (soundManager && soundManager.listener)
-                    soundManager.playPositional("metal-ground", rigidRef.current, impactVol, 15, 1.0, false);
+                    soundManager.playPositional("metal-ground", visualRef.current, finalVol, 10, 1.0, 20, false);
             } catch {}
+        } else if (vel.y > 0.1 && groundHitRef.current) {
+            // Can is bouncing back up — reset so the next downward impact can sound
+            groundHitRef.current = false;
         } else if (y > 10) {
-            groundHitRef.current = false; // Reset when airborne
+            groundHitRef.current = false; // Reset when fully airborne
         }
     });
 
@@ -192,19 +211,34 @@ export function TinCanPhysics({position, rotation, color, mass = 1, linearDampin
 
         if (isSliding) {
             const now = Date.now();
-            if (now - lastSoundTime.current < 300) return;
-            lastSoundTime.current = now;
+            const isMicroBounce = now < microBounceUntil.current;
+            if (!isMicroBounce) {
+                microBounceUntil.current = now + MICRO_BOUNCE_WINDOW; // extend the quiet window
+            }
 
-            const hitVol = Math.max(Math.min(Math.round(Math.abs(other.linvel().y), 2) / 30, 1), 0);
-            try {
-                if (soundManager && soundManager.listener && hitVol > 0.1)
-                    soundManager.playPositional("metal-ground", rigidRef.current, hitVol, 15, 1.0, false);
-            } catch {}
-
-            // Direction from player to can
+            // Direction from player to can (horizontal)
             const dir = new THREE.Vector3(canPos.x - playerPos.x, 0, canPos.z - playerPos.z).normalize();
 
             const playerVel = other.linvel();
+            const canVel = rigidRef.current.linvel();
+
+            // Closing speed along the impact direction: how fast the player is
+            // driving into the can. If the can is rolling away in the same
+            // direction the player is running, closing speed → ~0 and the
+            // impact sound is nearly silent.
+            const closingSpeed = (playerVel.x - canVel.x) * dir.x + (playerVel.z - canVel.z) * dir.z;
+            const approachSpeed = Math.max(closingSpeed, 0);
+
+            // Volume scales with closing speed (m/s). A gentle nudge is quiet;
+            // a full-speed slam is loud. Cap at 1.0.
+            const hitVol = Math.min(Math.max(approachSpeed / 25, 0), 1);
+            // Micro-bounce: impacts within the quiet window play at 1/10 volume
+            const finalVol = isMicroBounce ? hitVol * MICRO_BOUNCE_VOLUME_SCALE : hitVol;
+            try {
+                if (soundManager && soundManager.listener && finalVol > 0.05)
+                    soundManager.playPositional("metal-ground", visualRef.current, finalVol, 10, 1.0, 20, false);
+            } catch {}
+
             const velDir = new THREE.Vector3(playerVel.x, 0, playerVel.z);
             const speed = velDir.length();
 
@@ -217,22 +251,6 @@ export function TinCanPhysics({position, rotation, color, mass = 1, linearDampin
             const slideMultiplier = other.userData?.slideMultiplier || 1;
             const force = Math.max(speed * 800 * slideMultiplier, 25);
 
-            const impactVol = Math.max(Math.min(Math.round(speed, 2), 1), 0.1);
-            /*debugLog(
-                "🥫 TinCan hit! speed:",
-                speed,
-                "multiplier:",
-                slideMultiplier,
-                "force:",
-                force,
-                "vol:",
-                impactVol
-            );*/
-            try {
-                if (soundManager && soundManager.listener)
-                    soundManager.playPositional("metal-ground", rigidRef.current, impactVol, 15, 1.0, false);
-            } catch {}
-
             rigidRef.current.applyImpulse(
                 {
                     x: finalDir.x * force,
@@ -242,7 +260,12 @@ export function TinCanPhysics({position, rotation, color, mass = 1, linearDampin
                 true
             );
         } else {
-            // Non-slide collision: gentle push only, no impact sound/force
+            // Non-slide collision: gentle push only, no impact sound (player bump handled elsewhere)
+            const now = Date.now();
+            const isMicroBounce = now < microBounceUntil.current;
+            if (!isMicroBounce) {
+                microBounceUntil.current = now + MICRO_BOUNCE_WINDOW; // extend the quiet window
+            }
             const dir = new THREE.Vector3(canPos.x - playerPos.x, 0, canPos.z - playerPos.z).normalize();
             const gentleForce = 15;
             rigidRef.current.applyImpulse(
@@ -270,7 +293,9 @@ export function TinCanPhysics({position, rotation, color, mass = 1, linearDampin
             onCollisionEnter={handleCollision}
             userData={{type: "tinCan"}}>
             <CylinderCollider args={[halfHeight, radius]} />
-            <TinCan position={[0, 0, 0]} rotation={[0, 0, 0]} color={color} />
+            <group ref={visualRef}>
+                <TinCan position={[0, 0, 0]} rotation={[0, 0, 0]} color={color} />
+            </group>
         </RigidBody>
     );
 }

@@ -352,6 +352,11 @@ setInterval(() => {
     botTick++;
     if (botTick % BOT_UPDATE_INTERVAL !== 0) return;
 
+    // Table bounds (matches Arena.jsx: 600×600 box at [0,-1,0], surface spans ±290)
+    const TABLE_MIN = -270;
+    const TABLE_MAX = 270;
+    const TABLE_MARGIN = 25;
+
     // Simple heuristic: bots move toward nearest player
     for (const [botId, bot] of bots) {
         // Find nearest human player position (exclude bots)
@@ -382,10 +387,93 @@ setInterval(() => {
             while (diff > Math.PI) diff -= Math.PI * 2;
             while (diff < -Math.PI) diff += Math.PI * 2;
             camRot += diff * 0.1; // 10% turn per tick
-            // Move forward toward target
+
+            // --- TABLE EDGE AVOIDANCE: steer away from table edges so bots don't
+            // walk off while chasing a player. Blend with target-seeking.
+            let avoidX = 0;
+            let avoidZ = 0;
+            let avoidStrength = 0;
+            const dLeft = bot.pos.x - TABLE_MIN;
+            if (dLeft < TABLE_MARGIN) {
+                const s = 1 - dLeft / TABLE_MARGIN;
+                avoidX += s;
+                avoidStrength = Math.max(avoidStrength, s);
+            }
+            const dRight = TABLE_MAX - bot.pos.x;
+            if (dRight < TABLE_MARGIN) {
+                const s = 1 - dRight / TABLE_MARGIN;
+                avoidX -= s;
+                avoidStrength = Math.max(avoidStrength, s);
+            }
+            const dFront = bot.pos.z - TABLE_MIN;
+            if (dFront < TABLE_MARGIN) {
+                const s = 1 - dFront / TABLE_MARGIN;
+                avoidZ += s;
+                avoidStrength = Math.max(avoidStrength, s);
+            }
+            const dBack = TABLE_MAX - bot.pos.z;
+            if (dBack < TABLE_MARGIN) {
+                const s = 1 - dBack / TABLE_MARGIN;
+                avoidZ -= s;
+                avoidStrength = Math.max(avoidStrength, s);
+            }
+
+            // Move forward toward target, blended with edge avoidance
+            const moveX = Math.sin(targetRot) + avoidX * avoidStrength;
+            const moveZ = Math.cos(targetRot) + avoidZ * avoidStrength;
+            const moveLen = Math.hypot(moveX, moveZ);
+            const normX = moveX / moveLen;
+            const normZ = moveZ / moveLen;
+
+            // Recompute rotation toward the blended direction
+            const blendedRot = Math.atan2(normX, normZ);
+            diff = blendedRot - camRot;
+            while (diff > Math.PI) diff -= Math.PI * 2;
+            while (diff < -Math.PI) diff += Math.PI * 2;
+            camRot += diff * 0.1;
+
             input = {w: true, a: false, s: false, d: false, jump: false, walk: false, dash: false, slide: false};
             // Jump if close to target
             if (nearestDist < 15) input.jump = true;
+        } else {
+            // No player visible — still apply edge avoidance so idle bots don't drift off
+            if (bot.pos) {
+                let avoidX = 0;
+                let avoidZ = 0;
+                let avoidStrength = 0;
+                const dLeft = bot.pos.x - TABLE_MIN;
+                if (dLeft < TABLE_MARGIN) {
+                    const s = 1 - dLeft / TABLE_MARGIN;
+                    avoidX += s;
+                    avoidStrength = Math.max(avoidStrength, s);
+                }
+                const dRight = TABLE_MAX - bot.pos.x;
+                if (dRight < TABLE_MARGIN) {
+                    const s = 1 - dRight / TABLE_MARGIN;
+                    avoidX -= s;
+                    avoidStrength = Math.max(avoidStrength, s);
+                }
+                const dFront = bot.pos.z - TABLE_MIN;
+                if (dFront < TABLE_MARGIN) {
+                    const s = 1 - dFront / TABLE_MARGIN;
+                    avoidZ += s;
+                    avoidStrength = Math.max(avoidStrength, s);
+                }
+                const dBack = TABLE_MAX - bot.pos.z;
+                if (dBack < TABLE_MARGIN) {
+                    const s = 1 - dBack / TABLE_MARGIN;
+                    avoidZ -= s;
+                    avoidStrength = Math.max(avoidStrength, s);
+                }
+                if (avoidStrength > 0) {
+                    const len = Math.hypot(avoidX, avoidZ);
+                    const targetRot = Math.atan2(avoidX / len, avoidZ / len);
+                    let diff = targetRot - camRot;
+                    while (diff > Math.PI) diff -= Math.PI * 2;
+                    while (diff < -Math.PI) diff += Math.PI * 2;
+                    camRot += diff * 0.1;
+                }
+            }
         }
 
         bot.camRot = camRot;

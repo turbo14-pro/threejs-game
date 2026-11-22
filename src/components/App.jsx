@@ -1,0 +1,101 @@
+import React from "react";
+import {Canvas, useThree} from "@react-three/fiber";
+import * as THREE from "three";
+import {KeyboardControls} from "@react-three/drei";
+import MainMenu from "./components/UI/MainMenu.jsx";
+import HUD from "./components/UI/HUD.jsx";
+import NetworkStatus from "./components/UI/NetworkStatus.jsx";
+import NowPlaying from "./components/UI/NowPlaying.jsx";
+import {useGameStore} from "./store/useGameStore.js";
+import {useNetworking} from "./hooks/useNetworking.js";
+
+function ShadowUpdater() {
+    const {gl, scene} = useThree();
+    const shadowQuality = useGameStore((state) => state.settings.shadowQuality);
+    const shadowType = getShadowMapType(shadowQuality);
+
+    useEffect(() => {
+        if (shadowType != null && shadowQuality !== "None") {
+            gl.shadowMap.enabled = true;
+            gl.shadowMap.type = shadowType;
+        } else {
+            gl.shadowMap.enabled = false;
+        }
+        // Force shadow map recreation
+        gl.shadowMap.needsUpdate = true;
+
+        // Force all materials in scene to recompile with new shadow settings
+        scene.traverse((object) => {
+            if (object.isMesh && object.material) {
+                const materials = Array.isArray(object.material) ? object.material : [object.material];
+                materials.forEach((material) => {
+                    material.needsUpdate = true;
+                });
+            }
+        });
+    }, [shadowType, gl, scene, shadowQuality]);
+
+    return null;
+}
+
+export default function App() {
+    const gameState = useGameStore((state) => state.game.state);
+    const {sendUpdate} = useNetworking();
+
+    useEffect(() => {
+        const handleKeyDown = (e) => {
+            // Prevent browser shortcuts for Ctrl + keys (like Ctrl+S, Ctrl+D)
+            // Note: Some browsers still force Ctrl+W or Ctrl+T to work, so we also add 'KeyC' as an alternative slide key.
+            if (e.ctrlKey && e.code !== "KeyI" && e.code !== "KeyR" && e.code !== "KeyC" && e.code !== "KeyV") {
+                e.preventDefault();
+            }
+        };
+
+        window.addEventListener("keydown", handleKeyDown, {passive: false});
+        return () => {
+            window.removeEventListener("keydown", handleKeyDown);
+        };
+    }, []);
+
+    const map = useMemo(
+        () => [
+            {name: "forward", keys: ["ArrowUp", "KeyW"]},
+            {name: "backward", keys: ["ArrowDown", "KeyS"]},
+            {name: "left", keys: ["ArrowLeft", "KeyA"]},
+            {name: "right", keys: ["ArrowRight", "KeyD"]},
+            {name: "jump", keys: ["Space"]},
+            {name: "walk", keys: ["ShiftLeft", "ShiftRight"]},
+            {name: "slide", keys: ["KeyC"]},
+            {name: "dash", keys: ["KeyQ"]},
+        ],
+        []
+    );
+
+    return (
+        <KeyboardControls map={map}>
+            <div style={{width: "100vw", height: "100vh", position: "relative"}}>
+                {gameState === "MENU" && <MainMenu />}
+                {gameState === "PLAYING" && <HUD />}
+                <NetworkStatus />
+
+                {/* Test ErrorBoundary */}
+                <TestErrorBoundary />
+
+                <Canvas
+                    id="game-canvas"
+                    shadows
+                    gl={{antialias: true, toneMapping: THREE.NoToneMapping, toneMappingExposure: 0.9}}
+                    camera={{position: [0, 50, 100], fov: 75, near: 0.5, far: 2000}}
+                    style={{position: "absolute", top: 0, left: 0, zIndex: 0}}>
+                    <Suspense fallback={null}>
+                        <ShadowUpdater />
+                        <color attach="background" args={["#958164"]} />
+                        <fogExp2 attach="fog" args={["#6b8fc7", 0.0035]} />
+                        <TestErrorBoundary />
+                    </Suspense>
+                </Canvas>
+                <NowPlaying />
+            </div>
+        </KeyboardControls>
+    );
+}

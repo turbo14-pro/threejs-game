@@ -23,6 +23,7 @@ import {
     registerBot,
     unregisterBot,
     getBotCandidates,
+    getBotPositions,
     damageBot,
     applyBotKnockback,
     getBotVelocity,
@@ -437,15 +438,16 @@ export default function BotPlayer({bot}) {
         // Kinematic bodies are pushed BY dynamic bodies but are NOT stopped BY fixed ones,
         // so without this sweep the bot phases straight through the (fixed) cereal boxes
         // while the (dynamic) cans/player still shove it. Sweep the full body capsule along
-        // the intended move against FIXED geometry only; stop at contact and slide along it.
+        // the intended move against FIXED geometry AND other kinematic bots so bots don't
+        // phase through each other. EXCLUDE_DYNAMIC only — keep kinematic bodies (other
+        // bots) in the sweep so they collide instead of standing inside one another.
         let appliedMove = false;
         if (moveLen > 1e-4 && wallShape) {
             const dirX = moveX / moveLen;
             const dirZ = moveZ / moveLen;
-            // EXCLUDE_DYNAMIC | EXCLUDE_KINEMATIC -> only fixed bodies (boxes, arena walls)
-            const flags = rapier.QueryFilterFlags
-                ? rapier.QueryFilterFlags.EXCLUDE_DYNAMIC | rapier.QueryFilterFlags.EXCLUDE_KINEMATIC
-                : 6;
+            // EXCLUDE_DYNAMIC only -> fixed bodies (boxes, walls) AND kinematic bodies
+            // (other bots) are hit by the sweep. Self is excluded via the last param.
+            const flags = rapier.QueryFilterFlags ? rapier.QueryFilterFlags.EXCLUDE_DYNAMIC : 2;
             const hit = world.castShape(
                 s.pos,
                 {w: 1, x: 0, y: 0, z: 0},
@@ -497,6 +499,36 @@ export default function BotPlayer({bot}) {
         if (!appliedMove) {
             s.pos.x += moveX;
             s.pos.z += moveZ;
+        }
+
+        // --- BOT-BOT SEPARATION: prevent bots from standing inside each other.
+        // When two bots overlap (distance < 2 * radius), push them apart along the
+        // contact normal so they don't lock together and stop moving.
+        const BOT_RADIUS = CAPSULE_RADIUS * 2; // capsule diameter
+        const SEPARATION_DIST = BOT_RADIUS * 1.9; // start separating before they touch
+        const SEPARATION_STRENGTH = 6; // units/sec push away
+        const others = getBotPositions(bot.id, s.pos.x, s.pos.y, s.pos.z, SEPARATION_DIST * 2);
+        let sepX = 0;
+        let sepZ = 0;
+        let sepCount = 0;
+        for (const other of others) {
+            const dx = s.pos.x - other.x;
+            const dz = s.pos.z - other.z;
+            const dist = Math.hypot(dx, dz);
+            if (dist > 1e-4 && dist < SEPARATION_DIST) {
+                const push = (SEPARATION_DIST - dist) / SEPARATION_DIST;
+                sepX += (dx / dist) * push;
+                sepZ += (dz / dist) * push;
+                sepCount++;
+            }
+        }
+        if (sepCount > 0) {
+            const sepLen = Math.hypot(sepX, sepZ);
+            if (sepLen > 1e-4) {
+                const sepStep = (SEPARATION_STRENGTH * step) / sepCount;
+                s.pos.x += (sepX / sepLen) * sepStep;
+                s.pos.z += (sepZ / sepLen) * sepStep;
+            }
         }
 
         // --- VELOCITY: track this frame's horizontal displacement as a velocity so a

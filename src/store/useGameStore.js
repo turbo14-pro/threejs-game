@@ -68,6 +68,10 @@ export const useGameStore = create(
                 // --- PLAYER STATE ---
                 player: {
                     username: "Guest Player",
+                    // Latest world coordinates, mutated in place every frame by
+                    // PlayerController. Consumers (e.g. LightFollower) read this from
+                    // useFrame, so mutating avoids a React re-render per frame.
+                    position: {x: 0, y: 0, z: 0},
                     selectedSkin: "egg", // Default to "egg" skin
                     health: 100,
                     isHiding: false,
@@ -307,6 +311,19 @@ export const useGameStore = create(
                 setPlayerAnimations: (anim) => set((s) => ({player: {...s.player, playerAnimations: anim}})),
                 setUsername: (name) => set((s) => ({player: {...s.player, username: name}})),
                 setIsHiding: (hiding) => set((s) => ({player: {...s.player, isHiding: hiding}})),
+
+                // Publishes the player's world position for per-frame consumers.
+                // Mutates the existing object instead of replacing it: the identity
+                // stays stable, so no subscribed component re-renders each frame.
+                setPlayerPosition: (pos) => {
+                    if (!pos) return;
+                    const position = get().player.position;
+                    if (!position) return;
+                    if (!Number.isFinite(pos.x) || !Number.isFinite(pos.y) || !Number.isFinite(pos.z)) return;
+                    position.x = pos.x;
+                    position.y = pos.y;
+                    position.z = pos.z;
+                },
 
                 // --- AUDIO ACTIONS ---
                 setMasterVolume: (vol) => {
@@ -618,6 +635,11 @@ export const useGameStore = create(
                 // Apply persisted audio volumes to SoundManager on rehydration
                 onRehydrate: () => (state) => {
                     if (!state) return;
+                    // Re-initialize player.position (not persisted) so LightFollower
+                    // can track the player from the first frame after reload.
+                    if (state.player && !state.player.position) {
+                        state.player.position = { x: 0, y: 0, z: 0 };
+                    }
                     try {
                         soundManager?.setMasterVolume?.(state.audio.masterVolume);
                         soundManager?.setAmbientVolume?.(state.audio.ambientVolume);

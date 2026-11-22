@@ -1,4 +1,4 @@
-import React, {Component} from 'react';
+import React, {Component} from "react";
 
 class ErrorBoundary extends Component {
     constructor(props) {
@@ -13,14 +13,14 @@ class ErrorBoundary extends Component {
 
     componentDidCatch(error, errorInfo) {
         // You can log errorInfo to an error reporting service here.
-        console.error('ErrorBoundary caught an error:', error, errorInfo);
+        console.error("ErrorBoundary caught an error:", error, errorInfo);
     }
 
     render() {
         if (this.state.hasError) {
             // You can customize this fallback UI to be more specific
             return (
-                <div style={{textAlign: 'center', padding: '20px'}}>
+                <div style={{textAlign: "center", padding: "20px"}}>
                     <h1>Something went wrong.</h1>
                     <p>The application encountered an error and has stopped working.</p>
                 </div>

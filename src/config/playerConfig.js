@@ -33,7 +33,7 @@ export const PLAYER_BASELINE = {
         cooldown: 0.5, // seconds between dashes
         duration: 1, // seconds (no power-up)
         dashSpeed: 150, // units/sec during dash
-        maxDistance: 4, // max travel distance for a dash
+        maxDistance: 10, // max travel distance for a dash
         speedMultiplier: 2, // multiplier applied to dash velocity
     },
     radialBlur: {

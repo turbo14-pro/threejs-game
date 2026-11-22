@@ -412,7 +412,6 @@ export default function Arena() {
                                     bevelThickness: 0.5,
                                     bevelSize: 0.5,
                                     bevelSegments: 12,
-                                    bevelSize: 0.5,
                                 },
                             ]}
                         />
